@@ -31,8 +31,8 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "tool-artifacts.json",
+    backend: "sql",
+    location: "tool_artifacts",
     message,
     reason: null,
     details,

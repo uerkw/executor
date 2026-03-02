@@ -1,4 +1,5 @@
 export type { ProfileStore } from "./profiles";
+export { RowStoreError } from "./row-store";
 export {
   SourceStoreError,
   SourceStoreService,

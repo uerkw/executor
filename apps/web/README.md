@@ -13,9 +13,18 @@ Run:
 By default, browser control-plane API calls go through the same-origin proxy at
 `/api/control-plane`.
 
-The proxy forwards to the first available upstream value in:
-`CONTROL_PLANE_SERVER_BASE_URL`, `CONTROL_PLANE_UPSTREAM_URL`, `NEXT_PUBLIC_CONVEX_URL`, `CONVEX_URL`.
-If none are set, fallback is `http://127.0.0.1:8788`.
+The API route now runs the control-plane server in-process.
+
+Database selection priority:
+
+- `CONTROL_PLANE_DATABASE_URL`
+- `DATABASE_URL`
+- `POSTGRES_URL`
+
+If none are set, fallback is local SQLite at:
+
+- `CONTROL_PLANE_SQLITE_PATH`
+- default: `.executor-v2/web-state/control-plane.sqlite`
 
 If needed, `NEXT_PUBLIC_CONTROL_PLANE_BASE_URL` can override the browser base URL.
 
@@ -23,7 +32,7 @@ MCP install URL generation:
 
 - Derives from existing control-plane/frontend config.
 - Prioritizes server-side `CONTROL_PLANE_UPSTREAM_URL` (or server/base control-plane URL) when available.
-- In local dev, defaults to direct Convex MCP URL: `http://127.0.0.1:8788/v1/mcp?...`
+- In local dev with no DB URL, defaults to local SQLite-backed control-plane in this Next.js app.
 
 WorkOS auth setup (optional but recommended):
 

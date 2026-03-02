@@ -6,18 +6,15 @@ import {
   type ToolApprovalPolicy,
 } from "@executor-v2/engine";
 import { SourceStoreError } from "@executor-v2/persistence-ports";
-import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-  type LocalStateStoreError,
-} from "@executor-v2/persistence-local";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   makeControlPlaneApprovalsService,
   type ControlPlaneApprovalsServiceShape,
 } from "@executor-v2/management-api";
 import { type Approval } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type ApprovalRows = Pick<SqlControlPlanePersistence["rows"], "approvals">;
 
 const toSourceStoreError = (
   operation: string,
@@ -26,16 +23,16 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "snapshot.json",
+    backend: "sql",
+    location: "approvals",
     message,
     reason: null,
     details,
   });
 
-const toSourceStoreErrorFromLocalState = (
+const toSourceStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): SourceStoreError =>
   toSourceStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
@@ -62,9 +59,9 @@ const toPersistentApprovalStoreError = (
     details,
   });
 
-const toPersistentApprovalStoreErrorFromLocalState = (
+const toPersistentApprovalStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): PersistentToolApprovalPolicyStoreError =>
   toPersistentApprovalStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
@@ -78,51 +75,24 @@ const toPersistentApprovalRecord = (approval: Approval): PersistentToolApprovalR
   reason: approval.reason,
 });
 
-const updateApproval = (
-  snapshot: LocalStateSnapshot,
-  index: number,
-  nextApproval: Approval,
-): LocalStateSnapshot => {
-  const approvals = [...snapshot.approvals];
-  approvals[index] = nextApproval;
-
-  return {
-    ...snapshot,
-    generatedAt: Date.now(),
-    approvals,
-  };
-};
-
 export type PmPersistentToolApprovalPolicyOptions = {
   requireApprovals?: boolean;
   retryAfterMs?: number;
 };
 
 export const createPmPersistentToolApprovalPolicy = (
-  localStateStore: LocalStateStore,
+  rows: ApprovalRows,
   options: PmPersistentToolApprovalPolicyOptions = {},
 ): ToolApprovalPolicy => {
-  const missingSnapshotError = (operation: string): PersistentToolApprovalPolicyStoreError =>
-    toPersistentApprovalStoreError(
-      operation,
-      "Persistent approvals require an initialized local state snapshot",
-      null,
-    );
-
   const store: PersistentToolApprovalStore = {
     findByRunAndCall: (input) =>
-      localStateStore.getSnapshot().pipe(
+      rows.approvals.list().pipe(
         Effect.mapError((error) =>
-          toPersistentApprovalStoreErrorFromLocalState("approvals.read", error),
+          toPersistentApprovalStoreErrorFromRowStore("approvals.read", error),
         ),
-        Effect.flatMap((snapshotOption) => {
-          const snapshot = Option.getOrNull(snapshotOption);
-          if (snapshot === null) {
-            return Effect.fail(missingSnapshotError("approvals.read"));
-          }
-
+        Effect.flatMap((approvals) => {
           const approval =
-            snapshot.approvals.find(
+            approvals.find(
               (candidate) =>
                 candidate.workspaceId === input.workspaceId &&
                 candidate.taskRunId === input.runId &&
@@ -134,16 +104,11 @@ export const createPmPersistentToolApprovalPolicy = (
       ),
 
     createPending: (input) =>
-      localStateStore.getSnapshot().pipe(
+      rows.approvals.list().pipe(
         Effect.mapError((error) =>
-          toPersistentApprovalStoreErrorFromLocalState("approvals.read", error),
+          toPersistentApprovalStoreErrorFromRowStore("approvals.read", error),
         ),
-        Effect.flatMap((snapshotOption) => {
-          const snapshot = Option.getOrNull(snapshotOption);
-          if (snapshot === null) {
-            return Effect.fail(missingSnapshotError("approvals.create"));
-          }
-
+        Effect.flatMap(() => {
           const pendingApproval = {
             id: `apr_${crypto.randomUUID()}`,
             workspaceId: input.workspaceId,
@@ -157,15 +122,9 @@ export const createPmPersistentToolApprovalPolicy = (
             resolvedAt: null,
           } as Approval;
 
-          const nextSnapshot: LocalStateSnapshot = {
-            ...snapshot,
-            generatedAt: Date.now(),
-            approvals: [...snapshot.approvals, pendingApproval],
-          };
-
-          return localStateStore.writeSnapshot(nextSnapshot).pipe(
+          return rows.approvals.upsert(pendingApproval).pipe(
             Effect.mapError((error) =>
-              toPersistentApprovalStoreErrorFromLocalState("approvals.write", error),
+              toPersistentApprovalStoreErrorFromRowStore("approvals.write", error),
             ),
             Effect.as(toPersistentApprovalRecord(pendingApproval)),
           );
@@ -181,48 +140,34 @@ export const createPmPersistentToolApprovalPolicy = (
 };
 
 export const createPmApprovalsService = (
-  localStateStore: LocalStateStore,
+  rows: ApprovalRows,
 ): ControlPlaneApprovalsServiceShape =>
   makeControlPlaneApprovalsService({
     listApprovals: (workspaceId) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const approvals = yield* rows.approvals.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("approvals.list", error),
+            toSourceStoreErrorFromRowStore("approvals.list", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return [];
-        }
-
-        const approvals = snapshot.approvals.filter(
+        const scopedApprovals = approvals.filter(
           (approval) => approval.workspaceId === workspaceId,
         );
 
-        return sortApprovals(approvals);
+        return sortApprovals(scopedApprovals);
       }),
 
     resolveApproval: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const approvals = yield* rows.approvals.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("approvals.resolve", error),
+            toSourceStoreErrorFromRowStore("approvals.resolve", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "approvals.resolve",
-            "Approval snapshot not found",
-            `workspace=${input.workspaceId} approval=${input.approvalId}`,
-          );
-        }
-
         const index = findApprovalIndex(
-          snapshot.approvals,
+          approvals,
           input.workspaceId,
           input.approvalId,
         );
@@ -235,7 +180,7 @@ export const createPmApprovalsService = (
           );
         }
 
-        const approval = snapshot.approvals[index];
+        const approval = approvals[index];
         if (approval.status !== "pending") {
           return yield* toSourceStoreError(
             "approvals.resolve",
@@ -251,11 +196,9 @@ export const createPmApprovalsService = (
           resolvedAt: Date.now(),
         };
 
-        const nextSnapshot = updateApproval(snapshot, index, resolvedApproval);
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
+        yield* rows.approvals.upsert(resolvedApproval).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("approvals.resolve_write", error),
+            toSourceStoreErrorFromRowStore("approvals.resolve_write", error),
           ),
         );
 

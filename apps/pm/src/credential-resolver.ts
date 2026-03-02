@@ -5,9 +5,27 @@ import {
   sourceIdFromSourceKey,
   type ResolveToolCredentials,
 } from "@executor-v2/engine";
-import { type LocalStateStore } from "@executor-v2/persistence-local";
+import { type RowStoreError } from "@executor-v2/persistence-ports";
+import {
+  type AuthConnection,
+  type AuthMaterial,
+  type OAuthState,
+  type SourceAuthBinding,
+  type Workspace,
+} from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type RowReader<A> = {
+  list: () => Effect.Effect<ReadonlyArray<A>, RowStoreError>;
+};
+
+type CredentialResolverRows = {
+  workspaces: RowReader<Workspace>;
+  sourceAuthBindings: RowReader<SourceAuthBinding>;
+  authConnections: RowReader<AuthConnection>;
+  authMaterials: RowReader<AuthMaterial>;
+  oauthStates: RowReader<OAuthState>;
+};
 
 const toCredentialResolverError = (
   operation: string,
@@ -151,7 +169,7 @@ const buildSecretHeaders = (
 };
 
 export const createPmResolveToolCredentials = (
-  localStateStore: LocalStateStore,
+  rows: CredentialResolverRows,
 ): ResolveToolCredentials =>
   makeCredentialResolver((input) =>
     Effect.gen(function* () {
@@ -162,22 +180,21 @@ export const createPmResolveToolCredentials = (
         };
       }
 
-      const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+      const [workspaces, bindings, connections, oauthStates, materials] = yield* Effect.all([
+        rows.workspaces.list(),
+        rows.sourceAuthBindings.list(),
+        rows.authConnections.list(),
+        rows.oauthStates.list(),
+        rows.authMaterials.list(),
+      ]).pipe(
         Effect.mapError((error) =>
           toCredentialResolverError(
-            "read_local_state_snapshot",
-            "Failed reading local snapshot while resolving credentials",
+            "read_credential_rows",
+            "Failed reading credential rows while resolving credentials",
             error.details ?? error.message,
           ),
         ),
       );
-
-      const snapshot = Option.getOrNull(snapshotOption);
-      if (snapshot === null) {
-        return {
-          headers: {},
-        };
-      }
 
       const sourceId = sourceIdFromSourceKey(context.sourceKey);
       if (!sourceId) {
@@ -186,12 +203,12 @@ export const createPmResolveToolCredentials = (
         };
       }
 
-      const workspace = snapshot.workspaces.find(
+      const workspace = workspaces.find(
         (item) => item.id === context.workspaceId,
       );
       const organizationId = context.organizationId ?? workspace?.organizationId ?? null;
 
-      const binding = snapshot.sourceAuthBindings
+      const binding = bindings
         .filter((candidate) => candidate.sourceId === sourceId)
         .map((candidate) => {
           let score = -1;
@@ -230,7 +247,7 @@ export const createPmResolveToolCredentials = (
         };
       }
 
-      const connection = snapshot.authConnections.find(
+      const connection = connections.find(
         (candidate) => candidate.id === binding.connectionId,
       );
       if (!connection || connection.status !== "active") {
@@ -244,7 +261,7 @@ export const createPmResolveToolCredentials = (
       );
 
       if (connection.strategy === "oauth2") {
-        const oauthState = snapshot.oauthStates.find(
+        const oauthState = oauthStates.find(
           (candidate) => candidate.connectionId === connection.id,
         );
 
@@ -258,7 +275,7 @@ export const createPmResolveToolCredentials = (
         };
       }
 
-      const material = snapshot.authMaterials.find(
+      const material = materials.find(
         (candidate) => candidate.connectionId === connection.id,
       );
 

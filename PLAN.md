@@ -11,7 +11,7 @@ Executor today is optimized for enterprise/team correctness (workspaces, org flo
 v2 changes the default:
 
 - First run is local and immediate (`npx executor <agent>` works fast).
-- No database dependency in local-lite mode.
+- No external database dependency in local-lite mode.
 - Cloud/self-host are upgrade targets, not prerequisites.
 - One architecture for local and remote via shared contracts and thin adapters.
 
@@ -105,7 +105,7 @@ Important boundary:
 ### Modes
 
 - local-lite: PM daemon + in-memory hot state + file durability
-- remote: Convex-backed target (cloud and self-host are deployment variants of same target)
+- remote: SQL-backed target (Postgres remote, SQLite local)
 
 ### Runtime targets
 
@@ -131,19 +131,19 @@ Important boundary:
 5. Runtime resumes and completes.
 6. Run/events persisted locally.
 
-### Cloud flow (Convex + Cloudflare worker loader)
+### Remote flow (SQL + Cloudflare worker loader)
 
-1. Request starts run in Convex.
-2. Convex dispatches run to Cloudflare loader.
-3. Worker `tools.*` call hits Convex runtime callback action (`handleToolCall`).
+1. Request starts run in control-plane API.
+2. Runtime dispatch executes through configured runtime adapter.
+3. Worker `tools.*` call hits runtime callback action (`handleToolCall`).
 4. Callback action invokes shared tool invocation pipeline:
    - resolve tool
    - policy check
    - approval gating
-   - credential resolution from Convex/vault
+   - credential resolution from SQL-backed state/secret stores
    - provider invoke
 5. Worker resumes and returns terminal status.
-6. Convex marks run terminal and emits events.
+6. Control plane marks run terminal and emits events.
 
 Serverless note:
 - There is no long-lived in-memory `onToolCall` loop in cloud.
@@ -281,12 +281,10 @@ v2/
     cli/
     pm/
     web/
-    convex/
   packages/
-    confect/
     schema/
     state-contracts/
-    state-local-file/
+    persistence-sql/
     domain/
     approvals/
     source-manager/
@@ -309,9 +307,9 @@ Planned follow-up split (after behavior stabilizes):
 ## 14) Dependency direction
 
 ```text
-confect -> schema -> state-contracts
+schema -> state-contracts
 
-state-contracts -> state-local-file
+state-contracts -> persistence-sql
 
 schema + state-contracts + oauth + secrets -> domain
 domain -> approvals/source-manager/engine
@@ -319,8 +317,8 @@ source-manager + schema -> control-plane
 approvals/source-manager/engine -> mcp-gateway
 domain/features -> sdk -> ai-sdk-adapter
 
-apps/pm      -> mcp-gateway + domain + state-local-file + control-plane
-apps/convex  -> mcp-gateway + domain + control-plane
+apps/pm      -> mcp-gateway + domain + persistence-sql + control-plane
+apps/web     -> management-api + persistence-sql + control-plane routes
 apps/cli/web -> sdk (and/or ai-sdk bridge)
 ```
 Rules:
@@ -355,11 +353,11 @@ Rules:
 
 - persisted pending/resume/deny flow
 - capability-aware UX fallbacks
-- callback-time credential resolver implementations (local + convex)
+- callback-time credential resolver implementations (local + remote SQL)
 
 ### Phase 4: remote parity
 
-- Convex adapter wiring for kernel and control
+- SQL adapter wiring for kernel and control
 - cloudflare loader integration through runtime dispatch adapter
 - parity/conformance suite across local and remote
 
@@ -395,10 +393,9 @@ Rules:
 
 Implemented in `v2` so far:
 - monorepo app/package skeleton
-- `confect` imported from quickhub
 - schema package scaffold with Effect models/event envelope
 - shared state contracts for source/tool artifacts
-- local file adapters for source/tool artifacts + snapshot/WAL state store
+- SQL adapters for source/tool artifacts + snapshot/event-log state store
 - source manager OpenAPI extraction + artifact refresh/reuse
 - provider registry contracts and routing in engine
 - OpenAPI provider invocation + in-memory provider path through registry
@@ -420,9 +417,8 @@ Still missing:
 ## 19) Immediate next steps
 
 1. Land shared `ToolInvocationService` contract in v2 and wire PM execute callback path through it.
-2. Add `CredentialResolver` interfaces and local/convex implementations; integrate at invocation-time only.
+2. Add `CredentialResolver` interfaces and local/remote implementations; integrate at invocation-time only.
 3. Implement control handlers for sources (`add/list/remove`) and route both host API and `tools.executor.*` through same code path.
-4. Implement cloudflare-worker-loader runtime dispatch adapter in v2 and wire Convex callback endpoints.
+4. Implement cloudflare-worker-loader runtime dispatch adapter in v2 and wire callback endpoints.
 5. Add run API split for async + blocking convenience (`submit` + `wait/watch`) without duplicating execution logic.
 6. Add conformance tests that run same scenarios across local and remote adapters.
-

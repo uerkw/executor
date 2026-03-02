@@ -1,19 +1,19 @@
 import { SourceStoreError } from "@executor-v2/persistence-ports";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   makeControlPlaneOrganizationsService,
   type ControlPlaneOrganizationsServiceShape,
 } from "@executor-v2/management-api";
 import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-  type LocalStateStoreError,
-} from "@executor-v2/persistence-local";
-import {
   type Organization,
   type OrganizationMembership,
 } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type OrganizationRows = Pick<
+  SqlControlPlanePersistence["rows"],
+  "organizations" | "organizationMemberships"
+>;
 
 const toSourceStoreError = (
   operation: string,
@@ -22,16 +22,16 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "snapshot.json",
+    backend: "sql",
+    location: "organizations",
     message,
     reason: null,
     details,
   });
 
-const toSourceStoreErrorFromLocalState = (
+const toSourceStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): SourceStoreError =>
   toSourceStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
@@ -49,83 +49,45 @@ const sortOrganizations = (
     return leftName.localeCompare(rightName);
   });
 
-const replaceOrganizationAt = (
-  snapshot: LocalStateSnapshot,
-  index: number,
-  organization: Organization,
-): LocalStateSnapshot => {
-  const next = [...snapshot.organizations];
-  next[index] = organization;
-
-  return {
-    ...snapshot,
-    generatedAt: Date.now(),
-    organizations: next,
-  };
-};
-
-const appendOrganization = (
-  snapshot: LocalStateSnapshot,
-  organization: Organization,
-): LocalStateSnapshot => ({
-  ...snapshot,
-  generatedAt: Date.now(),
-  organizations: [...snapshot.organizations, organization],
-});
-
-const appendOrganizationMembership = (
-  snapshot: LocalStateSnapshot,
-  membership: OrganizationMembership,
-): LocalStateSnapshot => ({
-  ...snapshot,
-  generatedAt: Date.now(),
-  organizationMemberships: [...snapshot.organizationMemberships, membership],
-});
-
 export const createPmOrganizationsService = (
-  localStateStore: LocalStateStore,
+  rows: OrganizationRows,
 ): ControlPlaneOrganizationsServiceShape =>
   makeControlPlaneOrganizationsService({
     listOrganizations: () =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const organizations = yield* rows.organizations.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("organizations.list", error),
+            toSourceStoreErrorFromRowStore("organizations.list", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return [];
-        }
-
-        return sortOrganizations(snapshot.organizations);
+        return sortOrganizations(organizations);
       }),
 
     upsertOrganization: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const organizations = yield* rows.organizations.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("organizations.upsert", error),
+            toSourceStoreErrorFromRowStore("organizations.upsert", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "organizations.upsert",
-            "Organization snapshot not found",
-            null,
-          );
-        }
+        const memberships = yield* rows.organizationMemberships.list().pipe(
+          Effect.mapError((error) =>
+            toSourceStoreErrorFromRowStore(
+              "organizations.memberships.list",
+              error,
+            ),
+          ),
+        );
 
         const now = Date.now();
         const existingIndex = input.payload.id
-          ? snapshot.organizations.findIndex((organization) => organization.id === input.payload.id)
-          : snapshot.organizations.findIndex(
+          ? organizations.findIndex((organization) => organization.id === input.payload.id)
+          : organizations.findIndex(
               (organization) => organization.slug === input.payload.slug,
             );
-        const existing = existingIndex >= 0 ? snapshot.organizations[existingIndex] : null;
+        const existing = existingIndex >= 0 ? organizations[existingIndex] : null;
 
         const nextOrganization: Organization = {
           id:
@@ -142,19 +104,21 @@ export const createPmOrganizationsService = (
           updatedAt: now,
         };
 
-        let nextSnapshot = existingIndex >= 0
-          ? replaceOrganizationAt(snapshot, existingIndex, nextOrganization)
-          : appendOrganization(snapshot, nextOrganization);
+        yield* rows.organizations.upsert(nextOrganization).pipe(
+          Effect.mapError((error) =>
+            toSourceStoreErrorFromRowStore("organizations.upsert_write", error),
+          ),
+        );
 
         if (existing === null && nextOrganization.createdByAccountId !== null) {
-          const existingMembership = nextSnapshot.organizationMemberships.find(
+          const existingMembership = memberships.find(
             (membership) =>
               membership.organizationId === nextOrganization.id
               && membership.accountId === nextOrganization.createdByAccountId,
           );
 
           if (!existingMembership) {
-            nextSnapshot = appendOrganizationMembership(nextSnapshot, {
+            const membership: OrganizationMembership = {
               id: `org_member_${crypto.randomUUID()}` as OrganizationMembership["id"],
               organizationId: nextOrganization.id,
               accountId: nextOrganization.createdByAccountId,
@@ -165,15 +129,18 @@ export const createPmOrganizationsService = (
               joinedAt: now,
               createdAt: now,
               updatedAt: now,
-            });
+            };
+
+            yield* rows.organizationMemberships.upsert(membership).pipe(
+              Effect.mapError((error) =>
+                toSourceStoreErrorFromRowStore(
+                  "organizations.membership_upsert_write",
+                  error,
+                ),
+              ),
+            );
           }
         }
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("organizations.upsert_write", error),
-          ),
-        );
 
         return nextOrganization;
       }),

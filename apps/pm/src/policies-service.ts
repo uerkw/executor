@@ -1,16 +1,13 @@
 import { SourceStoreError } from "@executor-v2/persistence-ports";
-import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-  type LocalStateStoreError,
-} from "@executor-v2/persistence-local";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   makeControlPlanePoliciesService,
   type ControlPlanePoliciesServiceShape,
 } from "@executor-v2/management-api";
 import { type Policy } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type PolicyRows = Pick<SqlControlPlanePersistence["rows"], "policies">;
 
 const toSourceStoreError = (
   operation: string,
@@ -19,16 +16,16 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "snapshot.json",
+    backend: "sql",
+    location: "policies",
     message,
     reason: null,
     details,
   });
 
-const toSourceStoreErrorFromLocalState = (
+const toSourceStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): SourceStoreError =>
   toSourceStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
@@ -43,109 +40,42 @@ const sortPolicies = (policies: ReadonlyArray<Policy>): Array<Policy> =>
     return leftPattern.localeCompare(rightPattern);
   });
 
-const replacePolicyAt = (
-  snapshot: LocalStateSnapshot,
-  index: number,
-  policy: Policy,
-): LocalStateSnapshot => {
-  const next = [...snapshot.policies];
-  next[index] = policy;
-
-  return {
-    ...snapshot,
-    generatedAt: Date.now(),
-    policies: next,
-  };
-};
-
-const appendPolicy = (
-  snapshot: LocalStateSnapshot,
-  policy: Policy,
-): LocalStateSnapshot => ({
-  ...snapshot,
-  generatedAt: Date.now(),
-  policies: [...snapshot.policies, policy],
-});
-
-const removePolicyForWorkspace = (
-  snapshot: LocalStateSnapshot,
-  workspaceId: Policy["workspaceId"],
-  policyId: string,
-): { snapshot: LocalStateSnapshot; removed: boolean } => {
-  const removeIndex = snapshot.policies.findIndex(
-    (policy) => policy.workspaceId === workspaceId && policy.id === policyId,
-  );
-
-  if (removeIndex < 0) {
-    return {
-      snapshot,
-      removed: false,
-    };
-  }
-
-  const next = [...snapshot.policies];
-  next.splice(removeIndex, 1);
-
-  return {
-    removed: true,
-    snapshot: {
-      ...snapshot,
-      generatedAt: Date.now(),
-      policies: next,
-    },
-  };
-};
-
 export const createPmPoliciesService = (
-  localStateStore: LocalStateStore,
+  rows: PolicyRows,
 ): ControlPlanePoliciesServiceShape =>
   makeControlPlanePoliciesService({
     listPolicies: (workspaceId) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const policies = yield* rows.policies.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("policies.list", error),
+            toSourceStoreErrorFromRowStore("policies.list", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return [];
-        }
-
         return sortPolicies(
-          snapshot.policies.filter((policy) => policy.workspaceId === workspaceId),
+          policies.filter((policy) => policy.workspaceId === workspaceId),
         );
       }),
 
     upsertPolicy: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const policies = yield* rows.policies.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("policies.upsert", error),
+            toSourceStoreErrorFromRowStore("policies.upsert", error),
           ),
         );
-
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "policies.upsert",
-            "Policy snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
 
         const now = Date.now();
         const requestedId = input.payload.id;
 
         const existingIndex = requestedId
-          ? snapshot.policies.findIndex(
+          ? policies.findIndex(
               (policy) =>
                 policy.workspaceId === input.workspaceId && policy.id === requestedId,
             )
           : -1;
 
-        const existing = existingIndex >= 0 ? snapshot.policies[existingIndex] : null;
+        const existing = existingIndex >= 0 ? policies[existingIndex] : null;
 
         const nextPolicy: Policy = {
           id: existing?.id ?? (requestedId ?? (`pol_${crypto.randomUUID()}` as Policy["id"])),
@@ -156,13 +86,9 @@ export const createPmPoliciesService = (
           updatedAt: now,
         };
 
-        const nextSnapshot = existingIndex >= 0
-          ? replacePolicyAt(snapshot, existingIndex, nextPolicy)
-          : appendPolicy(snapshot, nextPolicy);
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
+        yield* rows.policies.upsert(nextPolicy).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("policies.upsert_write", error),
+            toSourceStoreErrorFromRowStore("policies.upsert_write", error),
           ),
         );
 
@@ -171,38 +97,30 @@ export const createPmPoliciesService = (
 
     removePolicy: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const policies = yield* rows.policies.list().pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("policies.remove", error),
+            toSourceStoreErrorFromRowStore("policies.remove", error),
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return {
-            removed: false,
-          };
-        }
-
-        const next = removePolicyForWorkspace(
-          snapshot,
-          input.workspaceId,
-          input.policyId,
+        const existing = policies.find(
+          (policy) => policy.workspaceId === input.workspaceId && policy.id === input.policyId,
         );
-        if (!next.removed) {
+
+        if (!existing) {
           return {
             removed: false,
           };
         }
 
-        yield* localStateStore.writeSnapshot(next.snapshot).pipe(
+        const removed = yield* rows.policies.removeById(input.policyId).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("policies.remove_write", error),
+            toSourceStoreErrorFromRowStore("policies.remove_write", error),
           ),
         );
 
         return {
-          removed: true,
+          removed,
         };
       }),
   });

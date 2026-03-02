@@ -1,60 +1,34 @@
 import { describe, expect, it } from "@effect/vitest";
-import type {
-  LocalStateSnapshot,
-  LocalStateStore,
-} from "@executor-v2/persistence-local";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+import { type Approval } from "@executor-v2/schema";
 
 import {
   createPmApprovalsService,
   createPmPersistentToolApprovalPolicy,
 } from "./approvals-service";
 
-const createTestSnapshot = (): LocalStateSnapshot =>
-  ({
-    schemaVersion: 1,
-    generatedAt: Date.now(),
-    profile: {
-      id: "profile_local",
-      defaultWorkspaceId: "ws_local",
-      displayName: "Local",
-      runtimeMode: "local",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-    organizations: [],
-    organizationMemberships: [],
-    workspaces: [],
-    sources: [],
-    toolArtifacts: [],
-    authConnections: [],
-    sourceAuthBindings: [],
-    authMaterials: [],
-    oauthStates: [],
-    policies: [],
-    approvals: [],
-    taskRuns: [],
-    storageInstances: [],
-    syncStates: [],
-  }) as unknown as LocalStateSnapshot;
-
 describe("PM persistent approval policy", () => {
   it.effect("creates pending approval records and reuses resolved decisions", () =>
     Effect.gen(function* () {
-      let snapshot: LocalStateSnapshot = createTestSnapshot();
+      const approvals: Array<Approval> = [];
 
-      const localStateStore: LocalStateStore = {
-        getSnapshot: () => Effect.succeed(Option.some(snapshot)),
-        writeSnapshot: (nextSnapshot) =>
-          Effect.sync(() => {
-            snapshot = nextSnapshot;
-          }),
-        readEvents: () => Effect.succeed([]),
-        appendEvents: () => Effect.void,
+      const approvalRows = {
+        approvals: {
+          list: () => Effect.succeed(approvals),
+          upsert: (approval: Approval) =>
+            Effect.sync(() => {
+              const index = approvals.findIndex((item) => item.id === approval.id);
+              if (index >= 0) {
+                approvals[index] = approval;
+                return;
+              }
+
+              approvals.push(approval);
+            }),
+        },
       };
 
-      const policy = createPmPersistentToolApprovalPolicy(localStateStore, {
+      const policy = createPmPersistentToolApprovalPolicy(approvalRows, {
         requireApprovals: true,
         retryAfterMs: 250,
       });
@@ -80,9 +54,9 @@ describe("PM persistent approval policy", () => {
       if (first.kind === "pending") {
         expect(first.retryAfterMs).toBe(250);
       }
-      expect(snapshot.approvals).toHaveLength(1);
-      expect(snapshot.approvals[0]?.status).toBe("pending");
-      expect(snapshot.approvals[0]?.callId).toBe("call_approval_1");
+      expect(approvals).toHaveLength(1);
+      expect(approvals[0]?.status).toBe("pending");
+      expect(approvals[0]?.callId).toBe("call_approval_1");
 
       const second = yield* Effect.promise(() =>
         Promise.resolve(
@@ -98,10 +72,10 @@ describe("PM persistent approval policy", () => {
       );
 
       expect(second).toEqual(first);
-      expect(snapshot.approvals).toHaveLength(1);
+      expect(approvals).toHaveLength(1);
 
-      const approvalsService = createPmApprovalsService(localStateStore);
-      const createdApproval = snapshot.approvals[0];
+      const approvalsService = createPmApprovalsService(approvalRows);
+      const createdApproval = approvals[0];
       if (!createdApproval) {
         throw new Error("expected pending approval record");
       }

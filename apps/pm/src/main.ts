@@ -1,4 +1,3 @@
-import * as BunContext from "@effect/platform-bun/BunContext";
 import {
   ControlPlaneService,
   makeControlPlaneService,
@@ -22,16 +21,16 @@ import {
   parseExecuteToolExposureMode,
 } from "@executor-v2/engine";
 import {
-  makeLocalSourceStore,
-  makeLocalStateStore,
-  makeLocalToolArtifactStore,
-} from "@executor-v2/persistence-local";
+  makeSqlControlPlanePersistence,
+  type SqlControlPlanePersistence,
+} from "@executor-v2/persistence-sql";
 import { type RuntimeToolCallResult } from "@executor-v2/sdk";
 import { makeCloudflareWorkerLoaderRuntimeAdapter } from "@executor-v2/runtime-cloudflare-worker-loader";
 import { makeDenoSubprocessRuntimeAdapter } from "@executor-v2/runtime-deno-subprocess";
 import { makeLocalInProcessRuntimeAdapter } from "@executor-v2/runtime-local-inproc";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as path from "node:path";
 
 import { PmActorLive } from "./actor";
 import {
@@ -91,6 +90,75 @@ const defaultToolExposureMode = readConfiguredToolExposureMode(
   process.env.PM_TOOL_EXPOSURE_MODE,
 );
 
+const ensurePmBootstrap = (
+  persistence: SqlControlPlanePersistence,
+) =>
+  Effect.gen(function* () {
+    const now = Date.now();
+    const [organizations, memberships, workspaces, profileOption] = yield* Effect.all([
+      persistence.rows.organizations.list(),
+      persistence.rows.organizationMemberships.list(),
+      persistence.rows.workspaces.list(),
+      persistence.rows.profile.get(),
+    ]);
+
+    const organizationId = "org_local";
+    const accountId = "acct_local";
+
+    if (organizations.find((item) => item.id === organizationId) === undefined) {
+      yield* persistence.rows.organizations.upsert({
+        id: organizationId as any,
+        slug: organizationId,
+        name: "Local Organization",
+        status: "active",
+        createdByAccountId: accountId as any,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (
+      memberships.find(
+        (item) => item.organizationId === organizationId && item.accountId === accountId,
+      ) === undefined
+    ) {
+      yield* persistence.rows.organizationMemberships.upsert({
+        id: "org_member_local" as any,
+        organizationId: organizationId as any,
+        accountId: accountId as any,
+        role: "owner",
+        status: "active",
+        billable: false,
+        invitedByAccountId: null,
+        joinedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (workspaces.find((item) => item.id === workspaceId) === undefined) {
+      yield* persistence.rows.workspaces.upsert({
+        id: workspaceId as any,
+        organizationId: organizationId as any,
+        name: "Local Workspace",
+        createdByAccountId: accountId as any,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (profileOption._tag === "None") {
+      yield* persistence.rows.profile.upsert({
+        id: "profile_local" as any,
+        defaultWorkspaceId: workspaceId as any,
+        displayName: "Local",
+        runtimeMode: "local",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  });
+
 const pmRuntimeAdapters = [
   makeLocalInProcessRuntimeAdapter(),
   makeDenoSubprocessRuntimeAdapter(),
@@ -101,23 +169,20 @@ const runtimeAdapters = makeRuntimeAdapterRegistry(pmRuntimeAdapters);
 const defaultRuntimeKind =
   readConfiguredRuntimeKind(process.env.PM_RUNTIME_KIND) ?? pmRuntimeAdapters[0].kind;
 
-const sourceStore = await Effect.runPromise(
-  makeLocalSourceStore({
-    rootDir: pmStateRootDir,
-  }).pipe(Effect.provide(BunContext.layer)),
+const persistence: SqlControlPlanePersistence = await Effect.runPromise(
+  makeSqlControlPlanePersistence({
+    databaseUrl: process.env.PM_CONTROL_PLANE_DATABASE_URL,
+    sqlitePath:
+      process.env.PM_CONTROL_PLANE_SQLITE_PATH
+      ?? path.resolve(pmStateRootDir, "control-plane.sqlite"),
+    postgresApplicationName: "executor-v2-pm",
+  }),
 );
 
-const localStateStore = await Effect.runPromise(
-  makeLocalStateStore({
-    rootDir: pmStateRootDir,
-  }).pipe(Effect.provide(BunContext.layer)),
-);
+const sourceStore = persistence.sourceStore;
+const toolArtifactStore = persistence.toolArtifactStore;
 
-const toolArtifactStore = await Effect.runPromise(
-  makeLocalToolArtifactStore({
-    rootDir: pmStateRootDir,
-  }).pipe(Effect.provide(BunContext.layer)),
-);
+await Effect.runPromise(ensurePmBootstrap(persistence));
 
 const sourceCatalog = makeSourceCatalogService(sourceStore);
 const sourceManager = makeSourceManagerService(toolArtifactStore);
@@ -152,15 +217,15 @@ const sourcesService = {
     }),
 };
 
-const credentialsService = createPmCredentialsService(localStateStore);
-const policiesService = createPmPoliciesService(localStateStore);
-const organizationsService = createPmOrganizationsService(localStateStore);
-const workspacesService = createPmWorkspacesService(localStateStore);
+const credentialsService = createPmCredentialsService(persistence.rows);
+const policiesService = createPmPoliciesService(persistence.rows);
+const organizationsService = createPmOrganizationsService(persistence.rows);
+const workspacesService = createPmWorkspacesService(persistence.rows);
 const toolsService = createPmToolsService(sourceStore, toolArtifactStore);
-const storageService = createPmStorageService(localStateStore, {
+const storageService = createPmStorageService(persistence.rows, {
   stateRootDir: pmStateRootDir,
 });
-const approvalsService = createPmApprovalsService(localStateStore);
+const approvalsService = createPmApprovalsService(persistence.rows);
 const controlPlaneService = makeControlPlaneService({
   sources: sourcesService,
   credentials: credentialsService,
@@ -174,7 +239,7 @@ const controlPlaneService = makeControlPlaneService({
 
 const controlPlaneWebHandler = makeControlPlaneWebHandler(
   Layer.succeed(ControlPlaneService, controlPlaneService),
-  PmActorLive(localStateStore),
+  PmActorLive(persistence.rows),
 );
 
 const toolProviderRegistry = makeToolProviderRegistry([
@@ -182,7 +247,7 @@ const toolProviderRegistry = makeToolProviderRegistry([
   makeMcpToolProvider(),
   makeGraphqlToolProvider(),
 ]);
-const persistentApprovalPolicy = createPmPersistentToolApprovalPolicy(localStateStore, {
+const persistentApprovalPolicy = createPmPersistentToolApprovalPolicy(persistence.rows, {
   requireApprovals: requireToolApprovals,
 });
 const toolRegistry = createSourceToolRegistry({
@@ -228,6 +293,7 @@ const server = startPmHttpServer({
 const shutdown = async () => {
   server.stop();
   await controlPlaneWebHandler.dispose();
+  await persistence.close();
 };
 
 process.on("SIGINT", () => {

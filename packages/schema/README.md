@@ -7,4 +7,4 @@ Current scaffold includes:
 - shared enums and primitives (`src/enums.ts`, `src/common.ts`)
 - core model schemas in `src/models/*`
 - core event envelope schema in `src/models/event-envelope.ts`
-- local snapshot/WAL schemas live in `@executor-v2/persistence-local`
+- persistence port error/store contracts are consumed via `@executor-v2/persistence-ports`

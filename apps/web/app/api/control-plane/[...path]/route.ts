@@ -1,9 +1,17 @@
 import { withAuth } from "@workos-inc/authkit-nextjs";
 import type { NextRequest } from "next/server";
 
+import {
+  applyPrincipalHeaders,
+  createLocalPrincipal,
+  createWorkosPrincipal,
+  getControlPlaneRuntime,
+  provisionPrincipal,
+} from "../../../../lib/control-plane/server";
 import { isWorkosEnabled } from "../../../../lib/workos";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
@@ -11,81 +19,16 @@ type RouteContext = {
   }>;
 };
 
-const trim = (value: string | undefined): string | undefined => {
-  const candidate = value?.trim();
-  return candidate && candidate.length > 0 ? candidate : undefined;
-};
-
-const defaultControlPlaneUpstreamUrl = "http://127.0.0.1:8788";
-
-const controlPlaneUpstreamBaseUrl =
-  trim(process.env.CONTROL_PLANE_SERVER_BASE_URL)
-  ?? trim(process.env.CONTROL_PLANE_UPSTREAM_URL)
-  ?? trim(process.env.NEXT_PUBLIC_CONVEX_URL)
-  ?? trim(process.env.CONVEX_URL)
-  ?? defaultControlPlaneUpstreamUrl;
-
-const methodAllowsBody = (method: string): boolean =>
-  method !== "GET" && method !== "HEAD";
-
-const forwardableRequestHeaders = [
-  "accept",
-  "content-type",
-  "traceparent",
-  "b3",
-  "x-request-id",
-] as const;
-
 const isCsrfSafeMethod = (method: string): boolean =>
   method === "GET" || method === "HEAD" || method === "OPTIONS";
 
-const toAuthorizationHeader = (token: string): string =>
-  token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
-
-const buildUpstreamHeaders = (
+const rewriteControlPlaneRequest = (
   request: NextRequest,
-  accessToken: string,
-): Headers => {
-  const headers = new Headers();
-
-  headers.set("authorization", toAuthorizationHeader(accessToken));
-
-  for (const name of forwardableRequestHeaders) {
-    const value = request.headers.get(name);
-    if (value) {
-      headers.set(name, value);
-    }
-  }
-
-  headers.set("accept-encoding", "identity");
-
-  return headers;
-};
-
-const responseHeadersToStrip = [
-  "content-encoding",
-  "content-length",
-  "transfer-encoding",
-  "connection",
-  "keep-alive",
-] as const;
-
-const sanitizeUpstreamResponseHeaders = (headers: Headers): Headers => {
-  const sanitized = new Headers(headers);
-
-  for (const name of responseHeadersToStrip) {
-    sanitized.delete(name);
-  }
-
-  return sanitized;
-};
-
-const resolveUpstreamUrl = (
-  request: NextRequest,
-  pathSegments: ReadonlyArray<string>,
-): URL => {
-  const pathname = `/${pathSegments.join("/")}`;
-  return new URL(`${pathname}${request.nextUrl.search}`, controlPlaneUpstreamBaseUrl);
+  path: ReadonlyArray<string>,
+): Request => {
+  const rewrittenUrl = new URL(request.url);
+  rewrittenUrl.pathname = `/${path.join("/")}`;
+  return new Request(rewrittenUrl, request);
 };
 
 const handle = async (request: NextRequest, context: RouteContext): Promise<Response> => {
@@ -96,13 +39,6 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Resp
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (!isWorkosEnabled()) {
-    return Response.json(
-      { error: "WorkOS auth is not enabled" },
-      { status: 503 },
-    );
-  }
-
   if (!isCsrfSafeMethod(method)) {
     const origin = request.headers.get("origin");
     if (origin && origin !== request.nextUrl.origin) {
@@ -110,36 +46,49 @@ const handle = async (request: NextRequest, context: RouteContext): Promise<Resp
     }
   }
 
-  let accessToken: string | undefined;
-  try {
-    ({ accessToken } = await withAuth());
-  } catch {
-    return Response.json(
-      { error: "Authentication unavailable" },
-      { status: 503 },
-    );
+  const runtime = await getControlPlaneRuntime();
+  const controlPlaneRequest = rewriteControlPlaneRequest(request, path);
+
+  if (!isWorkosEnabled()) {
+    const principal = createLocalPrincipal();
+    await provisionPrincipal(runtime, principal);
+    return runtime.handleControlPlane(applyPrincipalHeaders(controlPlaneRequest, principal));
   }
 
-  if (!accessToken) {
+  let user:
+    | {
+        id: string;
+        email?: string | null;
+        firstName?: string | null;
+        lastName?: string | null;
+      }
+    | null
+    | undefined;
+
+  try {
+    ({ user } = await withAuth());
+  } catch {
+    return Response.json({ error: "Authentication unavailable" }, { status: 503 });
+  }
+
+  if (!user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = methodAllowsBody(method)
-    ? await request.arrayBuffer()
-    : undefined;
+  const displayName = [user.firstName, user.lastName]
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join(" ")
+    || null;
 
-  const upstreamResponse = await fetch(resolveUpstreamUrl(request, path), {
-    method,
-    headers: buildUpstreamHeaders(request, accessToken),
-    body,
-    redirect: "manual",
+  const principal = createWorkosPrincipal({
+    subject: user.id,
+    email: user.email ?? null,
+    displayName,
   });
 
-  return new Response(upstreamResponse.body, {
-    status: upstreamResponse.status,
-    statusText: upstreamResponse.statusText,
-    headers: sanitizeUpstreamResponseHeaders(upstreamResponse.headers),
-  });
+  await provisionPrincipal(runtime, principal);
+
+  return runtime.handleControlPlane(applyPrincipalHeaders(controlPlaneRequest, principal));
 };
 
 export const GET = handle;

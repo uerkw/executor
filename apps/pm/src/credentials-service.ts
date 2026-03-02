@@ -1,9 +1,5 @@
 import { SourceStoreError } from "@executor-v2/persistence-ports";
-import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-  type LocalStateStoreError,
-} from "@executor-v2/persistence-local";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   makeControlPlaneCredentialsService,
   type ControlPlaneCredentialsServiceShape,
@@ -17,10 +13,19 @@ import {
   type OrganizationId,
   type SourceAuthBinding,
   type SourceCredentialBinding,
+  type Workspace,
   type WorkspaceId,
 } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type CredentialRows = Pick<
+  SqlControlPlanePersistence["rows"],
+  | "workspaces"
+  | "authConnections"
+  | "sourceAuthBindings"
+  | "authMaterials"
+  | "oauthStates"
+>;
 
 const toSourceStoreError = (
   operation: string,
@@ -29,24 +34,24 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "snapshot.json",
+    backend: "sql",
+    location: "credentials",
     message,
     reason: null,
     details,
   });
 
-const toSourceStoreErrorFromLocalState = (
+const toSourceStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): SourceStoreError =>
   toSourceStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
 const resolveWorkspaceOrganizationId = (
-  snapshot: LocalStateSnapshot,
+  workspaces: ReadonlyArray<Workspace>,
   workspaceId: WorkspaceId,
 ): OrganizationId => {
-  const workspace = snapshot.workspaces.find((item) => item.id === workspaceId);
+  const workspace = workspaces.find((item) => item.id === workspaceId);
 
   if (!workspace) {
     throw new Error(`Workspace not found: ${workspaceId}`);
@@ -139,21 +144,6 @@ const sortCredentialBindings = (
     return leftKey.localeCompare(rightKey);
   });
 
-const upsertById = <A extends { id: string }>(
-  values: ReadonlyArray<A>,
-  nextValue: A,
-): Array<A> => {
-  const next = [...values];
-  const index = next.findIndex((value) => value.id === nextValue.id);
-  if (index >= 0) {
-    next[index] = nextValue;
-    return next;
-  }
-
-  next.push(nextValue);
-  return next;
-};
-
 const parseJsonObject = (value: string | null | undefined): Record<string, unknown> => {
   if (!value) {
     return {};
@@ -245,88 +235,33 @@ const buildOAuthRefreshConfigFromPayload = (
     ?? existing.clientInformationJson,
 });
 
-const removeCredentialBindingForWorkspace = (
-  snapshot: LocalStateSnapshot,
-  workspaceId: WorkspaceId,
-  credentialBindingId: string,
-): { snapshot: LocalStateSnapshot; removed: boolean } => {
-  const organizationId = resolveWorkspaceOrganizationId(snapshot, workspaceId);
-  const removeIndex = snapshot.sourceAuthBindings.findIndex(
-    (binding) =>
-      binding.id === credentialBindingId
-      && (
-        binding.workspaceId === workspaceId
-        || (binding.workspaceId === null && binding.organizationId === organizationId)
-      ),
-  );
-
-  if (removeIndex < 0) {
-    return {
-      snapshot,
-      removed: false,
-    };
-  }
-
-  const bindingToRemove = snapshot.sourceAuthBindings[removeIndex];
-  if (!bindingToRemove) {
-    return {
-      snapshot,
-      removed: false,
-    };
-  }
-
-  const nextBindings = [...snapshot.sourceAuthBindings];
-  nextBindings.splice(removeIndex, 1);
-
-  const hasRemainingBindings = nextBindings.some(
-    (binding) => binding.connectionId === bindingToRemove.connectionId,
-  );
-
-  return {
-    removed: true,
-    snapshot: {
-      ...snapshot,
-      generatedAt: Date.now(),
-      sourceAuthBindings: nextBindings,
-      authConnections: hasRemainingBindings
-        ? snapshot.authConnections
-        : snapshot.authConnections.filter(
-            (connection) => connection.id !== bindingToRemove.connectionId,
-          ),
-      authMaterials: hasRemainingBindings
-        ? snapshot.authMaterials
-        : snapshot.authMaterials.filter(
-            (material) => material.connectionId !== bindingToRemove.connectionId,
-          ),
-      oauthStates: hasRemainingBindings
-        ? snapshot.oauthStates
-        : snapshot.oauthStates.filter(
-            (state) => state.connectionId !== bindingToRemove.connectionId,
-          ),
-    },
-  };
-};
-
 export const createPmCredentialsService = (
-  localStateStore: LocalStateStore,
+  rows: CredentialRows,
 ): ControlPlaneCredentialsServiceShape =>
   makeControlPlaneCredentialsService({
     listCredentialBindings: (workspaceId) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("credentials.list", error),
+        const [bindings, connections, workspaces] = yield* Effect.all([
+          rows.sourceAuthBindings.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.bindings.list", error),
+            ),
           ),
-        );
+          rows.authConnections.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.connections.list", error),
+            ),
+          ),
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.workspaces.list", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return [];
-        }
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, workspaceId);
 
-        const organizationId = resolveWorkspaceOrganizationId(snapshot, workspaceId);
-
-        const scopedBindings = snapshot.sourceAuthBindings.filter(
+        const scopedBindings = bindings.filter(
           (binding) =>
             binding.workspaceId === workspaceId
             || (binding.workspaceId === null && binding.organizationId === organizationId),
@@ -335,7 +270,7 @@ export const createPmCredentialsService = (
         const compatBindings: Array<SourceCredentialBinding> = [];
 
         for (const binding of scopedBindings) {
-          const connection = snapshot.authConnections.find(
+          const connection = connections.find(
             (candidate) => candidate.id === binding.connectionId,
           );
 
@@ -351,20 +286,33 @@ export const createPmCredentialsService = (
 
     upsertCredentialBinding: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("credentials.upsert", error),
+        const [bindings, connections, materials, oauthStates, workspaces] = yield* Effect.all([
+          rows.sourceAuthBindings.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.bindings.list", error),
+            ),
           ),
-        );
-
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "credentials.upsert",
-            "Credential snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
+          rows.authConnections.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.connections.list", error),
+            ),
+          ),
+          rows.authMaterials.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.materials.list", error),
+            ),
+          ),
+          rows.oauthStates.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.oauth_states.list", error),
+            ),
+          ),
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.workspaces.list", error),
+            ),
+          ),
+        ]);
 
         if (input.payload.scopeType === "account" && input.payload.accountId === null) {
           return yield* toSourceStoreError(
@@ -388,10 +336,10 @@ export const createPmCredentialsService = (
         const requestedBindingId = requestedId as SourceAuthBinding["id"] | undefined;
 
         const existingBinding = requestedBindingId
-          ? snapshot.sourceAuthBindings.find((binding) => binding.id === requestedBindingId) ?? null
+          ? bindings.find((binding) => binding.id === requestedBindingId) ?? null
           : null;
 
-        const organizationId = resolveWorkspaceOrganizationId(snapshot, input.workspaceId);
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
 
         const scopeWorkspaceId =
           input.payload.scopeType === "workspace" ? input.workspaceId : null;
@@ -410,7 +358,7 @@ export const createPmCredentialsService = (
           ?? (`conn_${crypto.randomUUID()}` as AuthConnection["id"])
         ) as AuthConnection["id"];
 
-        const existingConnection = snapshot.authConnections.find(
+        const existingConnection = connections.find(
           (connection) => connection.id === requestedConnectionId,
         ) ?? null;
 
@@ -465,15 +413,17 @@ export const createPmCredentialsService = (
           updatedAt: now,
         };
 
-        let nextSnapshot: LocalStateSnapshot = {
-          ...snapshot,
-          generatedAt: now,
-          authConnections: upsertById(snapshot.authConnections, nextConnection),
-          sourceAuthBindings: upsertById(snapshot.sourceAuthBindings, nextBinding),
-        };
+        yield* Effect.all([
+          rows.authConnections.upsert(nextConnection),
+          rows.sourceAuthBindings.upsert(nextBinding),
+        ]).pipe(
+          Effect.mapError((error) =>
+            toSourceStoreErrorFromRowStore("credentials.upsert_rows", error),
+          ),
+        );
 
         if (nextConnection.strategy === "oauth2") {
-          const existingOAuth = snapshot.oauthStates.find(
+          const existingOAuth = oauthStates.find(
             (state) => state.connectionId === requestedConnectionId,
           ) ?? null;
           const refreshConfig = buildOAuthRefreshConfigFromPayload(
@@ -518,15 +468,16 @@ export const createPmCredentialsService = (
             updatedAt: now,
           };
 
-          nextSnapshot = {
-            ...nextSnapshot,
-            authMaterials: nextSnapshot.authMaterials.filter(
-              (material) => material.connectionId !== requestedConnectionId,
+          yield* Effect.all([
+            rows.oauthStates.upsert(oauthState),
+            rows.authMaterials.removeByConnectionId(requestedConnectionId),
+          ]).pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.upsert_oauth", error),
             ),
-            oauthStates: upsertById(nextSnapshot.oauthStates, oauthState),
-          };
+          );
         } else {
-          const existingMaterial = snapshot.authMaterials.find(
+          const existingMaterial = materials.find(
             (material) => material.connectionId === requestedConnectionId,
           ) ?? null;
 
@@ -541,56 +492,80 @@ export const createPmCredentialsService = (
             updatedAt: now,
           };
 
-          nextSnapshot = {
-            ...nextSnapshot,
-            authMaterials: upsertById(nextSnapshot.authMaterials, material),
-            oauthStates: nextSnapshot.oauthStates.filter(
-              (state) => state.connectionId !== requestedConnectionId,
+          yield* Effect.all([
+            rows.authMaterials.upsert(material),
+            rows.oauthStates.removeByConnectionId(requestedConnectionId),
+          ]).pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.upsert_secret", error),
             ),
-          };
+          );
         }
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("credentials.upsert_write", error),
-          ),
-        );
 
         return toCompatSourceCredentialBinding(nextBinding, nextConnection);
       }),
 
     removeCredentialBinding: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("credentials.remove", error),
+        const [bindings, workspaces] = yield* Effect.all([
+          rows.sourceAuthBindings.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.bindings.list", error),
+            ),
           ),
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.workspaces.list", error),
+            ),
+          ),
+        ]);
+
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const binding = bindings.find(
+          (item) =>
+            item.id === input.credentialBindingId
+            && (
+              item.workspaceId === input.workspaceId
+              || (item.workspaceId === null && item.organizationId === organizationId)
+            ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
+        if (!binding) {
           return {
             removed: false,
           };
         }
 
-        const next = removeCredentialBindingForWorkspace(
-          snapshot,
-          input.workspaceId,
-          input.credentialBindingId,
-        );
+        const removed = yield* rows.sourceAuthBindings
+          .removeById(binding.id)
+          .pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.remove_binding", error),
+            ),
+          );
 
-        if (!next.removed) {
+        if (!removed) {
           return {
             removed: false,
           };
         }
 
-        yield* localStateStore.writeSnapshot(next.snapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("credentials.remove_write", error),
-          ),
+        const hasRemainingBindings = bindings.some(
+          (candidate) =>
+            candidate.id !== binding.id && candidate.connectionId === binding.connectionId,
         );
+
+        if (!hasRemainingBindings) {
+          yield* Effect.all([
+            rows.authConnections.removeById(binding.connectionId),
+            rows.authMaterials.removeByConnectionId(binding.connectionId),
+            rows.oauthStates.removeByConnectionId(binding.connectionId),
+          ]).pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("credentials.remove_connection_data", error),
+            ),
+          );
+        }
 
         return {
           removed: true,

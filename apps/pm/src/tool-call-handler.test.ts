@@ -4,21 +4,31 @@ import {
 } from "@executor-v2/engine";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import { createPmResolveToolCredentials } from "./credential-resolver";
 
-const emptyLocalStateStore = {
-  getSnapshot: () => Effect.succeed(Option.none()),
-  writeSnapshot: () => Effect.void,
-  readEvents: () => Effect.succeed([]),
-  appendEvents: () => Effect.void,
+const emptyCredentialRows = {
+  workspaces: {
+    list: () => Effect.succeed([]),
+  },
+  sourceAuthBindings: {
+    list: () => Effect.succeed([]),
+  },
+  authConnections: {
+    list: () => Effect.succeed([]),
+  },
+  authMaterials: {
+    list: () => Effect.succeed([]),
+  },
+  oauthStates: {
+    list: () => Effect.succeed([]),
+  },
 };
 
 describe("PM runtime tool-call handling", () => {
   it.effect("returns failed callback result for unimplemented invoker", () =>
     Effect.gen(function* () {
-      const resolveCredentials = createPmResolveToolCredentials(emptyLocalStateStore);
+      const resolveCredentials = createPmResolveToolCredentials(emptyCredentialRows);
       const invokeRuntimeTool = createUnimplementedRuntimeToolInvoker("pm");
       const handleToolCall = createRuntimeToolCallHandler({
         resolveCredentials,

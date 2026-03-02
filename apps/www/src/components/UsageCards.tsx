@@ -27,7 +27,7 @@ executor doctor     # health check
 # Or wire up Claude Code directly:
 executor claude --no-bash`,
     description:
-      "Fully self-hosted. Run locally for development, connect to your own Convex backend. No cloud dependency required.",
+      "Fully self-hosted. Run locally with SQLite for development, or connect to your own Postgres backend. No cloud dependency required.",
   },
   {
     title: "Use with your team",

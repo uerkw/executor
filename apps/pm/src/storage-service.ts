@@ -3,18 +3,14 @@ import {
   type ControlPlaneStorageServiceShape,
 } from "@executor-v2/management-api";
 import { SourceStoreError } from "@executor-v2/persistence-ports";
-import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-  type LocalStateStoreError,
-} from "@executor-v2/persistence-local";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   type OrganizationId,
   type StorageInstance,
+  type Workspace,
   type WorkspaceId,
 } from "@executor-v2/schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import {
   mkdir,
   readdir,
@@ -24,6 +20,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import * as path from "node:path";
+
+type StorageRows = Pick<
+  SqlControlPlanePersistence["rows"],
+  "workspaces" | "storageInstances"
+>;
 
 const DEFAULT_EPHEMERAL_TTL_HOURS = 24;
 const DEFAULT_KV_LIMIT = 100;
@@ -68,16 +69,16 @@ const toSourceStoreError = (
 ): SourceStoreError =>
   new SourceStoreError({
     operation,
-    backend: "local-file",
-    location: "snapshot.json",
+    backend: "sql",
+    location: "storage",
     message,
     reason: null,
     details,
   });
 
-const toSourceStoreErrorFromLocalState = (
+const toSourceStoreErrorFromRowStore = (
   operation: string,
-  error: LocalStateStoreError,
+  error: { message: string; details: string | null; reason: string | null },
 ): SourceStoreError =>
   toSourceStoreError(operation, error.message, error.details ?? error.reason ?? null);
 
@@ -93,10 +94,10 @@ const toSourceStoreErrorFromCause = (
   );
 
 const resolveWorkspaceOrganizationId = (
-  snapshot: LocalStateSnapshot,
+  workspaces: ReadonlyArray<Workspace>,
   workspaceId: WorkspaceId,
 ): OrganizationId => {
-  const workspace = snapshot.workspaces.find((item) => item.id === workspaceId);
+  const workspace = workspaces.find((item) => item.id === workspaceId);
 
   if (!workspace) {
     throw new Error(`Workspace not found: ${workspaceId}`);
@@ -123,70 +124,6 @@ const sortStorageInstances = (
 
     return left.id.localeCompare(right.id);
   });
-
-const replaceStorageInstanceAt = (
-  snapshot: LocalStateSnapshot,
-  index: number,
-  storageInstance: StorageInstance,
-): LocalStateSnapshot => {
-  const next = [...snapshot.storageInstances];
-  next[index] = storageInstance;
-
-  return {
-    ...snapshot,
-    generatedAt: Date.now(),
-    storageInstances: next,
-  };
-};
-
-const appendStorageInstance = (
-  snapshot: LocalStateSnapshot,
-  storageInstance: StorageInstance,
-): LocalStateSnapshot => ({
-  ...snapshot,
-  generatedAt: Date.now(),
-  storageInstances: [...snapshot.storageInstances, storageInstance],
-});
-
-const removeStorageInstanceById = (
-  snapshot: LocalStateSnapshot,
-  input: {
-    workspaceId: WorkspaceId;
-    organizationId: OrganizationId;
-    storageInstanceId: StorageInstance["id"];
-  },
-): { snapshot: LocalStateSnapshot; removed: boolean } => {
-  let removed = false;
-
-  const next = snapshot.storageInstances.filter((instance) => {
-    const matches =
-      instance.id === input.storageInstanceId
-      && canAccessStorageInstance(instance, input.workspaceId, input.organizationId);
-
-    if (matches) {
-      removed = true;
-      return false;
-    }
-
-    return true;
-  });
-
-  if (!removed) {
-    return {
-      snapshot,
-      removed: false,
-    };
-  }
-
-  return {
-    removed: true,
-    snapshot: {
-      ...snapshot,
-      generatedAt: Date.now(),
-      storageInstances: next,
-    },
-  };
-};
 
 const storageInstanceRootPath = (stateRootDir: string, storageInstanceId: string): string =>
   path.resolve(stateRootDir, STORAGE_ROOT_DIRECTORY, storageInstanceId);
@@ -292,60 +229,49 @@ const readKvStore = async (
 };
 
 const findStorageInstance = (
-  snapshot: LocalStateSnapshot,
+  storageInstances: ReadonlyArray<StorageInstance>,
+  organizationId: OrganizationId,
   input: {
     workspaceId: WorkspaceId;
     storageInstanceId: StorageInstance["id"];
   },
 ): {
   storageInstance: StorageInstance;
-  storageInstanceIndex: number;
 } | null => {
-  const organizationId = resolveWorkspaceOrganizationId(snapshot, input.workspaceId);
-  const storageInstanceIndex = snapshot.storageInstances.findIndex((instance) =>
+  const storageInstance = storageInstances.find((instance) =>
     instance.id === input.storageInstanceId
     && canAccessStorageInstance(instance, input.workspaceId, organizationId)
   );
 
-  if (storageInstanceIndex < 0) {
-    return null;
-  }
-
-  const storageInstance = snapshot.storageInstances[storageInstanceIndex];
   if (!storageInstance) {
     return null;
   }
 
   return {
     storageInstance,
-    storageInstanceIndex,
   };
 };
 
 const touchStorageInstance = (
-  snapshot: LocalStateSnapshot,
-  storageInstanceIndex: number,
-): {
-  snapshot: LocalStateSnapshot;
-  storageInstance: StorageInstance;
-} => {
-  const existing = snapshot.storageInstances[storageInstanceIndex];
+  rows: StorageRows,
+  existing: StorageInstance,
+  operation: string,
+): Effect.Effect<StorageInstance, SourceStoreError> => {
   const now = Date.now();
-
-  const touchedStorageInstance: StorageInstance = {
+  const next: StorageInstance = {
     ...existing,
     updatedAt: now,
     lastSeenAt: now,
   };
 
-  return {
-    storageInstance: touchedStorageInstance,
-    snapshot: replaceStorageInstanceAt(snapshot, storageInstanceIndex, touchedStorageInstance),
-  };
+  return rows.storageInstances.upsert(next).pipe(
+    Effect.mapError((error) => toSourceStoreErrorFromRowStore(operation, error)),
+    Effect.as(next),
+  );
 };
 
 export const createPmStorageService = (
-  localStateStore: LocalStateStore,
+  rows: StorageRows,
   options: {
     stateRootDir: string;
   },
@@ -353,21 +279,23 @@ export const createPmStorageService = (
   makeControlPlaneStorageService({
     listStorageInstances: (workspaceId) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.list", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_instances.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return [];
-        }
-
-        const organizationId = resolveWorkspaceOrganizationId(snapshot, workspaceId);
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, workspaceId);
 
         return sortStorageInstances(
-          snapshot.storageInstances.filter((instance) =>
+          storageInstances.filter((instance) =>
             canAccessStorageInstance(instance, workspaceId, organizationId)
           ),
         );
@@ -375,21 +303,6 @@ export const createPmStorageService = (
 
     openStorageInstance: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.open", error),
-          ),
-        );
-
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.open",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
         if (input.payload.scopeType === "account" && input.payload.accountId === undefined) {
           return yield* toSourceStoreError(
             "storage.open",
@@ -398,8 +311,14 @@ export const createPmStorageService = (
           );
         }
 
+        const workspaces = yield* rows.workspaces.list().pipe(
+          Effect.mapError((error) =>
+            toSourceStoreErrorFromRowStore("storage.open.workspaces", error),
+          ),
+        );
+
         const now = Date.now();
-        const organizationId = resolveWorkspaceOrganizationId(snapshot, input.workspaceId);
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
         const storageInstanceId =
           `storage_${crypto.randomUUID()}` as StorageInstance["id"];
         const ttlHours =
@@ -450,11 +369,9 @@ export const createPmStorageService = (
               : null,
         };
 
-        const nextSnapshot = appendStorageInstance(snapshot, nextStorageInstance);
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
+        yield* rows.storageInstances.upsert(nextStorageInstance).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.open_write", error),
+            toSourceStoreErrorFromRowStore("storage.open_write", error),
           ),
         );
 
@@ -463,22 +380,21 @@ export const createPmStorageService = (
 
     closeStorageInstance: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.close", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.close.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.close.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.close",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
-        const found = findStorageInstance(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
           storageInstanceId: input.storageInstanceId,
         });
@@ -501,15 +417,9 @@ export const createPmStorageService = (
           closedAt: found.storageInstance.closedAt ?? now,
         };
 
-        const nextSnapshot = replaceStorageInstanceAt(
-          snapshot,
-          found.storageInstanceIndex,
-          nextStorageInstance,
-        );
-
-        yield* localStateStore.writeSnapshot(nextSnapshot).pipe(
+        yield* rows.storageInstances.upsert(nextStorageInstance).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.close_write", error),
+            toSourceStoreErrorFromRowStore("storage.close_write", error),
           ),
         );
 
@@ -518,28 +428,26 @@ export const createPmStorageService = (
 
     removeStorageInstance: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.remove", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.remove.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.remove.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return {
-            removed: false,
-          };
-        }
-
-        const organizationId = resolveWorkspaceOrganizationId(snapshot, input.workspaceId);
-
-        const next = removeStorageInstanceById(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
-          organizationId,
           storageInstanceId: input.storageInstanceId,
         });
 
-        if (!next.removed) {
+        if (found === null) {
           return {
             removed: false,
           };
@@ -547,13 +455,10 @@ export const createPmStorageService = (
 
         yield* Effect.tryPromise({
           try: () =>
-            rm(
-              storageInstanceRootPath(options.stateRootDir, input.storageInstanceId),
-              {
-                recursive: true,
-                force: true,
-              },
-            ),
+            rm(storageInstanceRootPath(options.stateRootDir, input.storageInstanceId), {
+              recursive: true,
+              force: true,
+            }),
           catch: (cause) =>
             toSourceStoreErrorFromCause(
               "storage.remove_files",
@@ -562,35 +467,34 @@ export const createPmStorageService = (
             ),
         });
 
-        yield* localStateStore.writeSnapshot(next.snapshot).pipe(
+        const removed = yield* rows.storageInstances.removeById(input.storageInstanceId).pipe(
           Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.remove_write", error),
+            toSourceStoreErrorFromRowStore("storage.remove_write", error),
           ),
         );
 
         return {
-          removed: true,
+          removed,
         };
       }),
 
     listStorageDirectory: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.listDirectory", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_directory.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_directory.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.listDirectory",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
-        const found = findStorageInstance(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
           storageInstanceId: input.storageInstanceId,
         });
@@ -660,15 +564,10 @@ export const createPmStorageService = (
             ),
         });
 
-        const touched = touchStorageInstance(snapshot, found.storageInstanceIndex);
-
-        yield* localStateStore.writeSnapshot(touched.snapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState(
-              "storage.listDirectory_touch",
-              error,
-            ),
-          ),
+        yield* touchStorageInstance(
+          rows,
+          found.storageInstance,
+          "storage.listDirectory_touch",
         );
 
         return result;
@@ -676,22 +575,21 @@ export const createPmStorageService = (
 
     readStorageFile: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.readFile", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.read_file.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.read_file.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.readFile",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
-        const found = findStorageInstance(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
           storageInstanceId: input.storageInstanceId,
         });
@@ -741,35 +639,28 @@ export const createPmStorageService = (
             ),
         });
 
-        const touched = touchStorageInstance(snapshot, found.storageInstanceIndex);
-
-        yield* localStateStore.writeSnapshot(touched.snapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.readFile_touch", error),
-          ),
-        );
+        yield* touchStorageInstance(rows, found.storageInstance, "storage.readFile_touch");
 
         return result;
       }),
 
     listStorageKv: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.listKv", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_kv.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.list_kv.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.listKv",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
-        const found = findStorageInstance(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
           storageInstanceId: input.storageInstanceId,
         });
@@ -815,35 +706,28 @@ export const createPmStorageService = (
             ),
         });
 
-        const touched = touchStorageInstance(snapshot, found.storageInstanceIndex);
-
-        yield* localStateStore.writeSnapshot(touched.snapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.listKv_touch", error),
-          ),
-        );
+        yield* touchStorageInstance(rows, found.storageInstance, "storage.listKv_touch");
 
         return result;
       }),
 
     queryStorageSql: (input) =>
       Effect.gen(function* () {
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.querySql", error),
+        const [storageInstances, workspaces] = yield* Effect.all([
+          rows.storageInstances.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.query_sql.instances", error),
+            ),
           ),
-        );
+          rows.workspaces.list().pipe(
+            Effect.mapError((error) =>
+              toSourceStoreErrorFromRowStore("storage.query_sql.workspaces", error),
+            ),
+          ),
+        ]);
 
-        const snapshot = Option.getOrNull(snapshotOption);
-        if (snapshot === null) {
-          return yield* toSourceStoreError(
-            "storage.querySql",
-            "Storage snapshot not found",
-            `workspace=${input.workspaceId}`,
-          );
-        }
-
-        const found = findStorageInstance(snapshot, {
+        const organizationId = resolveWorkspaceOrganizationId(workspaces, input.workspaceId);
+        const found = findStorageInstance(storageInstances, organizationId, {
           workspaceId: input.workspaceId,
           storageInstanceId: input.storageInstanceId,
         });
@@ -894,16 +778,16 @@ export const createPmStorageService = (
               try {
                 const statement = db.query(sqlText);
                 const rawRows = statement.all() as Array<Record<string, unknown>>;
-                const rows = rawRows.slice(0, maxRows);
+                const rowsLimited = rawRows.slice(0, maxRows);
                 const columns =
-                  rows.length > 0
-                    ? Array.from(new Set(rows.flatMap((row) => Object.keys(row))))
+                  rowsLimited.length > 0
+                    ? Array.from(new Set(rowsLimited.flatMap((row) => Object.keys(row))))
                     : [];
 
                 return {
-                  rows,
+                  rows: rowsLimited,
                   columns,
-                  rowCount: rows.length,
+                  rowCount: rowsLimited.length,
                 };
               } catch {
                 db.run(sqlText);
@@ -926,13 +810,7 @@ export const createPmStorageService = (
             ),
         });
 
-        const touched = touchStorageInstance(snapshot, found.storageInstanceIndex);
-
-        yield* localStateStore.writeSnapshot(touched.snapshot).pipe(
-          Effect.mapError((error) =>
-            toSourceStoreErrorFromLocalState("storage.querySql_touch", error),
-          ),
-        );
+        yield* touchStorageInstance(rows, found.storageInstance, "storage.querySql_touch");
 
         return result;
       }),

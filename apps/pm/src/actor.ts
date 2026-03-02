@@ -8,17 +8,19 @@ import {
   makeActor,
   makeAllowAllActor,
 } from "@executor-v2/domain";
-import {
-  type LocalStateSnapshot,
-  type LocalStateStore,
-} from "@executor-v2/persistence-local";
+import { type SqlControlPlanePersistence } from "@executor-v2/persistence-sql";
 import {
   type OrganizationMembership,
+  type Workspace,
   type WorkspaceMembership,
 } from "@executor-v2/schema";
 import * as PlatformHeaders from "@effect/platform/Headers";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
+
+type ActorRows = Pick<
+  SqlControlPlanePersistence["rows"],
+  "organizationMemberships" | "workspaces"
+>;
 
 const isTruthy = (value: string | undefined): boolean => {
   const normalized = value?.trim().toLowerCase();
@@ -36,19 +38,19 @@ const localAdminFallbackEnabled = (() => {
 })();
 
 const organizationMembershipsForAccount = (
-  snapshot: LocalStateSnapshot,
+  memberships: ReadonlyArray<OrganizationMembership>,
   accountId: OrganizationMembership["accountId"],
 ): ReadonlyArray<OrganizationMembership> =>
-  snapshot.organizationMemberships.filter(
+  memberships.filter(
     (membership) => membership.accountId === accountId,
   );
 
 const workspaceMembershipsForAccount = (
-  snapshot: LocalStateSnapshot,
+  workspaces: ReadonlyArray<Workspace>,
   accountId: OrganizationMembership["accountId"],
   organizationMemberships: ReadonlyArray<OrganizationMembership>,
 ): ReadonlyArray<WorkspaceMembership> =>
-  snapshot.workspaces.flatMap((workspace) =>
+  workspaces.flatMap((workspace) =>
     deriveWorkspaceMembershipsForPrincipal({
       principalAccountId: accountId,
       workspaceId: workspace.id,
@@ -58,13 +60,16 @@ const workspaceMembershipsForAccount = (
   );
 
 const resolveActorFromSnapshot = (
-  localStateStore: LocalStateStore,
+  rows: ActorRows,
   headers: PlatformHeaders.Headers,
 ) =>
   Effect.gen(function* () {
     const principal = yield* requirePrincipalFromHeaders(headers);
 
-    const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+    const [memberships, workspaces] = yield* Effect.all([
+      rows.organizationMemberships.list(),
+      rows.workspaces.list(),
+    ]).pipe(
       Effect.mapError(
         (error) =>
           new ActorUnauthenticatedError({
@@ -73,20 +78,19 @@ const resolveActorFromSnapshot = (
       ),
     );
 
-    const snapshot = Option.getOrNull(snapshotOption);
-
-    if (snapshot === null && localAdminFallbackEnabled) {
+    if (memberships.length === 0 && workspaces.length === 0 && localAdminFallbackEnabled) {
       return makeAllowAllActor(principal);
     }
 
-    const organizationMemberships =
-      snapshot === null
-        ? []
-        : organizationMembershipsForAccount(snapshot, principal.accountId);
-    const workspaceMemberships =
-      snapshot === null
-        ? []
-        : workspaceMembershipsForAccount(snapshot, principal.accountId, organizationMemberships);
+    const organizationMemberships = organizationMembershipsForAccount(
+      memberships,
+      principal.accountId,
+    );
+    const workspaceMemberships = workspaceMembershipsForAccount(
+      workspaces,
+      principal.accountId,
+      organizationMemberships,
+    );
 
     return yield* makeActor({
       principal,
@@ -95,14 +99,17 @@ const resolveActorFromSnapshot = (
     });
   });
 
-export const PmActorLive = (localStateStore: LocalStateStore) =>
+export const PmActorLive = (rows: ActorRows) =>
   ControlPlaneActorResolverLive({
-    resolveActor: (input) => resolveActorFromSnapshot(localStateStore, input.headers),
+    resolveActor: (input) => resolveActorFromSnapshot(rows, input.headers),
     resolveWorkspaceActor: (input) =>
       Effect.gen(function* () {
         const principal = yield* requirePrincipalFromHeaders(input.headers);
 
-        const snapshotOption = yield* localStateStore.getSnapshot().pipe(
+        const [memberships, workspaces] = yield* Effect.all([
+          rows.organizationMemberships.list(),
+          rows.workspaces.list(),
+        ]).pipe(
           Effect.mapError(
             (error) =>
               new ActorUnauthenticatedError({
@@ -111,21 +118,16 @@ export const PmActorLive = (localStateStore: LocalStateStore) =>
           ),
         );
 
-        const snapshot = Option.getOrNull(snapshotOption);
-
-        if (snapshot === null && localAdminFallbackEnabled) {
+        if (memberships.length === 0 && workspaces.length === 0 && localAdminFallbackEnabled) {
           return makeAllowAllActor(principal);
         }
 
-        const organizationMemberships =
-          snapshot === null
-            ? []
-            : organizationMembershipsForAccount(snapshot, principal.accountId);
+        const organizationMemberships = organizationMembershipsForAccount(
+          memberships,
+          principal.accountId,
+        );
 
-        const workspace =
-          snapshot === null
-            ? null
-            : snapshot.workspaces.find((item) => item.id === input.workspaceId) ?? null;
+        const workspace = workspaces.find((item) => item.id === input.workspaceId) ?? null;
 
         const workspaceMemberships = deriveWorkspaceMembershipsForPrincipal({
           principalAccountId: principal.accountId,

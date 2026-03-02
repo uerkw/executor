@@ -16,7 +16,8 @@
       }
     ],
     "types": [
-      "node"
+      "node",
+      "bun"
     ],
     "allowJs": true,
     "esModuleInterop": true,
