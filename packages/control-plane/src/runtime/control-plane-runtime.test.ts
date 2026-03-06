@@ -55,8 +55,11 @@ describe("control-plane-runtime", () => {
             payload: {
               name: "Github",
               kind: "openapi",
-              endpoint: "https://api.github.com/openapi.json",
-              configJson: "{}",
+              endpoint: "https://api.github.com",
+              specUrl: "https://api.github.com/openapi.json",
+              auth: {
+                kind: "none",
+              },
             },
           }),
       );

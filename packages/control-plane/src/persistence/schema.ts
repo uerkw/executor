@@ -16,6 +16,7 @@ export const tableNames = {
   organizationMemberships: "organization_memberships",
   workspaces: "workspaces",
   sources: "sources",
+  sourceCredentialBindings: "source_credential_bindings",
   policies: "policies",
   localInstallations: "local_installations",
   executions: "executions",
@@ -118,7 +119,16 @@ export const sourcesTable = pgTable(
     endpoint: text("endpoint").notNull(),
     status: text("status").notNull(),
     enabled: boolean("enabled").notNull(),
-    configJson: text("config_json").notNull(),
+    namespace: text("namespace"),
+    transport: text("transport"),
+    queryParamsJson: text("query_params_json"),
+    headersJson: text("headers_json"),
+    specUrl: text("spec_url"),
+    defaultHeadersJson: text("default_headers_json"),
+    authKind: text("auth_kind").notNull(),
+    authHeaderName: text("auth_header_name"),
+    authPrefix: text("auth_prefix"),
+    configJson: text("config_json").notNull().default("{}"),
     sourceHash: text("source_hash"),
     lastError: text("last_error"),
     createdAt: bigint("created_at", { mode: "number" }).notNull(),
@@ -136,6 +146,38 @@ export const sourcesTable = pgTable(
     check(
       "sources_status_check",
       sql`${table.status} in ('draft', 'probing', 'auth_required', 'connected', 'error')`,
+    ),
+    check(
+      "sources_transport_check",
+      sql`${table.transport} is null or ${table.transport} in ('auto', 'streamable-http', 'sse')`,
+    ),
+    check(
+      "sources_auth_kind_check",
+      sql`${table.authKind} in ('none', 'bearer', 'oauth2')`,
+    ),
+  ],
+);
+
+export const sourceCredentialBindingsTable = pgTable(
+  tableNames.sourceCredentialBindings,
+  {
+    workspaceId: text("workspace_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    tokenProviderId: text("token_provider_id"),
+    tokenHandle: text("token_handle"),
+    refreshTokenProviderId: text("refresh_token_provider_id"),
+    refreshTokenHandle: text("refresh_token_handle"),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.sourceId],
+    }),
+    index("source_credential_bindings_workspace_idx").on(
+      table.workspaceId,
+      table.updatedAt,
+      table.sourceId,
     ),
   ],
 );
@@ -244,6 +286,7 @@ export const drizzleSchema = {
   organizationMembershipsTable,
   workspacesTable,
   sourcesTable,
+  sourceCredentialBindingsTable,
   policiesTable,
   localInstallationsTable,
   executionsTable,

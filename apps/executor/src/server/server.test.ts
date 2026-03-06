@@ -180,10 +180,11 @@ describe("local-executor-server", () => {
           endpoint: demoServer.endpoint,
           status: "connected",
           enabled: true,
-          configJson: JSON.stringify({
-            namespace: "demo",
-            transport: "streamable-http",
-          }),
+          namespace: "demo",
+          transport: "streamable-http",
+          auth: {
+            kind: "none",
+          },
         },
       });
 
@@ -255,10 +256,11 @@ describe("local-executor-server", () => {
           endpoint: demoServer.endpoint,
           status: "connected",
           enabled: true,
-          configJson: JSON.stringify({
-            namespace: "demo",
-            transport: "streamable-http",
-          }),
+          namespace: "demo",
+          transport: "streamable-http",
+          auth: {
+            kind: "none",
+          },
         },
       });
 
@@ -322,10 +324,11 @@ describe("local-executor-server", () => {
           endpoint: "http://127.0.0.1:PORT/mcp",
           status: "connected",
           enabled: true,
-          configJson: JSON.stringify({
-            namespace: "demo",
-            transport: "streamable-http",
-          }),
+          namespace: "demo",
+          transport: "streamable-http",
+          auth: {
+            kind: "none",
+          },
         },
       });
 
@@ -436,10 +439,11 @@ describe("local-executor-server", () => {
           endpoint: "http://127.0.0.1:PORT/mcp",
           status: "connected",
           enabled: true,
-          configJson: JSON.stringify({
-            namespace: "demo",
-            transport: "streamable-http",
-          }),
+          namespace: "demo",
+          transport: "streamable-http",
+          auth: {
+            kind: "none",
+          },
         },
       });
 

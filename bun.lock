@@ -109,6 +109,9 @@
         "@effect/platform": "catalog:",
         "@electric-sql/pglite": "^0.3.12",
         "@executor-v3/codemode-core": "workspace:*",
+        "@executor-v3/codemode-mcp": "workspace:*",
+        "@executor-v3/codemode-openapi": "workspace:*",
+        "@executor-v3/runtime-local-inproc": "workspace:*",
         "drizzle-orm": "1.0.0-beta.15-859cf75",
         "effect": "catalog:",
         "postgres": "^3.4.7",
@@ -116,8 +119,6 @@
       "devDependencies": {
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
-        "@executor-v3/codemode-mcp": "workspace:*",
-        "@executor-v3/runtime-local-inproc": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "@types/node": "catalog:",
         "bun-types": "catalog:",

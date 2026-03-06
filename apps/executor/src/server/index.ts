@@ -10,6 +10,7 @@ import {
   makeControlPlaneApiLayer,
   makeSqlControlPlaneRuntime,
   type ResolveExecutionEnvironment,
+  type ResolveSecretMaterial,
   type SqlControlPlaneRuntime,
 } from "@executor-v3/control-plane";
 import * as Context from "effect/Context";
@@ -22,7 +23,6 @@ import {
   DEFAULT_SERVER_HOST,
   DEFAULT_SERVER_PORT,
 } from "./config";
-import { makeControlPlaneExecutionResolver } from "./control-plane-execution-resolver";
 
 export type LocalExecutorServer = {
   readonly runtime: SqlControlPlaneRuntime;
@@ -36,6 +36,7 @@ export type StartLocalExecutorServerOptions = {
   readonly host?: string;
   readonly localDataDir?: string;
   readonly executionResolver?: ResolveExecutionEnvironment;
+  readonly resolveSecretMaterial?: ResolveSecretMaterial;
 };
 
 const disposeRuntime = (runtime: SqlControlPlaneRuntime) =>
@@ -79,14 +80,11 @@ export const makeLocalExecutorServer = (
       });
     }
 
-    let runtimeRef: SqlControlPlaneRuntime | null = null;
-    const executionResolver =
-      options.executionResolver ?? makeControlPlaneExecutionResolver(() => runtimeRef);
-
     const runtime = yield* Effect.acquireRelease(
       makeSqlControlPlaneRuntime({
         localDataDir,
-        executionResolver,
+        executionResolver: options.executionResolver,
+        resolveSecretMaterial: options.resolveSecretMaterial,
       }).pipe(
         Effect.mapError((cause) =>
           cause instanceof Error ? cause : new Error(String(cause)),
@@ -94,7 +92,6 @@ export const makeLocalExecutorServer = (
       ),
       disposeRuntime,
     );
-    runtimeRef = runtime;
 
     const serverContext = yield* Layer.build(
       makeControlPlaneServerLayer({

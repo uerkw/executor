@@ -13,8 +13,11 @@ import type {
   OrganizationMembership,
   Policy,
   Source,
+  SourceId,
+  SourceCredentialBinding,
   Workspace,
 } from "#schema";
+import { SourceIdSchema } from "#schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -22,6 +25,13 @@ import { type ResolveExecutionEnvironment } from "./execution-state";
 import { type LiveExecutionManager } from "./live-execution";
 import { makeRuntimeExecutionsService } from "./execution-service";
 import { loadLocalInstallation } from "./local-installation";
+import {
+  createSourceFromPayload,
+  projectSourceFromStorage,
+  projectSourcesFromStorage,
+  splitSourceForStorage,
+  updateSourceFromPayload,
+} from "./source-definitions";
 import { slugify } from "./slug";
 
 const badRequest = (
@@ -556,10 +566,29 @@ export const makeRuntimeSourcesService = (
   | "removeSource"
 > => ({
     listSources: (workspaceId) =>
-      mapStorageError(
-        "sources.list",
-        rows.sources.listByWorkspaceId(workspaceId),
-      ),
+      Effect.gen(function* () {
+        const sourceRecords = yield* mapStorageError(
+          "sources.list.records",
+          rows.sources.listByWorkspaceId(workspaceId),
+        );
+        const credentialBindings = yield* mapStorageError(
+          "sources.list.bindings",
+          rows.sourceCredentialBindings.listByWorkspaceId(workspaceId),
+        );
+
+        return yield* projectSourcesFromStorage({
+          sourceRecords,
+          credentialBindings,
+        }).pipe(
+          Effect.mapError((error) =>
+            storageFromPersistence("sources.list", new ControlPlanePersistenceError({
+              operation: "sources.list",
+              message: error instanceof Error ? error.message : String(error),
+              details: "Failed projecting stored sources",
+            })),
+          ),
+        );
+      }),
 
     createSource: ({ workspaceId, payload }) =>
       Effect.gen(function* () {
@@ -575,28 +604,36 @@ export const makeRuntimeSourcesService = (
         );
         const now = Date.now();
 
-        const configJson = payload.configJson ?? "{}";
-        yield* parseJsonString("sources.create", "configJson", configJson);
-
-        const source: Source = {
-          id: (`src_${crypto.randomUUID()}` as unknown) as Source["id"],
+        const source = yield* createSourceFromPayload({
           workspaceId,
-          name,
-          kind: payload.kind,
-          endpoint,
-          status: payload.status ?? "draft",
-          enabled: payload.enabled ?? true,
-          configJson,
-          sourceHash: payload.sourceHash ?? null,
-          lastError: payload.lastError ?? null,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        yield* mapPersistenceError(
-          "sources.create",
-          rows.sources.insert(source),
+          sourceId: SourceIdSchema.make(`src_${crypto.randomUUID()}`) as SourceId,
+          payload: {
+            ...payload,
+            name,
+            endpoint,
+          },
+          now,
+        }).pipe(
+          Effect.mapError((cause) =>
+            badRequest(
+              "sources.create",
+              "Invalid source definition",
+              cause instanceof Error ? cause.message : String(cause),
+            ),
+          ),
         );
+
+        const { sourceRecord, credentialBinding } = splitSourceForStorage({
+          source,
+        });
+
+        yield* mapPersistenceError("sources.create.source", rows.sources.insert(sourceRecord));
+        if (credentialBinding !== null) {
+          yield* mapPersistenceError(
+            "sources.create.binding",
+            rows.sourceCredentialBindings.upsert(credentialBinding),
+          );
+        }
 
         return source;
       }),
@@ -618,58 +655,36 @@ export const makeRuntimeSourcesService = (
           );
         }
 
-        return existing.value;
+        const credentialBinding = yield* mapStorageError(
+          "sources.get.binding",
+          rows.sourceCredentialBindings.getByWorkspaceAndSourceId(workspaceId, sourceId),
+        );
+
+        return yield* projectSourceFromStorage({
+          sourceRecord: existing.value,
+          credentialBinding: Option.isSome(credentialBinding) ? credentialBinding.value : null,
+        }).pipe(
+          Effect.mapError((cause) =>
+            storageFromPersistence(
+              "sources.get",
+              new ControlPlanePersistenceError({
+                operation: "sources.get",
+                message: cause instanceof Error ? cause.message : String(cause),
+                details: "Failed projecting stored source",
+              }),
+            ),
+          ),
+        );
       }),
 
     updateSource: ({ workspaceId, sourceId, payload }) =>
       Effect.gen(function* () {
-        const patch: Record<string, unknown> = {
-          updatedAt: Date.now(),
-        };
-
-        if (payload.name !== undefined) {
-          patch.name = yield* requireTrimmed(
-            "sources.update",
-            "name",
-            payload.name,
-          );
-        }
-        if (payload.endpoint !== undefined) {
-          patch.endpoint = yield* requireTrimmed(
-            "sources.update",
-            "endpoint",
-            payload.endpoint,
-          );
-        }
-        if (payload.kind !== undefined) {
-          patch.kind = payload.kind;
-        }
-        if (payload.status !== undefined) {
-          patch.status = payload.status;
-        }
-        if (payload.enabled !== undefined) {
-          patch.enabled = payload.enabled;
-        }
-        if (payload.configJson !== undefined) {
-          patch.configJson = yield* parseJsonString(
-            "sources.update",
-            "configJson",
-            payload.configJson,
-          );
-        }
-        if (payload.sourceHash !== undefined) {
-          patch.sourceHash = payload.sourceHash;
-        }
-        if (payload.lastError !== undefined) {
-          patch.lastError = payload.lastError;
-        }
-
-        const updated = yield* mapPersistenceError(
-          "sources.update",
-          rows.sources.update(workspaceId, sourceId, patch as any),
+        const existing = yield* mapStorageError(
+          "sources.update.existing",
+          rows.sources.getByWorkspaceAndId(workspaceId, sourceId),
         );
 
-        if (Option.isNone(updated)) {
+        if (Option.isNone(existing)) {
           return yield* Effect.fail(
             notFound(
               "sources.update",
@@ -679,7 +694,94 @@ export const makeRuntimeSourcesService = (
           );
         }
 
-        return updated.value;
+        const existingBinding = yield* mapStorageError(
+          "sources.update.binding",
+          rows.sourceCredentialBindings.getByWorkspaceAndSourceId(workspaceId, sourceId),
+        );
+
+        const existingSource = yield* projectSourceFromStorage({
+          sourceRecord: existing.value,
+          credentialBinding: Option.isSome(existingBinding) ? existingBinding.value : null,
+        }).pipe(
+          Effect.mapError((cause) =>
+            storageFromPersistence(
+              "sources.update",
+              new ControlPlanePersistenceError({
+                operation: "sources.update",
+                message: cause instanceof Error ? cause.message : String(cause),
+                details: "Failed projecting stored source",
+              }),
+            ),
+          ),
+        );
+
+        const normalizedPayload = {
+          ...payload,
+          ...(payload.name !== undefined
+            ? {
+                name: yield* requireTrimmed("sources.update", "name", payload.name),
+              }
+            : {}),
+          ...(payload.endpoint !== undefined
+            ? {
+                endpoint: yield* requireTrimmed(
+                  "sources.update",
+                  "endpoint",
+                  payload.endpoint,
+                ),
+              }
+            : {}),
+        };
+
+        const updatedSource = yield* updateSourceFromPayload({
+          source: existingSource,
+          payload: normalizedPayload,
+          now: Date.now(),
+        }).pipe(
+          Effect.mapError((cause) =>
+            badRequest(
+              "sources.update",
+              "Invalid source definition",
+              cause instanceof Error ? cause.message : String(cause),
+            ),
+          ),
+        );
+
+        const { sourceRecord, credentialBinding } = splitSourceForStorage({
+          source: updatedSource,
+        });
+
+        const stored = yield* mapPersistenceError(
+          "sources.update.source",
+          rows.sources.update(workspaceId, sourceId, {
+            ...sourceRecord,
+            updatedAt: updatedSource.updatedAt,
+          }),
+        );
+
+        if (Option.isNone(stored)) {
+          return yield* Effect.fail(
+            notFound(
+              "sources.update",
+              "Source not found",
+              `workspaceId=${workspaceId} sourceId=${sourceId}`,
+            ),
+          );
+        }
+
+        if (credentialBinding === null) {
+          yield* mapStorageError(
+            "sources.update.binding.remove",
+            rows.sourceCredentialBindings.removeByWorkspaceAndSourceId(workspaceId, sourceId),
+          );
+        } else {
+          yield* mapPersistenceError(
+            "sources.update.binding",
+            rows.sourceCredentialBindings.upsert(credentialBinding),
+          );
+        }
+
+        return updatedSource;
       }),
 
     removeSource: ({ workspaceId, sourceId }) =>

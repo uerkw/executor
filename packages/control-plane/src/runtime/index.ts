@@ -25,6 +25,10 @@ import {
 import {
   makeLiveExecutionManager,
 } from "./live-execution";
+import {
+  makeWorkspaceExecutionEnvironmentResolver,
+  type ResolveSecretMaterial,
+} from "./workspace-execution-environment";
 import { makeRuntimeControlPlaneService } from "./services";
 
 export {
@@ -36,11 +40,13 @@ export {
 export * from "./execution-state";
 export * from "./live-execution";
 export * from "./local-installation";
+export * from "./workspace-execution-environment";
 
 export type RuntimeControlPlaneInput = {
   persistence: SqlControlPlanePersistence;
   actorResolver?: ControlPlaneActorResolverShape;
   executionResolver?: ResolveExecutionEnvironment;
+  resolveSecretMaterial?: ResolveSecretMaterial;
 };
 
 export const makeRuntimeControlPlane = (
@@ -50,8 +56,14 @@ export const makeRuntimeControlPlane = (
   actorResolver: ControlPlaneActorResolverShape;
 } => {
   const liveExecutionManager = makeLiveExecutionManager();
+  const executionResolver =
+    input.executionResolver
+    ?? makeWorkspaceExecutionEnvironmentResolver({
+      rows: input.persistence.rows,
+      resolveSecretMaterial: input.resolveSecretMaterial,
+    });
   const service = makeRuntimeControlPlaneService(input.persistence.rows, {
-    executionResolver: input.executionResolver,
+    executionResolver,
     liveExecutionManager,
   });
   const actorResolver = input.actorResolver ?? makeHeaderActorResolver(input.persistence.rows);
@@ -73,6 +85,7 @@ export type SqlControlPlaneRuntime = {
 export type CreateSqlControlPlaneRuntimeOptions = CreateSqlRuntimeOptions & {
   actorResolver?: ControlPlaneActorResolverShape;
   executionResolver?: ResolveExecutionEnvironment;
+  resolveSecretMaterial?: ResolveSecretMaterial;
 };
 
 export const makeSqlControlPlaneRuntime = (
@@ -84,6 +97,7 @@ export const makeSqlControlPlaneRuntime = (
         persistence,
         actorResolver: options.actorResolver,
         executionResolver: options.executionResolver,
+        resolveSecretMaterial: options.resolveSecretMaterial,
       });
       const localInstallation = yield* getOrProvisionLocalInstallation(persistence.rows).pipe(
         Effect.mapError((cause) =>

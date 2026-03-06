@@ -9,10 +9,16 @@ export {
   type Role,
 } from "./models/auth/organization-membership";
 export {
+  SecretRefSchema,
+  SourceAuthSchema,
   SourceKindSchema,
   SourceStatusSchema,
+  SourceTransportSchema,
+  type SecretRef,
+  type SourceAuth,
   type SourceKind,
   type SourceStatus,
+  type SourceTransport,
 } from "./models/source";
 export {
   PolicyApprovalModeSchema,

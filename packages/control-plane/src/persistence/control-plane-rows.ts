@@ -6,7 +6,8 @@ import {
   type Organization,
   type OrganizationMembership,
   type Policy,
-  type Source,
+  type SourceCredentialBinding,
+  type StoredSourceRecord,
   type Workspace,
 } from "#schema";
 import * as Effect from "effect/Effect";
@@ -36,6 +37,30 @@ const withoutCreatedAt = <A extends { createdAt: unknown }>(
   const { createdAt: _createdAt, ...rest } = value;
   return rest;
 };
+
+const toStoredSourceRecord = (row: any): StoredSourceRecord =>
+  asDomain<StoredSourceRecord>({
+    id: row.sourceId,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    kind: row.kind,
+    endpoint: row.endpoint,
+    status: row.status,
+    enabled: row.enabled,
+    namespace: row.namespace,
+    transport: row.transport,
+    queryParamsJson: row.queryParamsJson,
+    headersJson: row.headersJson,
+    specUrl: row.specUrl,
+    defaultHeadersJson: row.defaultHeadersJson,
+    authKind: row.authKind,
+    authHeaderName: row.authHeaderName,
+    authPrefix: row.authPrefix,
+    sourceHash: row.sourceHash,
+    lastError: row.lastError,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
 
 const makeRowEffect = (backend: SqlBackend) => {
   let queue = Promise.resolve<void>(undefined);
@@ -244,6 +269,9 @@ export const createControlPlaneRows = ({
 
             for (const workspace of workspaces) {
               await tx
+                .delete(tables.sourceCredentialBindingsTable)
+                .where(eq(tables.sourceCredentialBindingsTable.workspaceId, workspace.id));
+              await tx
                 .delete(tables.sourcesTable)
                 .where(eq(tables.sourcesTable.workspaceId, workspace.id));
               await tx
@@ -424,17 +452,29 @@ export const createControlPlaneRows = ({
 
     removeById: (workspaceId: Workspace["id"]) =>
       rowEffect("rows.workspaces.remove", tableNames.workspaces, async () => {
-        const deleted = await db
-          .delete(tables.workspacesTable)
-          .where(eq(tables.workspacesTable.id, workspaceId))
-          .returning();
+        const deleted = await db.transaction(async (tx: any) => {
+          await tx
+            .delete(tables.sourceCredentialBindingsTable)
+            .where(eq(tables.sourceCredentialBindingsTable.workspaceId, workspaceId));
+          await tx
+            .delete(tables.sourcesTable)
+            .where(eq(tables.sourcesTable.workspaceId, workspaceId));
+          await tx
+            .delete(tables.policiesTable)
+            .where(eq(tables.policiesTable.workspaceId, workspaceId));
+
+          return tx
+            .delete(tables.workspacesTable)
+            .where(eq(tables.workspacesTable.id, workspaceId))
+            .returning();
+        });
 
         return deleted.length > 0;
       }),
   },
 
   sources: {
-    listByWorkspaceId: (workspaceId: Source["workspaceId"]) =>
+    listByWorkspaceId: (workspaceId: StoredSourceRecord["workspaceId"]) =>
       rowEffect("rows.sources.list_by_workspace", tableNames.sources, async () => {
         const rows = await db
           .select()
@@ -442,27 +482,12 @@ export const createControlPlaneRows = ({
           .where(eq(tables.sourcesTable.workspaceId, workspaceId))
           .orderBy(asc(tables.sourcesTable.updatedAt), asc(tables.sourcesTable.sourceId));
 
-        return rows.map((row: any) =>
-          asDomain<Source>({
-            id: row.sourceId,
-            workspaceId: row.workspaceId,
-            name: row.name,
-            kind: row.kind,
-            endpoint: row.endpoint,
-            status: row.status,
-            enabled: row.enabled,
-            configJson: row.configJson,
-            sourceHash: row.sourceHash,
-            lastError: row.lastError,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }),
-        );
+        return rows.map(toStoredSourceRecord);
       }),
 
     getByWorkspaceAndId: (
-      workspaceId: Source["workspaceId"],
-      sourceId: Source["id"],
+      workspaceId: StoredSourceRecord["workspaceId"],
+      sourceId: StoredSourceRecord["id"],
     ) =>
       rowEffect("rows.sources.get_by_workspace_and_id", tableNames.sources, async () => {
         const rows = await db
@@ -478,28 +503,13 @@ export const createControlPlaneRows = ({
 
         const row = rows[0];
         if (!row) {
-          return Option.none<Source>();
+          return Option.none<StoredSourceRecord>();
         }
 
-        return Option.some(
-          asDomain<Source>({
-            id: row.sourceId,
-            workspaceId: row.workspaceId,
-            name: row.name,
-            kind: row.kind,
-            endpoint: row.endpoint,
-            status: row.status,
-            enabled: row.enabled,
-            configJson: row.configJson,
-            sourceHash: row.sourceHash,
-            lastError: row.lastError,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }),
-        );
+        return Option.some(toStoredSourceRecord(row));
       }),
 
-    insert: (source: Source) =>
+    insert: (source: StoredSourceRecord) =>
       rowEffect("rows.sources.insert", tableNames.sources, async () => {
         await db.insert(tables.sourcesTable).values({
           workspaceId: source.workspaceId,
@@ -509,7 +519,16 @@ export const createControlPlaneRows = ({
           endpoint: source.endpoint,
           status: source.status,
           enabled: source.enabled,
-          configJson: source.configJson,
+          namespace: source.namespace,
+          transport: source.transport,
+          queryParamsJson: source.queryParamsJson,
+          headersJson: source.headersJson,
+          specUrl: source.specUrl,
+          defaultHeadersJson: source.defaultHeadersJson,
+          authKind: source.authKind,
+          authHeaderName: source.authHeaderName,
+          authPrefix: source.authPrefix,
+          configJson: "{}",
           sourceHash: source.sourceHash,
           lastError: source.lastError,
           createdAt: source.createdAt,
@@ -518,9 +537,9 @@ export const createControlPlaneRows = ({
       }),
 
     update: (
-      workspaceId: Source["workspaceId"],
-      sourceId: Source["id"],
-      patch: Partial<Omit<Source, "id" | "workspaceId" | "createdAt">>,
+      workspaceId: StoredSourceRecord["workspaceId"],
+      sourceId: StoredSourceRecord["id"],
+      patch: Partial<Omit<StoredSourceRecord, "id" | "workspaceId" | "createdAt">>,
     ) =>
       rowEffect("rows.sources.update", tableNames.sources, async () => {
         const updateSet: Record<string, unknown> = { ...patch };
@@ -544,44 +563,127 @@ export const createControlPlaneRows = ({
 
         const row = rows[0];
         if (!row) {
-          return Option.none<Source>();
+          return Option.none<StoredSourceRecord>();
         }
 
-        return Option.some(
-          asDomain<Source>({
-            id: row.sourceId,
-            workspaceId: row.workspaceId,
-            name: row.name,
-            kind: row.kind,
-            endpoint: row.endpoint,
-            status: row.status,
-            enabled: row.enabled,
-            configJson: row.configJson,
-            sourceHash: row.sourceHash,
-            lastError: row.lastError,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }),
-        );
+        return Option.some(toStoredSourceRecord(row));
       }),
 
     removeByWorkspaceAndId: (
-      workspaceId: Source["workspaceId"],
-      sourceId: Source["id"],
+      workspaceId: StoredSourceRecord["workspaceId"],
+      sourceId: StoredSourceRecord["id"],
     ) =>
       rowEffect("rows.sources.remove", tableNames.sources, async () => {
-        const deleted = await db
-          .delete(tables.sourcesTable)
-          .where(
-            and(
-              eq(tables.sourcesTable.workspaceId, workspaceId),
-              eq(tables.sourcesTable.sourceId, sourceId),
-            ),
-          )
-          .returning();
+        const deleted = await db.transaction(async (tx: any) => {
+          await tx
+            .delete(tables.sourceCredentialBindingsTable)
+            .where(
+              and(
+                eq(tables.sourceCredentialBindingsTable.workspaceId, workspaceId),
+                eq(tables.sourceCredentialBindingsTable.sourceId, sourceId),
+              ),
+            );
+
+          return tx
+            .delete(tables.sourcesTable)
+            .where(
+              and(
+                eq(tables.sourcesTable.workspaceId, workspaceId),
+                eq(tables.sourcesTable.sourceId, sourceId),
+              ),
+            )
+            .returning();
+        });
 
         return deleted.length > 0;
       }),
+  },
+
+  sourceCredentialBindings: {
+    listByWorkspaceId: (workspaceId: SourceCredentialBinding["workspaceId"]) =>
+      rowEffect(
+        "rows.source_credential_bindings.list_by_workspace",
+        tableNames.sourceCredentialBindings,
+        async () => {
+          const rows = await db
+            .select()
+            .from(tables.sourceCredentialBindingsTable)
+            .where(eq(tables.sourceCredentialBindingsTable.workspaceId, workspaceId))
+            .orderBy(
+              asc(tables.sourceCredentialBindingsTable.updatedAt),
+              asc(tables.sourceCredentialBindingsTable.sourceId),
+            );
+
+          return asDomainArray<SourceCredentialBinding>(rows);
+        },
+      ),
+
+    getByWorkspaceAndSourceId: (
+      workspaceId: SourceCredentialBinding["workspaceId"],
+      sourceId: SourceCredentialBinding["sourceId"],
+    ) =>
+      rowEffect(
+        "rows.source_credential_bindings.get_by_workspace_and_source_id",
+        tableNames.sourceCredentialBindings,
+        async () => {
+          const rows = await db
+            .select()
+            .from(tables.sourceCredentialBindingsTable)
+            .where(
+              and(
+                eq(tables.sourceCredentialBindingsTable.workspaceId, workspaceId),
+                eq(tables.sourceCredentialBindingsTable.sourceId, sourceId),
+              ),
+            )
+            .limit(1);
+
+          return rows[0]
+            ? Option.some(asDomain<SourceCredentialBinding>(rows[0]))
+            : Option.none<SourceCredentialBinding>();
+        },
+      ),
+
+    upsert: (binding: SourceCredentialBinding) =>
+      rowEffect(
+        "rows.source_credential_bindings.upsert",
+        tableNames.sourceCredentialBindings,
+        async () => {
+          await db
+            .insert(tables.sourceCredentialBindingsTable)
+            .values(binding)
+            .onConflictDoUpdate({
+              target: [
+                tables.sourceCredentialBindingsTable.workspaceId,
+                tables.sourceCredentialBindingsTable.sourceId,
+              ],
+              set: {
+                ...withoutCreatedAt(binding),
+              },
+            });
+        },
+      ),
+
+    removeByWorkspaceAndSourceId: (
+      workspaceId: SourceCredentialBinding["workspaceId"],
+      sourceId: SourceCredentialBinding["sourceId"],
+    ) =>
+      rowEffect(
+        "rows.source_credential_bindings.remove",
+        tableNames.sourceCredentialBindings,
+        async () => {
+          const deleted = await db
+            .delete(tables.sourceCredentialBindingsTable)
+            .where(
+              and(
+                eq(tables.sourceCredentialBindingsTable.workspaceId, workspaceId),
+                eq(tables.sourceCredentialBindingsTable.sourceId, sourceId),
+              ),
+            )
+            .returning();
+
+          return deleted.length > 0;
+        },
+      ),
   },
 
   policies: {

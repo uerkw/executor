@@ -52,14 +52,18 @@ export const seedDemoMcpSourceInWorkspace = (
       (source) => source.kind === "mcp" && source.name === input.name,
     );
 
+    const expected = {
+      endpoint: input.endpoint,
+      namespace: input.namespace,
+      transport: "streamable-http" as const,
+    };
+
     if (
       existingByName !== undefined
-      && existingByName.endpoint === input.endpoint
-      && existingByName.configJson
-        === JSON.stringify({
-          namespace: input.namespace,
-          transport: "streamable-http",
-        })
+      && existingByName.endpoint === expected.endpoint
+      && existingByName.namespace === expected.namespace
+      && existingByName.transport === expected.transport
+      && existingByName.auth.kind === "none"
     ) {
       return {
         action: "noop",
@@ -79,10 +83,11 @@ export const seedDemoMcpSourceInWorkspace = (
           endpoint: input.endpoint,
           status: "connected",
           enabled: true,
-          configJson: JSON.stringify({
-            namespace: input.namespace,
-            transport: "streamable-http",
-          }),
+          namespace: input.namespace,
+          transport: "streamable-http",
+          auth: {
+            kind: "none",
+          },
         },
       });
 
@@ -104,10 +109,11 @@ export const seedDemoMcpSourceInWorkspace = (
         endpoint: input.endpoint,
         status: "connected",
         enabled: true,
-        configJson: JSON.stringify({
-          namespace: input.namespace,
-          transport: "streamable-http",
-        }),
+        namespace: input.namespace,
+        transport: "streamable-http",
+        auth: {
+          kind: "none",
+        },
       },
     });
 
@@ -115,8 +121,8 @@ export const seedDemoMcpSourceInWorkspace = (
       action: "created",
       sourceId: created.id,
       workspaceId: input.workspaceId,
-        endpoint: created.endpoint,
-      };
+      endpoint: created.endpoint,
+    };
   });
 
 export const seedGithubOpenApiSourceInWorkspace = (
@@ -124,13 +130,6 @@ export const seedGithubOpenApiSourceInWorkspace = (
 ): Effect.Effect<SeedDemoMcpSourceResult, unknown, never> =>
   Effect.gen(function* () {
     const workspaceId = WorkspaceIdSchema.make(input.workspaceId);
-    const configJson = JSON.stringify({
-      namespace: input.namespace,
-      specUrl: input.specUrl,
-      credentialEnvVar: input.credentialEnvVar ?? "GITHUB_TOKEN",
-      credentialHeader: "Authorization",
-      credentialPrefix: "Bearer ",
-    });
 
     const existing = yield* input.client.sources.list({
       path: {
@@ -142,10 +141,23 @@ export const seedGithubOpenApiSourceInWorkspace = (
       (source) => source.kind === "openapi" && source.name === input.name,
     );
 
+    const auth = {
+      kind: "bearer" as const,
+      headerName: "Authorization",
+      prefix: "Bearer ",
+      token: {
+        providerId: "env",
+        handle: input.credentialEnvVar ?? "GITHUB_TOKEN",
+      },
+    };
+
     if (
       existingByName !== undefined
       && existingByName.endpoint === input.endpoint
-      && existingByName.configJson === configJson
+      && existingByName.namespace === input.namespace
+      && existingByName.specUrl === input.specUrl
+      && JSON.stringify(existingByName.defaultHeaders) === JSON.stringify(null)
+      && JSON.stringify(existingByName.auth) === JSON.stringify(auth)
     ) {
       return {
         action: "noop",
@@ -165,7 +177,9 @@ export const seedGithubOpenApiSourceInWorkspace = (
           endpoint: input.endpoint,
           status: "connected",
           enabled: true,
-          configJson,
+          namespace: input.namespace,
+          specUrl: input.specUrl,
+          auth,
         },
       });
 
@@ -187,7 +201,9 @@ export const seedGithubOpenApiSourceInWorkspace = (
         endpoint: input.endpoint,
         status: "connected",
         enabled: true,
-        configJson,
+        namespace: input.namespace,
+        specUrl: input.specUrl,
+        auth,
       },
     });
 

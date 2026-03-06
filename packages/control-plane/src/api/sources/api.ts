@@ -1,9 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
 import {
+  SourceAuthSchema,
   SourceIdSchema,
-  SourceInsertSchema,
+  SourceKindSchema,
   SourceSchema,
-  SourceUpdateSchema,
+  SourceStatusSchema,
+  SourceTransportSchema,
+  StringMapSchema,
   WorkspaceIdSchema,
 } from "#schema";
 import * as Schema from "effect/Schema";
@@ -16,14 +19,25 @@ import {
   ControlPlaneUnauthorizedError,
 } from "../errors";
 
-const createSourcePayloadRequiredSchema = SourceInsertSchema.pipe(
-  Schema.pick("name", "kind", "endpoint"),
-);
+const createSourcePayloadRequiredSchema = Schema.Struct({
+  name: Schema.String,
+  kind: SourceKindSchema,
+  endpoint: Schema.String,
+});
 
-const createSourcePayloadOptionalSchema = SourceInsertSchema.pipe(
-  Schema.pick("status", "enabled", "configJson", "sourceHash", "lastError"),
-  Schema.partialWith({ exact: true }),
-);
+const createSourcePayloadOptionalSchema = Schema.Struct({
+  status: Schema.optional(SourceStatusSchema),
+  enabled: Schema.optional(Schema.Boolean),
+  namespace: Schema.optional(Schema.NullOr(Schema.String)),
+  transport: Schema.optional(Schema.NullOr(SourceTransportSchema)),
+  queryParams: Schema.optional(Schema.NullOr(StringMapSchema)),
+  headers: Schema.optional(Schema.NullOr(StringMapSchema)),
+  specUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultHeaders: Schema.optional(Schema.NullOr(StringMapSchema)),
+  auth: Schema.optional(SourceAuthSchema),
+  sourceHash: Schema.optional(Schema.NullOr(Schema.String)),
+  lastError: Schema.optional(Schema.NullOr(Schema.String)),
+});
 
 export const CreateSourcePayloadSchema = Schema.extend(
   createSourcePayloadRequiredSchema,
@@ -32,19 +46,22 @@ export const CreateSourcePayloadSchema = Schema.extend(
 
 export type CreateSourcePayload = typeof CreateSourcePayloadSchema.Type;
 
-export const UpdateSourcePayloadSchema = SourceUpdateSchema.pipe(
-  Schema.pick(
-    "name",
-    "kind",
-    "endpoint",
-    "status",
-    "enabled",
-    "configJson",
-    "sourceHash",
-    "lastError",
-  ),
-  Schema.partialWith({ exact: true }),
-);
+export const UpdateSourcePayloadSchema = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  kind: Schema.optional(SourceKindSchema),
+  endpoint: Schema.optional(Schema.String),
+  status: Schema.optional(SourceStatusSchema),
+  enabled: Schema.optional(Schema.Boolean),
+  namespace: Schema.optional(Schema.NullOr(Schema.String)),
+  transport: Schema.optional(Schema.NullOr(SourceTransportSchema)),
+  queryParams: Schema.optional(Schema.NullOr(StringMapSchema)),
+  headers: Schema.optional(Schema.NullOr(StringMapSchema)),
+  specUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  defaultHeaders: Schema.optional(Schema.NullOr(StringMapSchema)),
+  auth: Schema.optional(SourceAuthSchema),
+  sourceHash: Schema.optional(Schema.NullOr(Schema.String)),
+  lastError: Schema.optional(Schema.NullOr(Schema.String)),
+});
 
 export type UpdateSourcePayload = typeof UpdateSourcePayloadSchema.Type;
 
