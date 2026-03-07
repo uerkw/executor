@@ -1,17 +1,20 @@
 import {
-  type ToolMap,
-  createToolCatalogFromTools,
   createSystemToolMap,
+  createToolCatalogFromTools,
   makeToolInvokerFromTools,
-  mergeToolMaps,
+  type SearchHit,
+  type ToolCatalog,
+  type ToolDescriptor,
+  type ToolInvoker,
+  type ToolNamespace,
+  type ToolPath,
 } from "@executor-v3/codemode-core";
 import {
   createSdkMcpConnector,
-  discoverMcpToolsFromConnector,
+  createMcpToolsFromManifest,
 } from "@executor-v3/codemode-mcp";
 import {
-  createOpenApiToolsFromSpec,
-  fetchOpenApiDocument,
+  createOpenApiToolsFromManifest,
 } from "@executor-v3/codemode-openapi";
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
 import {
@@ -20,192 +23,468 @@ import {
 } from "#persistence";
 import type {
   Source,
+  StoredToolArtifactRecord,
 } from "#schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import type {
   ExecutionEnvironment,
   ResolveExecutionEnvironment,
 } from "./execution-state";
 import { createExecutorToolMap } from "./executor-tools";
-import { projectSourcesFromStorage } from "./source-definitions";
+import { projectSourceFromStorage } from "./source-definitions";
 import {
   RuntimeSourceAuthServiceTag,
   createDbBackedSecretMaterialResolver,
   type ResolveSecretMaterial,
   type RuntimeSourceAuthService,
 } from "./source-auth-service";
+import {
+  createEnvSecretMaterialResolver,
+  namespaceFromSourceName,
+  resolveSourceAuthMaterial,
+  storedToolIdFromArtifact,
+} from "./tool-artifacts";
 
-export type ResolvedSourceAuthMaterial = {
-  headers: Readonly<Record<string, string>>;
-};
+const asToolPath = (value: string): ToolPath => value as ToolPath;
 
-const namespaceFromSourceName = (name: string): string => {
-  const normalized = name
+const tokenize = (value: string): string[] =>
+  value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "");
+    .split(/\s+/)
+    .filter(Boolean);
 
-  return normalized.length > 0 ? normalized : "source";
-};
+const scoreArtifact = (
+  queryTokens: readonly string[],
+  searchText: string,
+): number =>
+  queryTokens.reduce(
+    (total, token) => total + (searchText.includes(token) ? 1 : 0),
+    0,
+  );
 
-export const createEnvSecretMaterialResolver = (): ResolveSecretMaterial =>
-  (ref) =>
+const toDescriptor = (input: {
+  artifact: StoredToolArtifactRecord;
+  includeSchemas: boolean;
+  refHintKeys?: readonly string[];
+}): ToolDescriptor => ({
+  path: asToolPath(input.artifact.path),
+  sourceKey: input.artifact.sourceId,
+  description: input.artifact.description ?? input.artifact.title ?? undefined,
+  interaction: "auto",
+  inputHint: input.artifact.inputSchemaJson ? "object" : undefined,
+  outputHint: input.artifact.outputSchemaJson ? "output" : undefined,
+  inputSchemaJson: input.includeSchemas ? input.artifact.inputSchemaJson ?? undefined : undefined,
+  outputSchemaJson: input.includeSchemas ? input.artifact.outputSchemaJson ?? undefined : undefined,
+  refHintKeys: input.includeSchemas ? input.refHintKeys : undefined,
+});
+
+const loadSourceById = (input: {
+  rows: SqlControlPlaneRows;
+  workspaceId: Source["workspaceId"];
+  sourceId: Source["id"];
+}): Effect.Effect<Source, Error, never> =>
+  Effect.gen(function* () {
+    const sourceRecord = yield* input.rows.sources.getByWorkspaceAndId(
+      input.workspaceId,
+      input.sourceId,
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+
+    if (Option.isNone(sourceRecord)) {
+      return yield* Effect.fail(
+        new Error(`Source not found: workspaceId=${input.workspaceId} sourceId=${input.sourceId}`),
+      );
+    }
+
+    const credentialBinding = yield* input.rows.sourceCredentialBindings
+      .getByWorkspaceAndSourceId(input.workspaceId, input.sourceId)
+      .pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+        ),
+      );
+
+    return yield* projectSourceFromStorage({
+      sourceRecord: sourceRecord.value,
+      credentialBinding: Option.isSome(credentialBinding) ? credentialBinding.value : null,
+    });
+  });
+
+const createWorkspaceToolCatalog = (input: {
+  workspaceId: Source["workspaceId"];
+  rows: SqlControlPlaneRows;
+  executorCatalog: ToolCatalog;
+}): ToolCatalog => ({
+  listNamespaces: ({ limit }) =>
     Effect.gen(function* () {
-      if (ref.providerId !== "env") {
-        return yield* Effect.fail(
-          new Error(`Unsupported secret provider ${ref.providerId}`),
-        );
+      const [persisted, executor] = yield* Effect.all([
+        input.rows.toolArtifacts.listNamespacesByWorkspaceId(input.workspaceId, {
+          limit,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
+          ),
+        ),
+        input.executorCatalog.listNamespaces({ limit }),
+      ]);
+
+      const merged = new Map<string, ToolNamespace>();
+      for (const namespace of persisted) {
+        merged.set(namespace.namespace, namespace);
+      }
+      for (const namespace of executor) {
+        const existing = merged.get(namespace.namespace);
+        merged.set(namespace.namespace, {
+          namespace: namespace.namespace,
+          displayName: namespace.displayName ?? existing?.displayName,
+          toolCount:
+            namespace.toolCount !== undefined || existing?.toolCount === undefined
+              ? namespace.toolCount
+              : existing.toolCount,
+        });
       }
 
-      const value = process.env[ref.handle]?.trim();
-      if (!value) {
-        return yield* Effect.fail(
-          new Error(`Environment variable ${ref.handle} is not set`),
-        );
-      }
+      return [...merged.values()]
+        .sort((left, right) => left.namespace.localeCompare(right.namespace))
+        .slice(0, limit);
+    }),
 
-      return value;
-    });
-
-export const resolveSourceAuthMaterial = (input: {
-  source: Source;
-  resolveSecretMaterial: ResolveSecretMaterial;
-}): Effect.Effect<ResolvedSourceAuthMaterial, Error, never> =>
-  Effect.gen(function* () {
-    if (input.source.auth.kind === "none") {
-      return { headers: {} } satisfies ResolvedSourceAuthMaterial;
-    }
-
-    const tokenRef =
-      input.source.auth.kind === "bearer"
-        ? input.source.auth.token
-        : input.source.auth.accessToken;
-
-    const token = yield* input.resolveSecretMaterial(tokenRef);
-
-    return {
-      headers: {
-        [input.source.auth.headerName]: `${input.source.auth.prefix}${token}`,
-      },
-    } satisfies ResolvedSourceAuthMaterial;
-  });
-
-const loadMcpSourceTools = (input: {
-  source: Source;
-  auth: ResolvedSourceAuthMaterial;
-}): Effect.Effect<ToolMap, Error, never> =>
-  Effect.gen(function* () {
-    if (input.source.kind !== "mcp") {
-      return yield* Effect.fail(new Error(`Expected MCP source, received ${input.source.kind}`));
-    }
-
-    const connector = yield* Effect.try({
-      try: () =>
-        createSdkMcpConnector({
-          endpoint: input.source.endpoint,
-          transport: input.source.transport ?? undefined,
-          queryParams: input.source.queryParams ?? undefined,
-          headers: {
-            ...(input.source.headers ?? {}),
-            ...input.auth.headers,
-          },
+  listTools: ({ namespace, query, limit, includeSchemas = false }) =>
+    Effect.gen(function* () {
+      const [persisted, executor] = yield* Effect.all([
+        namespace?.startsWith("executor")
+          ? Effect.succeed([] as readonly StoredToolArtifactRecord[])
+          : input.rows.toolArtifacts.listByWorkspaceId(input.workspaceId, {
+              namespace,
+              query,
+              limit,
+            }).pipe(
+              Effect.mapError((cause) =>
+                cause instanceof Error ? cause : new Error(String(cause)),
+              ),
+            ),
+        input.executorCatalog.listTools({
+          ...(namespace !== undefined ? { namespace } : {}),
+          ...(query !== undefined ? { query } : {}),
+          limit,
+          includeSchemas,
         }),
-      catch: (cause) =>
-        cause instanceof Error
-          ? new Error(
-              `Failed creating MCP connector for ${input.source.id}: ${cause.message}`,
-            )
-          : new Error(`Failed creating MCP connector for ${input.source.id}: ${String(cause)}`),
-    });
+      ]);
 
-    const discovered = yield* discoverMcpToolsFromConnector({
-      connect: connector,
-      namespace: input.source.namespace ?? namespaceFromSourceName(input.source.name),
-      sourceKey: input.source.id,
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new Error(
-            `Failed discovering MCP tools for ${input.source.id}: ${cause.message}`,
-          ),
-      ),
-    );
+      const persistedDescriptors = includeSchemas
+        ? yield* Effect.forEach(
+            persisted,
+            (artifact) =>
+              input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
+                input.workspaceId,
+                artifact.path,
+              ).pipe(
+                Effect.map((rows) =>
+                  toDescriptor({
+                    artifact,
+                    includeSchemas,
+                    refHintKeys: rows.map((row) => row.refHintKey),
+                  })
+                ),
+                Effect.mapError((cause) =>
+                  cause instanceof Error ? cause : new Error(String(cause)),
+                ),
+              ),
+            { concurrency: "unbounded" },
+          )
+        : persisted.map((artifact) =>
+            toDescriptor({
+              artifact,
+              includeSchemas,
+            })
+          );
 
-    return discovered.tools;
+      return [...persistedDescriptors, ...executor]
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .slice(0, limit);
+    }),
+
+  getToolByPath: ({ path, includeSchemas }) =>
+    Effect.gen(function* () {
+      const executor = yield* input.executorCatalog.getToolByPath({
+        path,
+        includeSchemas,
+      });
+      if (executor) {
+        return executor;
+      }
+
+      const artifact = yield* input.rows.toolArtifacts.getByWorkspaceAndPath(
+        input.workspaceId,
+        path,
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+        ),
+      );
+
+      if (Option.isNone(artifact)) {
+        return null;
+      }
+
+      const refHintKeys = includeSchemas
+        ? yield* input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
+            input.workspaceId,
+            path,
+          ).pipe(
+            Effect.map((rows) => rows.map((row) => row.refHintKey)),
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+            ),
+          )
+        : undefined;
+
+      return toDescriptor({
+        artifact: artifact.value,
+        includeSchemas,
+        refHintKeys,
+      });
+    }),
+
+  searchTools: ({ query, namespace, limit }) =>
+    Effect.gen(function* () {
+      const queryTokens = tokenize(query);
+      const [persisted, executor] = yield* Effect.all([
+        namespace?.startsWith("executor")
+          ? Effect.succeed([] as readonly StoredToolArtifactRecord[])
+          : input.rows.toolArtifacts.searchByWorkspaceId(input.workspaceId, {
+              namespace,
+              query,
+              limit: Math.max(limit * 8, 50),
+            }).pipe(
+              Effect.mapError((cause) =>
+                cause instanceof Error ? cause : new Error(String(cause)),
+              ),
+            ),
+        input.executorCatalog.searchTools({
+          query,
+          ...(namespace !== undefined ? { namespace } : {}),
+          limit,
+        }),
+      ]);
+
+      const persistedHits: SearchHit[] = persisted
+        .map((artifact) => ({
+          path: asToolPath(artifact.path),
+          score: scoreArtifact(queryTokens, artifact.searchText),
+        }))
+        .filter((hit) => hit.score > 0);
+
+      return [...persistedHits, ...executor]
+        .sort((left, right) =>
+          right.score - left.score || left.path.localeCompare(right.path),
+        )
+        .slice(0, limit);
+    }),
+});
+
+const createWorkspaceToolInvoker = (input: {
+  workspaceId: Source["workspaceId"];
+  rows: SqlControlPlaneRows;
+  resolveSecretMaterial: ResolveSecretMaterial;
+  sourceAuthService: RuntimeSourceAuthService;
+  onElicitation?: Parameters<typeof makeToolInvokerFromTools>[0]["onElicitation"];
+}): {
+  catalog: ToolCatalog;
+  toolInvoker: ToolInvoker;
+} => {
+  const executorTools = createExecutorToolMap({
+    workspaceId: input.workspaceId,
+    sourceAuthService: input.sourceAuthService,
+  });
+  const executorCatalog = createToolCatalogFromTools({
+    tools: executorTools,
+  });
+  const catalog = createWorkspaceToolCatalog({
+    workspaceId: input.workspaceId,
+    rows: input.rows,
+    executorCatalog,
+  });
+  const systemTools = createSystemToolMap({ catalog });
+  const systemToolPaths = new Set(Object.keys(systemTools));
+  const executorToolPaths = new Set(Object.keys(executorTools));
+  const systemInvoker = makeToolInvokerFromTools({
+    tools: systemTools,
+    onElicitation: input.onElicitation,
+  });
+  const executorInvoker = makeToolInvokerFromTools({
+    tools: executorTools,
+    onElicitation: input.onElicitation,
   });
 
-const loadOpenApiSourceTools = (input: {
-  source: Source;
-  auth: ResolvedSourceAuthMaterial;
-}): Effect.Effect<ToolMap, Error, never> =>
-  Effect.gen(function* () {
-    if (input.source.kind !== "openapi") {
-      return yield* Effect.fail(
-        new Error(`Expected OpenAPI source, received ${input.source.kind}`),
-      );
-    }
-
-    if (!input.source.specUrl) {
-      return yield* Effect.fail(
-        new Error(`Missing OpenAPI specUrl for source ${input.source.id}`),
-      );
-    }
-
-    const openApiDocument = yield* Effect.tryPromise({
-      try: () => fetchOpenApiDocument(input.source.specUrl!),
-      catch: (cause) =>
-        cause instanceof Error
-          ? new Error(
-              `Failed fetching OpenAPI spec for ${input.source.id}: ${cause.message}`,
-            )
-          : new Error(`Failed fetching OpenAPI spec for ${input.source.id}: ${String(cause)}`),
-    });
-
-    const extracted = yield* createOpenApiToolsFromSpec({
-      sourceName: input.source.name,
-      openApiSpec: openApiDocument,
-      baseUrl: input.source.endpoint,
-      namespace: input.source.namespace ?? namespaceFromSourceName(input.source.name),
-      sourceKey: input.source.id,
-      defaultHeaders: input.source.defaultHeaders ?? {},
-      credentialHeaders: input.auth.headers,
-    }).pipe(
-      Effect.mapError(
-        (cause: unknown) =>
-          new Error(
-            `Failed loading OpenAPI tools for ${input.source.id}: ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`,
+  const invokePersistedTool = (invocation: {
+    path: string;
+    args: unknown;
+    context?: Record<string, unknown>;
+  }) =>
+    Effect.gen(function* () {
+      const artifactOption = yield* input.rows.toolArtifacts
+        .getByWorkspaceAndPath(input.workspaceId, invocation.path)
+        .pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
           ),
-      ),
-    );
+        );
 
-    return extracted.tools;
-  });
+      if (Option.isNone(artifactOption)) {
+        return yield* Effect.fail(new Error(`Unknown tool path: ${invocation.path}`));
+      }
 
-const loadSourceTools = (input: {
-  source: Source;
-  auth: ResolvedSourceAuthMaterial;
-}): Effect.Effect<ToolMap, Error, never> => {
-  if (input.source.kind === "mcp") {
-    return loadMcpSourceTools({
-      source: input.source,
-      auth: input.auth,
+      const artifact = artifactOption.value;
+      const source = yield* loadSourceById({
+        rows: input.rows,
+        workspaceId: input.workspaceId,
+        sourceId: artifact.sourceId,
+      });
+
+      if (!source.enabled || source.status !== "connected") {
+        return yield* Effect.fail(
+          new Error(`Source for tool path ${invocation.path} is not connected`),
+        );
+      }
+
+      const auth = yield* resolveSourceAuthMaterial({
+        source,
+        resolveSecretMaterial: input.resolveSecretMaterial,
+      });
+
+      if (artifact.providerKind === "mcp") {
+        const tools = createMcpToolsFromManifest({
+          manifest: {
+            version: 1,
+            tools: [{
+              toolId: storedToolIdFromArtifact(artifact),
+              toolName: artifact.mcpToolName ?? artifact.title ?? artifact.path,
+              description: artifact.description ?? null,
+              ...(artifact.inputSchemaJson ? { inputSchemaJson: artifact.inputSchemaJson } : {}),
+              ...(artifact.outputSchemaJson ? { outputSchemaJson: artifact.outputSchemaJson } : {}),
+            }],
+          },
+          connect: createSdkMcpConnector({
+            endpoint: source.endpoint,
+            transport: source.transport ?? undefined,
+            queryParams: source.queryParams ?? undefined,
+            headers: {
+              ...(source.headers ?? {}),
+              ...auth.headers,
+            },
+          }),
+          namespace: source.namespace ?? namespaceFromSourceName(source.name),
+          sourceKey: source.id,
+        });
+
+        return yield* makeToolInvokerFromTools({
+          tools,
+          onElicitation: input.onElicitation,
+        }).invoke({
+          path: invocation.path,
+          args: invocation.args,
+          context: invocation.context,
+        });
+      }
+
+      if (artifact.providerKind === "openapi") {
+        const [parameters, requestBodyContentTypes, refHintKeys] = yield* Effect.all([
+          input.rows.toolArtifacts.listParametersByWorkspaceAndPath(
+            input.workspaceId,
+            artifact.path,
+          ),
+          input.rows.toolArtifacts.listRequestBodyContentTypesByWorkspaceAndPath(
+            input.workspaceId,
+            artifact.path,
+          ),
+          input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
+            input.workspaceId,
+            artifact.path,
+          ),
+        ]).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof Error ? cause : new Error(String(cause)),
+          ),
+        );
+
+        const tools = createOpenApiToolsFromManifest({
+          manifest: {
+            version: 1,
+            sourceHash: source.sourceHash ?? "stored",
+            tools: [{
+              toolId: storedToolIdFromArtifact(artifact),
+              name: artifact.title ?? storedToolIdFromArtifact(artifact),
+              description: artifact.description ?? null,
+              method: artifact.openApiMethod!,
+              path: artifact.openApiPathTemplate!,
+              invocation: {
+                method: artifact.openApiMethod!,
+                pathTemplate: artifact.openApiPathTemplate!,
+                parameters: parameters.map((parameter) => ({
+                  name: parameter.name,
+                  location: parameter.location,
+                  required: parameter.required,
+                })),
+                requestBody:
+                  artifact.openApiRequestBodyRequired === null
+                    ? null
+                    : {
+                        required: artifact.openApiRequestBodyRequired,
+                        contentTypes: requestBodyContentTypes.map((row) => row.contentType),
+                      },
+              },
+              operationHash: artifact.openApiOperationHash!,
+              typing: {
+                ...(artifact.inputSchemaJson ? { inputSchemaJson: artifact.inputSchemaJson } : {}),
+                ...(artifact.outputSchemaJson ? { outputSchemaJson: artifact.outputSchemaJson } : {}),
+                ...(refHintKeys.length > 0
+                  ? { refHintKeys: refHintKeys.map((row) => row.refHintKey) }
+                  : {}),
+              },
+            }],
+          },
+          baseUrl: source.endpoint,
+          namespace: source.namespace ?? namespaceFromSourceName(source.name),
+          sourceKey: source.id,
+          defaultHeaders: source.defaultHeaders ?? {},
+          credentialHeaders: auth.headers,
+        });
+
+        return yield* makeToolInvokerFromTools({
+          tools,
+          onElicitation: input.onElicitation,
+        }).invoke({
+          path: invocation.path,
+          args: invocation.args,
+          context: invocation.context,
+        });
+      }
+
+      return yield* Effect.fail(
+        new Error(`Unsupported stored tool provider for ${invocation.path}`),
+      );
     });
-  }
 
-  if (input.source.kind === "openapi") {
-    return loadOpenApiSourceTools({
-      source: input.source,
-      auth: input.auth,
-    });
-  }
-
-  return Effect.succeed({});
+  return {
+    catalog,
+    toolInvoker: {
+      invoke: ({ path, args, context }) =>
+        systemToolPaths.has(path)
+          ? systemInvoker.invoke({ path, args, context })
+          : executorToolPaths.has(path)
+            ? executorInvoker.invoke({ path, args, context })
+            : invokePersistedTool({ path, args, context }),
+    },
+  };
 };
 
 export const createWorkspaceExecutionEnvironmentResolver = (input: {
@@ -221,80 +500,18 @@ export const createWorkspaceExecutionEnvironmentResolver = (input: {
     });
 
   return ({ workspaceId, onElicitation }) =>
-    Effect.gen(function* () {
-      const sourceRecords = yield* input.rows.sources.listByWorkspaceId(workspaceId).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof Error ? cause : new Error(String(cause)),
-        ),
-      );
-      const credentialBindings = yield* input.rows.sourceCredentialBindings
-        .listByWorkspaceId(workspaceId)
-        .pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-          ),
-        );
-
-      const sources = yield* projectSourcesFromStorage({
-        sourceRecords,
-        credentialBindings,
-      });
-      const enabledSources = sources.filter(
-        (source) => source.enabled && source.status === "connected",
-      );
-
-      const discoveredToolMaps = yield* Effect.forEach(
-        enabledSources,
-        (source) =>
-          Effect.gen(function* () {
-            const auth = yield* resolveSourceAuthMaterial({
-              source,
-              resolveSecretMaterial,
-            });
-            return yield* loadSourceTools({
-              source,
-              auth,
-            });
-          }),
-        { concurrency: "unbounded" },
-      );
-
-      const executorTools = createExecutorToolMap({
+    Effect.sync(() => {
+      const { catalog, toolInvoker } = createWorkspaceToolInvoker({
         workspaceId,
+        rows: input.rows,
+        resolveSecretMaterial,
         sourceAuthService: input.sourceAuthService,
-      });
-
-      const sourceTools = yield* Effect.try({
-        try: () =>
-          mergeToolMaps([...discoveredToolMaps, executorTools], {
-            conflictMode: "throw",
-          }),
-        catch: (cause) =>
-          cause instanceof Error
-            ? new Error(`Failed merging discovered source tools: ${cause.message}`)
-            : new Error(`Failed merging discovered source tools: ${String(cause)}`),
-      });
-      const catalog = yield* Effect.try({
-        try: () => createToolCatalogFromTools({ tools: sourceTools }),
-        catch: (cause) =>
-          cause instanceof Error
-            ? new Error(`Failed creating tool catalog from source tools: ${cause.message}`)
-            : new Error(`Failed creating tool catalog from source tools: ${String(cause)}`),
-      });
-      const allTools = yield* Effect.try({
-        try: () => mergeToolMaps([sourceTools, createSystemToolMap({ catalog })]),
-        catch: (cause) =>
-          cause instanceof Error
-            ? new Error(`Failed creating source execution tool map: ${cause.message}`)
-            : new Error(`Failed creating source execution tool map: ${String(cause)}`),
+        onElicitation,
       });
 
       return {
         executor: makeInProcessExecutor(),
-        toolInvoker: makeToolInvokerFromTools({
-          tools: allTools,
-          onElicitation,
-        }),
+        toolInvoker,
         catalog,
       } satisfies ExecutionEnvironment;
     });

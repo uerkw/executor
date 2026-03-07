@@ -16,6 +16,7 @@ import {
   createSourceAuthSessionsRepo,
   createSourceCredentialBindingsRepo,
   createSourcesRepo,
+  createToolArtifactsRepo,
   createWorkspacesRepo,
 } from "./repos";
 import { drizzleSchema, tableNames, type DrizzleTables } from "./schema";
@@ -50,6 +51,7 @@ const createRows = (client: DrizzleClient, tables: DrizzleTables = drizzleSchema
   organizationMemberships: createOrganizationMembershipsRepo(client, tables),
   workspaces: createWorkspacesRepo(client, tables),
   sources: createSourcesRepo(client, tables),
+  toolArtifacts: createToolArtifactsRepo(client, tables),
   sourceCredentialBindings: createSourceCredentialBindingsRepo(client, tables),
   secretMaterials: createSecretMaterialsRepo(client, tables),
   sourceAuthSessions: createSourceAuthSessionsRepo(client, tables),

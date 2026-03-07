@@ -1,0 +1,393 @@
+import {
+  createSdkMcpConnector,
+  discoverMcpToolsFromConnector,
+  type McpToolManifestEntry,
+} from "@executor-v3/codemode-mcp";
+import {
+  extractOpenApiManifest,
+  fetchOpenApiDocument,
+  type OpenApiExtractedTool,
+} from "@executor-v3/codemode-openapi";
+import type { SqlControlPlaneRows } from "#persistence";
+import {
+  type SecretRef,
+  type Source,
+  type StoredToolArtifactParameterRecord,
+  type StoredToolArtifactRecord,
+  type StoredToolArtifactRefHintKeyRecord,
+  type StoredToolArtifactRequestBodyContentTypeRecord,
+} from "#schema";
+import * as Effect from "effect/Effect";
+
+export type ResolveSourceSecretMaterial = (
+  ref: SecretRef,
+) => Effect.Effect<string, Error, never>;
+
+export type ResolvedSourceAuthMaterial = {
+  headers: Readonly<Record<string, string>>;
+};
+
+const trim = (value: string | undefined): string | undefined => {
+  const candidate = value?.trim();
+  return candidate && candidate.length > 0 ? candidate : undefined;
+};
+
+const joinToolPath = (namespace: string | null, toolId: string): string => {
+  const normalizedNamespace = trim(namespace ?? undefined);
+  return normalizedNamespace ? `${normalizedNamespace}.${toolId}` : toolId;
+};
+
+const normalizeSearchText = (...parts: ReadonlyArray<string | null | undefined>): string =>
+  parts
+    .flatMap((part) => (part ? [part.trim()] : []))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const catalogNamespaceFromPath = (path: string): string => {
+  const [first, second] = path.split(".");
+  return second ? `${first}.${second}` : first;
+};
+
+type IndexedToolArtifactRecord = {
+  artifact: StoredToolArtifactRecord;
+  parameters?: readonly StoredToolArtifactParameterRecord[];
+  requestBodyContentTypes?: readonly StoredToolArtifactRequestBodyContentTypeRecord[];
+  refHintKeys?: readonly StoredToolArtifactRefHintKeyRecord[];
+};
+
+const toMcpToolArtifactRecord = (input: {
+  workspaceId: Source["workspaceId"];
+  source: Source;
+  entry: {
+    toolId: string;
+    toolName: string;
+    description: string | null;
+    inputSchemaJson?: string;
+    outputSchemaJson?: string;
+  };
+  now: number;
+}): IndexedToolArtifactRecord => {
+  const sourceNamespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
+  const path = joinToolPath(sourceNamespace, input.entry.toolId);
+  const searchNamespace = catalogNamespaceFromPath(path);
+
+  return {
+    artifact: {
+      workspaceId: input.workspaceId,
+      path,
+      toolId: input.entry.toolId,
+      sourceId: input.source.id,
+      title: input.entry.toolName,
+      description: input.entry.description ?? null,
+      searchNamespace,
+      searchText: normalizeSearchText(
+        path,
+        searchNamespace,
+        input.entry.toolName,
+        input.entry.description ?? undefined,
+      ),
+      inputSchemaJson: input.entry.inputSchemaJson ?? null,
+      outputSchemaJson: input.entry.outputSchemaJson ?? null,
+      providerKind: "mcp",
+      mcpToolName: input.entry.toolName,
+      openApiMethod: null,
+      openApiPathTemplate: null,
+      openApiOperationHash: null,
+      openApiRequestBodyRequired: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    },
+  };
+};
+
+const toOpenApiToolArtifactRecord = (input: {
+  workspaceId: Source["workspaceId"];
+  source: Source;
+  extracted: OpenApiExtractedTool;
+  now: number;
+}): IndexedToolArtifactRecord => {
+  const sourceNamespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
+  const path = joinToolPath(sourceNamespace, input.extracted.toolId);
+  const searchNamespace = catalogNamespaceFromPath(path);
+  const description =
+    input.extracted.description
+    ?? `${input.extracted.method.toUpperCase()} ${input.extracted.path}`;
+
+  return {
+    artifact: {
+      workspaceId: input.workspaceId,
+      path,
+      toolId: input.extracted.toolId,
+      sourceId: input.source.id,
+      title: input.extracted.name,
+      description,
+      searchNamespace,
+      searchText: normalizeSearchText(
+        path,
+        searchNamespace,
+        input.extracted.name,
+        description,
+        input.extracted.method.toUpperCase(),
+        input.extracted.path,
+      ),
+      inputSchemaJson: input.extracted.typing?.inputSchemaJson ?? null,
+      outputSchemaJson: input.extracted.typing?.outputSchemaJson ?? null,
+      providerKind: "openapi",
+      mcpToolName: null,
+      openApiMethod: input.extracted.method,
+      openApiPathTemplate: input.extracted.invocation.pathTemplate,
+      openApiOperationHash: input.extracted.operationHash,
+      openApiRequestBodyRequired: input.extracted.invocation.requestBody?.required ?? null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    },
+    parameters: input.extracted.invocation.parameters.map((parameter, position) => ({
+      workspaceId: input.workspaceId,
+      path,
+      position,
+      name: parameter.name,
+      location: parameter.location,
+      required: parameter.required,
+    })),
+    requestBodyContentTypes:
+      input.extracted.invocation.requestBody?.contentTypes.map((contentType, position) => ({
+        workspaceId: input.workspaceId,
+        path,
+        position,
+        contentType,
+      })) ?? [],
+    refHintKeys:
+      input.extracted.typing?.refHintKeys?.map((refHintKey, position) => ({
+        workspaceId: input.workspaceId,
+        path,
+        position,
+        refHintKey,
+      })) ?? [],
+  };
+};
+
+const shouldIndexSource = (source: Source): boolean =>
+  source.enabled
+  && source.status === "connected"
+  && (source.kind === "mcp" || source.kind === "openapi");
+
+export const namespaceFromSourceName = (name: string): string => {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+
+  return normalized.length > 0 ? normalized : "source";
+};
+
+export const createEnvSecretMaterialResolver = (): ResolveSourceSecretMaterial =>
+  (ref) =>
+    Effect.gen(function* () {
+      if (ref.providerId !== "env") {
+        return yield* Effect.fail(
+          new Error(`Unsupported secret provider ${ref.providerId}`),
+        );
+      }
+
+      const value = process.env[ref.handle]?.trim();
+      if (!value) {
+        return yield* Effect.fail(
+          new Error(`Environment variable ${ref.handle} is not set`),
+        );
+      }
+
+      return value;
+    });
+
+export const resolveSourceAuthMaterial = (input: {
+  source: Source;
+  resolveSecretMaterial: ResolveSourceSecretMaterial;
+}): Effect.Effect<ResolvedSourceAuthMaterial, Error, never> =>
+  Effect.gen(function* () {
+    if (input.source.auth.kind === "none") {
+      return { headers: {} } satisfies ResolvedSourceAuthMaterial;
+    }
+
+    const tokenRef =
+      input.source.auth.kind === "bearer"
+        ? input.source.auth.token
+        : input.source.auth.accessToken;
+
+    const token = yield* input.resolveSecretMaterial(tokenRef);
+
+    return {
+      headers: {
+        [input.source.auth.headerName]: `${input.source.auth.prefix}${token}`,
+      },
+    } satisfies ResolvedSourceAuthMaterial;
+  });
+
+const indexMcpSourceToolArtifacts = (input: {
+  rows: SqlControlPlaneRows;
+  source: Source;
+  manifestEntries: readonly McpToolManifestEntry[];
+}): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    const now = Date.now();
+    yield* input.rows.toolArtifacts.replaceForSource({
+      workspaceId: input.source.workspaceId,
+      sourceId: input.source.id,
+      artifacts: input.manifestEntries.map((entry) =>
+        toMcpToolArtifactRecord({
+          workspaceId: input.source.workspaceId,
+          source: input.source,
+          entry,
+          now,
+        })
+      ),
+    }).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+  });
+
+const discoverAndIndexMcpSourceToolArtifacts = (input: {
+  rows: SqlControlPlaneRows;
+  source: Source;
+  auth: ResolvedSourceAuthMaterial;
+}): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    const connector = yield* Effect.try({
+      try: () =>
+        createSdkMcpConnector({
+          endpoint: input.source.endpoint,
+          transport: input.source.transport ?? undefined,
+          queryParams: input.source.queryParams ?? undefined,
+          headers: {
+            ...(input.source.headers ?? {}),
+            ...input.auth.headers,
+          },
+        }),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+    });
+
+    const discovered = yield* discoverMcpToolsFromConnector({
+      connect: connector,
+      namespace: input.source.namespace ?? namespaceFromSourceName(input.source.name),
+      sourceKey: input.source.id,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new Error(
+            `Failed discovering MCP tools for ${input.source.id}: ${cause.message}`,
+          ),
+      ),
+    );
+
+    return yield* indexMcpSourceToolArtifacts({
+      rows: input.rows,
+      source: input.source,
+      manifestEntries: discovered.manifest.tools,
+    });
+  });
+
+const indexOpenApiSourceToolArtifacts = (input: {
+  rows: SqlControlPlaneRows;
+  source: Source;
+}): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    if (!input.source.specUrl) {
+      return yield* Effect.fail(
+        new Error(`Missing OpenAPI specUrl for source ${input.source.id}`),
+      );
+    }
+
+    const openApiDocument = yield* Effect.tryPromise({
+      try: () => fetchOpenApiDocument(input.source.specUrl!),
+      catch: (cause) =>
+        cause instanceof Error
+          ? new Error(
+              `Failed fetching OpenAPI spec for ${input.source.id}: ${cause.message}`,
+            )
+          : new Error(`Failed fetching OpenAPI spec for ${input.source.id}: ${String(cause)}`),
+    });
+
+    const manifest = yield* extractOpenApiManifest(
+      input.source.name,
+      openApiDocument,
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error
+          ? cause
+          : new Error(String(cause)),
+      ),
+    );
+
+    const now = Date.now();
+    yield* input.rows.toolArtifacts.replaceForSource({
+      workspaceId: input.source.workspaceId,
+      sourceId: input.source.id,
+      artifacts: manifest.tools.map((extracted) =>
+        toOpenApiToolArtifactRecord({
+          workspaceId: input.source.workspaceId,
+          source: input.source,
+          extracted,
+          now,
+        })
+      ),
+    }).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+  });
+
+export const syncSourceToolArtifacts = (input: {
+  rows: SqlControlPlaneRows;
+  source: Source;
+  resolveSecretMaterial: ResolveSourceSecretMaterial;
+}): Effect.Effect<void, Error, never> =>
+  Effect.gen(function* () {
+    if (!shouldIndexSource(input.source)) {
+      yield* input.rows.toolArtifacts.removeByWorkspaceAndSourceId(
+        input.source.workspaceId,
+        input.source.id,
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof Error ? cause : new Error(String(cause)),
+        ),
+      );
+      return;
+    }
+
+    const auth = yield* resolveSourceAuthMaterial({
+      source: input.source,
+      resolveSecretMaterial: input.resolveSecretMaterial,
+    });
+
+    if (input.source.kind === "mcp") {
+      return yield* discoverAndIndexMcpSourceToolArtifacts({
+        rows: input.rows,
+        source: input.source,
+        auth,
+      });
+    }
+
+    if (input.source.kind === "openapi") {
+      return yield* indexOpenApiSourceToolArtifacts({
+        rows: input.rows,
+        source: input.source,
+      });
+    }
+
+    return;
+  });
+
+export const storedToolIdFromArtifact = (artifact: StoredToolArtifactRecord): string =>
+  artifact.toolId;
+
+export const persistMcpToolArtifactsFromManifest = (input: {
+  rows: SqlControlPlaneRows;
+  source: Source;
+  manifestEntries: readonly McpToolManifestEntry[];
+}): Effect.Effect<void, Error, never> =>
+  indexMcpSourceToolArtifacts(input);

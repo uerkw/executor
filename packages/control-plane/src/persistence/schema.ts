@@ -16,6 +16,10 @@ export const tableNames = {
   organizationMemberships: "organization_memberships",
   workspaces: "workspaces",
   sources: "sources",
+  toolArtifacts: "tool_artifacts",
+  toolArtifactParameters: "tool_artifact_parameters",
+  toolArtifactRequestBodyContentTypes: "tool_artifact_request_body_content_types",
+  toolArtifactRefHintKeys: "tool_artifact_ref_hint_keys",
   sourceCredentialBindings: "source_credential_bindings",
   secretMaterials: "secret_materials",
   sourceAuthSessions: "source_auth_sessions",
@@ -179,6 +183,137 @@ export const sourceCredentialBindingsTable = pgTable(
       table.workspaceId,
       table.updatedAt,
       table.sourceId,
+    ),
+  ],
+);
+
+export const toolArtifactsTable = pgTable(
+  tableNames.toolArtifacts,
+  {
+    workspaceId: text("workspace_id").notNull(),
+    path: text("path").notNull(),
+    toolId: text("tool_id").notNull(),
+    sourceId: text("source_id").notNull(),
+    title: text("title"),
+    description: text("description"),
+    searchNamespace: text("search_namespace").notNull(),
+    searchText: text("search_text").notNull(),
+    inputSchemaJson: text("input_schema_json"),
+    outputSchemaJson: text("output_schema_json"),
+    providerKind: text("provider_kind").notNull(),
+    mcpToolName: text("mcp_tool_name"),
+    openApiMethod: text("openapi_method"),
+    openApiPathTemplate: text("openapi_path_template"),
+    openApiOperationHash: text("openapi_operation_hash"),
+    openApiRequestBodyRequired: boolean("openapi_request_body_required"),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.path],
+    }),
+    index("tool_artifacts_workspace_source_idx").on(
+      table.workspaceId,
+      table.sourceId,
+      table.updatedAt,
+      table.path,
+    ),
+    index("tool_artifacts_workspace_namespace_idx").on(
+      table.workspaceId,
+      table.searchNamespace,
+      table.path,
+    ),
+    check(
+      "tool_artifacts_provider_kind_check",
+      sql`${table.providerKind} in ('mcp', 'openapi')`,
+    ),
+    check(
+      "tool_artifacts_mcp_shape_check",
+      sql`${table.providerKind} <> 'mcp'
+        or (
+          ${table.mcpToolName} is not null
+          and ${table.openApiMethod} is null
+          and ${table.openApiPathTemplate} is null
+          and ${table.openApiOperationHash} is null
+          and ${table.openApiRequestBodyRequired} is null
+        )`,
+    ),
+    check(
+      "tool_artifacts_openapi_shape_check",
+      sql`${table.providerKind} <> 'openapi'
+        or (
+          ${table.mcpToolName} is null
+          and ${table.openApiMethod} in ('get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace')
+          and ${table.openApiPathTemplate} is not null
+          and ${table.openApiOperationHash} is not null
+        )`,
+    ),
+  ],
+);
+
+export const toolArtifactParametersTable = pgTable(
+  tableNames.toolArtifactParameters,
+  {
+    workspaceId: text("workspace_id").notNull(),
+    path: text("path").notNull(),
+    position: bigint("position", { mode: "number" }).notNull(),
+    name: text("name").notNull(),
+    location: text("location").notNull(),
+    required: boolean("required").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.path, table.position],
+    }),
+    index("tool_artifact_parameters_lookup_idx").on(
+      table.workspaceId,
+      table.path,
+      table.position,
+    ),
+    check(
+      "tool_artifact_parameters_location_check",
+      sql`${table.location} in ('path', 'query', 'header', 'cookie')`,
+    ),
+  ],
+);
+
+export const toolArtifactRequestBodyContentTypesTable = pgTable(
+  tableNames.toolArtifactRequestBodyContentTypes,
+  {
+    workspaceId: text("workspace_id").notNull(),
+    path: text("path").notNull(),
+    position: bigint("position", { mode: "number" }).notNull(),
+    contentType: text("content_type").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.path, table.position],
+    }),
+    index("tool_artifact_request_body_content_types_lookup_idx").on(
+      table.workspaceId,
+      table.path,
+      table.position,
+    ),
+  ],
+);
+
+export const toolArtifactRefHintKeysTable = pgTable(
+  tableNames.toolArtifactRefHintKeys,
+  {
+    workspaceId: text("workspace_id").notNull(),
+    path: text("path").notNull(),
+    position: bigint("position", { mode: "number" }).notNull(),
+    refHintKey: text("ref_hint_key").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.path, table.position],
+    }),
+    index("tool_artifact_ref_hint_keys_lookup_idx").on(
+      table.workspaceId,
+      table.path,
+      table.position,
     ),
   ],
 );
@@ -349,6 +484,10 @@ export const drizzleSchema = {
   organizationMembershipsTable,
   workspacesTable,
   sourcesTable,
+  toolArtifactsTable,
+  toolArtifactParametersTable,
+  toolArtifactRequestBodyContentTypesTable,
+  toolArtifactRefHintKeysTable,
   sourceCredentialBindingsTable,
   secretMaterialsTable,
   sourceAuthSessionsTable,

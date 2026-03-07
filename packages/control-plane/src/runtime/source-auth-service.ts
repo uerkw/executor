@@ -27,6 +27,7 @@ import {
   type WorkspaceId,
 } from "#schema";
 import * as Context from "effect/Context";
+import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -43,6 +44,11 @@ import {
   splitSourceForStorage,
   updateSourceFromPayload,
 } from "./source-definitions";
+import {
+  createEnvSecretMaterialResolver,
+  persistMcpToolArtifactsFromManifest,
+  syncSourceToolArtifacts,
+} from "./tool-artifacts";
 
 export const CONTROL_PLANE_SECRET_PROVIDER_ID = "control-plane";
 const OAUTH_CALLBACK_PATH = "/v1/local/oauth/callback";
@@ -505,7 +511,13 @@ export const createRuntimeSourceAuthService = (input: {
   rows: SqlControlPlaneRows;
   liveExecutionManager: LiveExecutionManager;
   getLocalServerBaseUrl?: () => string | undefined;
-}) => ({
+}) => {
+  const resolveSecretMaterial = createDbBackedSecretMaterialResolver({
+    rows: input.rows,
+    fallback: createEnvSecretMaterialResolver(),
+  });
+
+  return {
   getSourceById: ({ workspaceId, sourceId }) =>
     loadSourceById(input.rows, {
       workspaceId,
@@ -570,22 +582,52 @@ export const createRuntimeSourceAuthService = (input: {
           });
 
       const persistedDraft = yield* persistSource(input.rows, draftSource);
+      yield* syncSourceToolArtifacts({
+        rows: input.rows,
+        source: persistedDraft,
+        resolveSecretMaterial,
+      });
 
       const discovered = yield* Effect.either(
         probeMcpSourceWithoutAuth(persistedDraft),
       );
 
-      if (discovered._tag === "Right") {
-        const connected = yield* updateSourceStatus(input.rows, persistedDraft, {
-          status: "connected",
-          lastError: null,
-          auth: { kind: "none" },
-        });
+      const connectedResult = yield* Either.match(discovered, {
+        onLeft: () => Effect.succeed(null),
+        onRight: (result) =>
+          Effect.gen(function* () {
+            const connected = yield* updateSourceStatus(input.rows, persistedDraft, {
+              status: "connected",
+              lastError: null,
+              auth: { kind: "none" },
+            });
+            const indexed = yield* Effect.either(
+              persistMcpToolArtifactsFromManifest({
+                rows: input.rows,
+                source: connected,
+                manifestEntries: result.manifest.tools,
+              }),
+            );
 
-        return {
-          kind: "connected",
-          source: connected,
-        } satisfies ExecutorSourceAddResult;
+            return yield* Either.match(indexed, {
+              onLeft: (error) =>
+                updateSourceStatus(input.rows, connected, {
+                  status: "error",
+                  lastError: error.message,
+                }).pipe(
+                  Effect.zipRight(Effect.fail(error)),
+                ),
+              onRight: () =>
+                Effect.succeed({
+                  kind: "connected",
+                  source: connected,
+                } satisfies ExecutorSourceAddResult),
+            });
+          }),
+      });
+
+      if (connectedResult) {
+        return connectedResult;
       }
 
       const localServerBaseUrl = input.getLocalServerBaseUrl?.();
@@ -676,9 +718,14 @@ export const createRuntimeSourceAuthService = (input: {
           completedAt: failedAt,
           updatedAt: failedAt,
         });
-        yield* updateSourceStatus(input.rows, source, {
+        const failedSource = yield* updateSourceStatus(input.rows, source, {
           status: "error",
           lastError: reason,
+        });
+        yield* syncSourceToolArtifacts({
+          rows: input.rows,
+          source: failedSource,
+          resolveSecretMaterial,
         });
         yield* completeLiveInteraction({
           liveExecutionManager: input.liveExecutionManager,
@@ -743,8 +790,25 @@ export const createRuntimeSourceAuthService = (input: {
               : {
                   providerId: CONTROL_PLANE_SECRET_PROVIDER_ID,
                   handle: refreshTokenId,
-                },
+          },
         },
+      });
+      const indexed = yield* Effect.either(
+        syncSourceToolArtifacts({
+          rows: input.rows,
+          source: connectedSource,
+          resolveSecretMaterial,
+        }),
+      );
+      yield* Either.match(indexed, {
+        onLeft: (error) =>
+          updateSourceStatus(input.rows, connectedSource, {
+            status: "error",
+            lastError: error.message,
+          }).pipe(
+            Effect.zipRight(Effect.fail(error)),
+          ),
+        onRight: () => Effect.succeed(undefined),
       });
 
       yield* input.rows.sourceAuthSessions.update(session.id, {
@@ -769,7 +833,8 @@ export const createRuntimeSourceAuthService = (input: {
 
       return connectedSource;
     }),
-} satisfies RuntimeSourceAuthServiceShape);
+  } satisfies RuntimeSourceAuthServiceShape;
+};
 
 export type RuntimeSourceAuthService = ReturnType<
   typeof createRuntimeSourceAuthService

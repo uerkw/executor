@@ -13,6 +13,13 @@ import * as Schema from "effect/Schema";
 import { Schema as EffectSchema } from "effect";
 
 import {
+  type SecretRef,
+  type Source,
+  type SourceId,
+  type StoredToolArtifactRecord,
+  type WorkspaceId,
+} from "@executor-v3/control-plane";
+import {
   createToolCatalogDiscovery,
   createToolCatalogFromTools,
   createSystemToolMap,
@@ -24,100 +31,137 @@ import {
   type ToolInvocationContext,
   type ToolInvoker,
 } from "@executor-v3/codemode-core";
-import {
-  type CredentialBinding,
-  type ProviderInvoker,
-  type SecretMaterialRegistry,
-  type SecretMaterialProvider,
-  type SourceCallContext,
-  type SourceDefinition,
-  type SourceKey,
-  type SourceRuntimeResolver,
-  type ToolArtifact,
-  asSourceKey,
-} from "./source-runtime-sketch-types";
 import { createOpenApiToolsFromSpec } from "@executor-v3/codemode-openapi";
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
 
 const asToolPath = (value: string): ToolPath => value as ToolPath;
+const asSourceId = (value: string): SourceId => value as SourceId;
+const asWorkspaceId = (value: string): WorkspaceId => value as WorkspaceId;
+
+const tokenize = (value: string): string[] =>
+  value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+const normalizeSearchText = (...parts: ReadonlyArray<string | null | undefined>): string =>
+  parts
+    .flatMap((part) => {
+      const normalized = part?.trim();
+      return normalized ? [normalized] : [];
+    })
+    .join(" ")
+    .toLowerCase();
+
+const catalogNamespaceFromPath = (path: string): string => {
+  const [first, second] = path.split(".");
+  return second ? `${first}.${second}` : first;
+};
+
+const toDescriptor = (
+  artifact: StoredToolArtifactRecord,
+  includeSchemas: boolean,
+) => ({
+  path: asToolPath(artifact.path),
+  sourceKey: artifact.sourceId,
+  description: artifact.description ?? artifact.title ?? undefined,
+  interaction: "auto" as const,
+  inputHint: includeSchemas && artifact.inputSchemaJson ? "object" : undefined,
+  outputHint: includeSchemas && artifact.outputSchemaJson ? "output" : undefined,
+  inputSchemaJson: includeSchemas ? artifact.inputSchemaJson ?? undefined : undefined,
+  outputSchemaJson: includeSchemas ? artifact.outputSchemaJson ?? undefined : undefined,
+});
+
+type SourceCallContext = {
+  auth:
+    | { kind: "none" }
+    | {
+        kind: "headers";
+        headers: Record<string, string>;
+      };
+};
+
+interface SecretMaterialProvider {
+  providerId: string;
+  get(input: {
+    handle: string;
+  }): Promise<string>;
+}
+
+interface SecretMaterialRegistry {
+  get(input: {
+    ref: SecretRef;
+  }): Promise<string>;
+}
+
+interface ProviderInvoker {
+  invoke(input: {
+    source: Source;
+    artifact: StoredToolArtifactRecord;
+    args: unknown;
+    runtime: SourceCallContext;
+    context?: ToolInvocationContext;
+  }): Promise<unknown>;
+}
 
 type WorkspaceScopedSourceStore = {
   registerSource(input: {
-    workspaceId: string;
-    source: SourceDefinition;
+    workspaceId: WorkspaceId;
+    source: Source;
   }): Promise<void>;
-  listSources(input: {
-    workspaceId: string;
-    limit?: number;
-  }): Promise<
-    readonly {
-      sourceKey: SourceKey;
-      displayName: string;
-    }[]
-  >;
-  getByKey(input: {
-    sourceKey: SourceKey;
-  }): Promise<SourceDefinition | null>;
+  getById(input: {
+    sourceId: SourceId;
+  }): Promise<Source | null>;
 };
 
 type WorkspaceScopedToolStore = {
   indexArtifacts(input: {
-    workspaceId: string;
-    sourceKey: SourceKey;
-    artifacts: readonly ToolArtifact[];
+    workspaceId: WorkspaceId;
+    artifacts: readonly StoredToolArtifactRecord[];
   }): Promise<void>;
-  list(input: {
-    workspaceId: string;
-    sourceKey?: SourceKey;
-    query?: string;
+  listNamespaces(input: {
+    workspaceId: WorkspaceId;
     limit?: number;
-  }): Promise<readonly ToolArtifact[]>;
+  }): Promise<
+    readonly {
+      namespace: string;
+      toolCount: number;
+    }[]
+  >;
+  list(input: {
+    workspaceId: WorkspaceId;
+    query?: string;
+    namespace?: string;
+    limit?: number;
+  }): Promise<readonly StoredToolArtifactRecord[]>;
   getByPath(input: {
-    workspaceId: string;
+    workspaceId: WorkspaceId;
     path: ToolPath;
-  }): Promise<ToolArtifact | null>;
-};
-
-type WorkspaceScopedBindingStore = {
-  put(input: {
-    workspaceId: string;
-    binding: CredentialBinding;
-  }): Promise<void>;
-  getBySourceKey(input: {
-    workspaceId: string;
-    sourceKey: SourceKey;
-  }): Promise<CredentialBinding | null>;
+  }): Promise<StoredToolArtifactRecord | null>;
 };
 
 const createInMemorySourceStore = (): WorkspaceScopedSourceStore => {
-  const byWorkspace = new Map<string, Map<string, SourceDefinition>>();
+  const byWorkspace = new Map<string, Map<string, Source>>();
 
-  const getWorkspaceMap = (workspaceId: string) => {
+  const getWorkspaceMap = (workspaceId: WorkspaceId) => {
     const existing = byWorkspace.get(workspaceId);
     if (existing) {
       return existing;
     }
 
-    const created = new Map<string, SourceDefinition>();
+    const created = new Map<string, Source>();
     byWorkspace.set(workspaceId, created);
     return created;
   };
 
   return {
     async registerSource({ workspaceId, source }) {
-      getWorkspaceMap(workspaceId).set(source.sourceKey, source);
+      getWorkspaceMap(workspaceId).set(source.id, source);
     },
-    async listSources({ workspaceId, limit = 200 }) {
-      return [...getWorkspaceMap(workspaceId).values()]
-        .slice(0, limit)
-        .map((source) => ({
-          sourceKey: source.sourceKey,
-          displayName: source.displayName,
-        }));
-    },
-    async getByKey({ sourceKey }) {
+    async getById({ sourceId }) {
       for (const workspace of byWorkspace.values()) {
-        const source = workspace.get(sourceKey);
+        const source = workspace.get(sourceId);
         if (source) {
           return source;
         }
@@ -128,15 +172,15 @@ const createInMemorySourceStore = (): WorkspaceScopedSourceStore => {
 };
 
 const createInMemoryToolStore = (): WorkspaceScopedToolStore => {
-  const byWorkspace = new Map<string, Map<string, ToolArtifact>>();
+  const byWorkspace = new Map<string, Map<string, StoredToolArtifactRecord>>();
 
-  const getWorkspaceMap = (workspaceId: string) => {
+  const getWorkspaceMap = (workspaceId: WorkspaceId) => {
     const existing = byWorkspace.get(workspaceId);
     if (existing) {
       return existing;
     }
 
-    const created = new Map<string, ToolArtifact>();
+    const created = new Map<string, StoredToolArtifactRecord>();
     byWorkspace.set(workspaceId, created);
     return created;
   };
@@ -148,52 +192,33 @@ const createInMemoryToolStore = (): WorkspaceScopedToolStore => {
         workspace.set(artifact.path, artifact);
       }
     },
-    async list({ workspaceId, sourceKey, query, limit = 200 }) {
+    async listNamespaces({ workspaceId, limit = 200 }) {
+      const counts = new Map<string, number>();
+      for (const artifact of getWorkspaceMap(workspaceId).values()) {
+        counts.set(
+          artifact.searchNamespace,
+          (counts.get(artifact.searchNamespace) ?? 0) + 1,
+        );
+      }
+
+      return [...counts.entries()]
+        .map(([namespace, toolCount]) => ({
+          namespace,
+          toolCount,
+        }))
+        .sort((left, right) => left.namespace.localeCompare(right.namespace))
+        .slice(0, limit);
+    },
+    async list({ workspaceId, namespace, query, limit = 200 }) {
       return [...getWorkspaceMap(workspaceId).values()]
-        .filter((artifact) => !sourceKey || artifact.sourceKey === sourceKey)
+        .filter((artifact) => !namespace || artifact.searchNamespace === namespace)
         .filter((artifact) =>
-          !query
-            || [
-              artifact.path,
-              artifact.title ?? "",
-              artifact.description ?? "",
-              artifact.search.namespace,
-              ...artifact.search.keywords,
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(query.toLowerCase())
+          !query || tokenize(query).every((token) => artifact.searchText.includes(token))
         )
         .slice(0, limit);
     },
     async getByPath({ workspaceId, path }) {
       return getWorkspaceMap(workspaceId).get(path) ?? null;
-    },
-  };
-};
-
-const createInMemoryBindingStore = (): WorkspaceScopedBindingStore => {
-  const byWorkspace = new Map<string, Map<string, CredentialBinding>>();
-
-  const getWorkspaceMap = (workspaceId: string) => {
-    const existing = byWorkspace.get(workspaceId);
-    if (existing) {
-      return existing;
-    }
-
-    const created = new Map<string, CredentialBinding>();
-    byWorkspace.set(workspaceId, created);
-    return created;
-  };
-
-  return {
-    async put(input) {
-      const workspaceId = "workspaceId" in input ? input.workspaceId : "default";
-      getWorkspaceMap(workspaceId).set(input.binding.sourceKey, input.binding);
-    },
-    async getBySourceKey(input) {
-      const workspaceId = "workspaceId" in input ? input.workspaceId : "default";
-      return getWorkspaceMap(workspaceId).get(input.sourceKey) ?? null;
     },
   };
 };
@@ -232,87 +257,46 @@ const createSecretRegistry = (
   };
 };
 
-const createSourceRuntimeResolver = (input: {
-  bindingStore: WorkspaceScopedBindingStore;
+const resolveSourceCallContext = (input: {
   secretRegistry: SecretMaterialRegistry;
-}): SourceRuntimeResolver => ({
-  async resolveForCall({ source, context }) {
+}) =>
+  async (source: Source): Promise<SourceCallContext> => {
     if (source.auth.kind === "none") {
       return { auth: { kind: "none" } };
     }
 
-    const workspaceId =
-      typeof context?.workspaceId === "string" ? context.workspaceId : "default";
-
-    const binding = await input.bindingStore.getBySourceKey({
-      workspaceId,
-      sourceKey: source.sourceKey,
-    });
-    if (!binding) {
-      throw new Error(`Missing credential binding for source ${source.sourceKey}`);
-    }
-
-    if (source.auth.kind === "bearer" || source.auth.kind === "oauth2") {
-      const ref = binding.materials.token ?? binding.materials.accessToken;
-      if (!ref) {
-        throw new Error(`Missing token material for source ${source.sourceKey}`);
-      }
-
-      const token = await input.secretRegistry.get({ ref });
-      return {
-        auth: {
-          kind: "headers",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      } satisfies SourceCallContext;
-    }
-
-    if (source.auth.kind === "apiKey") {
-      const ref = binding.materials.apiKey;
-      if (!ref) {
-        throw new Error(`Missing apiKey material for source ${source.sourceKey}`);
-      }
-
-      const apiKey = await input.secretRegistry.get({ ref });
-      return source.auth.in === "header"
-        ? {
-            auth: {
-              kind: "headers",
-              headers: {
-                [source.auth.name]: apiKey,
-              },
-            },
-          }
-        : {
-            auth: {
-              kind: "query",
-              queryParams: {
-                [source.auth.name]: apiKey,
-              },
-            },
-          };
-    }
+    const tokenRef = source.auth.kind === "bearer"
+      ? source.auth.token
+      : source.auth.accessToken;
+    const token = await input.secretRegistry.get({ ref: tokenRef });
 
     return {
       auth: {
-        kind: "composite",
-        values: {
-          sourceKind: source.kind,
+        kind: "headers",
+        headers: {
+          [source.auth.headerName]: `${source.auth.prefix}${token}`,
         },
       },
     };
-  },
-});
+  };
 
 const createProviderInvoker = (): ProviderInvoker => ({
   async invoke({ source, artifact, args, runtime, context }) {
+    const invocation = artifact.providerKind === "mcp"
+      ? {
+          toolName: artifact.mcpToolName ?? artifact.title ?? artifact.toolId,
+        }
+      : {
+          method: artifact.openApiMethod,
+          pathTemplate: artifact.openApiPathTemplate,
+          operationHash: artifact.openApiOperationHash,
+        };
+
     return {
-      sourceKey: source.sourceKey,
+      sourceId: source.id,
       path: artifact.path,
-      provider: artifact.invocation.provider,
-      invocation: artifact.invocation,
+      provider: artifact.providerKind,
+      invocation,
       args,
       auth: runtime.auth,
       workspaceId: context?.workspaceId ?? null,
@@ -322,20 +306,18 @@ const createProviderInvoker = (): ProviderInvoker => ({
 });
 
 const createWorkspaceToolCatalog = (input: {
-  workspaceId: string;
-  sourceStore: WorkspaceScopedSourceStore;
+  workspaceId: WorkspaceId;
   toolStore: WorkspaceScopedToolStore;
 }): ToolCatalog => ({
   listNamespaces: ({ limit }) =>
     Effect.promise(() =>
-      input.sourceStore.listSources({
+      input.toolStore.listNamespaces({
         workspaceId: input.workspaceId,
         limit,
-      }).then((sources) =>
-        sources.map((source) => ({
-          namespace: source.sourceKey as string,
-          displayName: source.displayName,
-          toolCount: undefined,
+      }).then((namespaces) =>
+        namespaces.map((namespace) => ({
+          namespace: namespace.namespace,
+          toolCount: namespace.toolCount,
         }))
       )
     ),
@@ -343,69 +325,37 @@ const createWorkspaceToolCatalog = (input: {
     Effect.promise(() =>
       input.toolStore.list({
         workspaceId: input.workspaceId,
-        ...(namespace !== undefined ? { sourceKey: namespace as SourceKey } : {}),
+        ...(namespace !== undefined ? { namespace } : {}),
         ...(query !== undefined ? { query } : {}),
         limit,
-      }).then((artifacts) =>
-        artifacts.map((artifact) => ({
-          path: artifact.path as any,
-          sourceKey: artifact.sourceKey,
-          description: artifact.description ?? artifact.title,
-          interaction: "auto" as const,
-          inputHint: includeSchemas && artifact.inputSchemaJson ? "object" : undefined,
-          outputHint: includeSchemas && artifact.outputSchemaJson ? "output" : undefined,
-          inputSchemaJson: includeSchemas ? artifact.inputSchemaJson : undefined,
-          outputSchemaJson: includeSchemas ? artifact.outputSchemaJson : undefined,
-        }))
-      )
+      }).then((artifacts) => artifacts.map((artifact) => toDescriptor(artifact, includeSchemas)))
     ),
   getToolByPath: ({ path, includeSchemas }) =>
     Effect.promise(() =>
       input.toolStore.getByPath({
         workspaceId: input.workspaceId,
-        path: path as ToolPath,
-      }).then((artifact) =>
-        artifact
-          ? {
-              path: artifact.path as any,
-              sourceKey: artifact.sourceKey,
-              description: artifact.description ?? artifact.title,
-              interaction: "auto" as const,
-              inputHint: includeSchemas && artifact.inputSchemaJson ? "object" : undefined,
-              outputHint: includeSchemas && artifact.outputSchemaJson ? "output" : undefined,
-              inputSchemaJson: includeSchemas ? artifact.inputSchemaJson : undefined,
-              outputSchemaJson: includeSchemas ? artifact.outputSchemaJson : undefined,
-            }
-          : null
-      )
+        path,
+      }).then((artifact) => (artifact ? toDescriptor(artifact, includeSchemas) : null))
     ),
   searchTools: ({ query, namespace, limit }) =>
     Effect.promise(() =>
       input.toolStore.list({
         workspaceId: input.workspaceId,
-        ...(namespace !== undefined ? { sourceKey: namespace as SourceKey } : {}),
-        ...(query !== undefined ? { query } : {}),
+        ...(namespace !== undefined ? { namespace } : {}),
+        query,
         limit: 500,
       }).then((artifacts) => {
-        const queryTokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+        const queryTokens = tokenize(query);
 
         return artifacts
           .map((artifact) => {
-            const haystack = [
-              artifact.path,
-              artifact.title ?? "",
-              artifact.description ?? "",
-              artifact.search.namespace,
-              ...artifact.search.keywords,
-            ].join(" ").toLowerCase();
-
             const score = queryTokens.reduce(
-              (total, token) => total + (haystack.includes(token) ? 1 : 0),
+              (total, token) => total + (artifact.searchText.includes(token) ? 1 : 0),
               0,
             );
 
             return {
-              path: artifact.path as any,
+              path: asToolPath(artifact.path),
               score,
             };
           })
@@ -417,16 +367,15 @@ const createWorkspaceToolCatalog = (input: {
 });
 
 const createWorkspaceToolInvoker = (input: {
-  workspaceId: string;
+  workspaceId: WorkspaceId;
   sourceStore: WorkspaceScopedSourceStore;
   toolStore: WorkspaceScopedToolStore;
-  runtimeResolver: SourceRuntimeResolver;
+  resolveSourceCallContext: (source: Source) => Promise<SourceCallContext>;
   providerInvoker: ProviderInvoker;
 }): ToolInvoker => ({
   invoke: (() => {
     const catalog = createWorkspaceToolCatalog({
       workspaceId: input.workspaceId,
-      sourceStore: input.sourceStore,
       toolStore: input.toolStore,
     });
     const systemTools = createSystemToolMap({
@@ -457,18 +406,14 @@ const createWorkspaceToolInvoker = (input: {
           throw new Error(`Unknown tool path: ${path}`);
         }
 
-        const source = await input.sourceStore.getByKey({
-          sourceKey: artifact.sourceKey,
+        const source = await input.sourceStore.getById({
+          sourceId: artifact.sourceId,
         });
         if (!source) {
           throw new Error(`Unknown source for tool path: ${path}`);
         }
 
-        const runtime = await input.runtimeResolver.resolveForCall({
-          source,
-          artifact,
-          context: mergedContext,
-        });
+        const runtime = await input.resolveSourceCallContext(source);
 
         return input.providerInvoker.invoke({
           source,
@@ -484,10 +429,9 @@ const createWorkspaceToolInvoker = (input: {
 });
 
 const toolInvokerFromWorkspace = (input: {
-  workspaceId: string;
+  workspaceId: WorkspaceId;
   sourceStore: WorkspaceScopedSourceStore;
   toolStore: WorkspaceScopedToolStore;
-  bindingStore: WorkspaceScopedBindingStore;
   secretRegistry: SecretMaterialRegistry;
   providerInvoker?: ProviderInvoker;
 }): ToolInvoker =>
@@ -495,45 +439,99 @@ const toolInvokerFromWorkspace = (input: {
     workspaceId: input.workspaceId,
     sourceStore: input.sourceStore,
     toolStore: input.toolStore,
-    runtimeResolver: createSourceRuntimeResolver({
-      bindingStore: input.bindingStore,
+    resolveSourceCallContext: resolveSourceCallContext({
       secretRegistry: input.secretRegistry,
     }),
     providerInvoker: input.providerInvoker ?? createProviderInvoker(),
   });
 
-const bearerBinding = (input: {
-  sourceKey: SourceKey;
+const bearerSourceAuth = (input: {
   providerId: string;
   handle: string;
-}): CredentialBinding => ({
-  sourceKey: input.sourceKey,
-  authScheme: { kind: "bearer" },
-  materials: {
-    token: {
-      providerId: input.providerId,
-      handle: input.handle,
-    },
+}): Source["auth"] => ({
+  kind: "bearer",
+  headerName: "Authorization",
+  prefix: "Bearer ",
+  token: {
+    providerId: input.providerId,
+    handle: input.handle,
   },
 });
 
 const openApiSource = (input: {
-  sourceKey: SourceKey;
+  workspaceId: WorkspaceId;
+  sourceId: SourceId;
   displayName: string;
   baseUrl: string;
   specUrl?: string;
-  auth: SourceDefinition["auth"];
-}): SourceDefinition => ({
-  sourceKey: input.sourceKey,
-  displayName: input.displayName,
+  namespace?: string;
+  auth: Source["auth"];
+}): Source => ({
+  id: input.sourceId,
+  workspaceId: input.workspaceId,
+  name: input.displayName,
   kind: "openapi",
+  endpoint: input.baseUrl,
+  status: "connected",
   enabled: true,
+  namespace: input.namespace ?? null,
+  transport: null,
+  queryParams: null,
+  headers: null,
+  specUrl: input.specUrl ?? null,
+  defaultHeaders: null,
   auth: input.auth,
-  connection: {
-    specUrl: input.specUrl,
-    baseUrl: input.baseUrl,
-  },
+  sourceHash: null,
+  lastError: null,
+  createdAt: 0,
+  updatedAt: 0,
 });
+
+const openApiArtifact = (input: {
+  workspaceId: WorkspaceId;
+  sourceId: SourceId;
+  path: ToolPath;
+  toolId: string;
+  title: string;
+  description?: string;
+  method: NonNullable<StoredToolArtifactRecord["openApiMethod"]>;
+  pathTemplate: string;
+  operationHash?: string;
+  inputSchemaJson?: string | null;
+  outputSchemaJson?: string | null;
+}): StoredToolArtifactRecord => {
+  const path = input.path as string;
+  const description =
+    input.description ?? `${input.method.toUpperCase()} ${input.pathTemplate}`;
+
+  return {
+    workspaceId: input.workspaceId,
+    path,
+    toolId: input.toolId,
+    sourceId: input.sourceId,
+    title: input.title,
+    description,
+    searchNamespace: catalogNamespaceFromPath(path),
+    searchText: normalizeSearchText(
+      path,
+      catalogNamespaceFromPath(path),
+      input.title,
+      description,
+      input.method.toUpperCase(),
+      input.pathTemplate,
+    ),
+    inputSchemaJson: input.inputSchemaJson ?? null,
+    outputSchemaJson: input.outputSchemaJson ?? null,
+    providerKind: "openapi",
+    mcpToolName: null,
+    openApiMethod: input.method,
+    openApiPathTemplate: input.pathTemplate,
+    openApiOperationHash: input.operationHash ?? input.toolId,
+    openApiRequestBodyRequired: null,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+};
 
 const numberPairInputSchema = Schema.standardSchemaV1(
   Schema.Struct({
@@ -545,10 +543,9 @@ const numberPairInputSchema = Schema.standardSchemaV1(
 const createDiscoveryBackedToolMap = (input: {
   tools: ToolMap;
   namespace: string;
-  displayName?: string;
   sourceKey?: string;
 }) => {
-  const sourceKey = asSourceKey(input.sourceKey ?? "in_memory.tools");
+  const sourceKey = input.sourceKey ?? "in_memory.tools";
   const catalog = createToolCatalogFromTools({
     tools: input.tools,
     defaultNamespace: input.namespace,
@@ -657,10 +654,9 @@ const makeOpenApiTestServer = Effect.acquireRelease(
 describe("source runtime", () => {
   it.effect("searches serialized workspace tools and calls one", () =>
     Effect.gen(function* () {
-      const workspaceId = "workspace_123";
+      const workspaceId = asWorkspaceId("workspace_123");
       const sourceStore = createInMemorySourceStore();
       const toolStore = createInMemoryToolStore();
-      const bindingStore = createInMemoryBindingStore();
       const secretRegistry = createSecretRegistry([
         createStaticSecretProvider("postgres", {
           "github-db-token": "ghp_from_db",
@@ -668,11 +664,16 @@ describe("source runtime", () => {
       ]);
 
       const githubSource = openApiSource({
-        sourceKey: asSourceKey("github"),
+        workspaceId,
+        sourceId: asSourceId("github"),
         displayName: "GitHub API",
         baseUrl: "https://api.github.com",
         specUrl: "https://api.github.com/openapi.json",
-        auth: { kind: "bearer" },
+        namespace: "github",
+        auth: bearerSourceAuth({
+          providerId: "postgres",
+          handle: "github-db-token",
+        }),
       });
 
       yield* Effect.promise(() =>
@@ -682,36 +683,19 @@ describe("source runtime", () => {
         })
       );
       yield* Effect.promise(() =>
-        bindingStore.put({
-          workspaceId,
-          binding: bearerBinding({
-            sourceKey: githubSource.sourceKey,
-            providerId: "postgres",
-            handle: "github-db-token",
-          }),
-        })
-      );
-      yield* Effect.promise(() =>
         toolStore.indexArtifacts({
           workspaceId,
-          sourceKey: githubSource.sourceKey,
           artifacts: [
-            {
+            openApiArtifact({
+              workspaceId,
+              sourceId: githubSource.id,
               path: asToolPath("github.issues.list"),
-              sourceKey: githubSource.sourceKey,
+              toolId: "issues.list",
               title: "List issues",
               description: "Serialized artifact loaded from a database row",
-              invocation: {
-                provider: "openapi",
-                operationId: "issues.list",
-                method: "get",
-                pathTemplate: "/repos/{owner}/{repo}/issues",
-              },
-              search: {
-                namespace: "github.issues",
-                keywords: ["github", "issues", "list", "serialized", "db"],
-              },
-            },
+              method: "get",
+              pathTemplate: "/repos/{owner}/{repo}/issues",
+            }),
           ],
         })
       );
@@ -720,12 +704,10 @@ describe("source runtime", () => {
         workspaceId,
         sourceStore,
         toolStore,
-        bindingStore,
         secretRegistry,
       });
       const workspaceCatalog = createWorkspaceToolCatalog({
         workspaceId,
-        sourceStore,
         toolStore,
       });
       const executeDescription = yield* createToolCatalogDiscovery({
@@ -770,7 +752,7 @@ describe("source runtime", () => {
         [
           "Execute TypeScript in sandbox; call tools via discovery workflow.",
           "Available namespaces:",
-          "- GitHub API",
+          "- github.issues",
           "Workflow:",
           '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
           "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
@@ -798,7 +780,6 @@ describe("source runtime", () => {
       const discoveryBacked = createDiscoveryBackedToolMap({
         tools: extracted.tools,
         namespace: "github",
-        displayName: "GitHub API",
         sourceKey: "github.openapi",
       });
 

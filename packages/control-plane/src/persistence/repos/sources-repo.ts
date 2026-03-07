@@ -4,7 +4,7 @@ import {
 } from "#schema";
 import * as Option from "effect/Option";
 import { Schema } from "effect";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 
 import type { DrizzleClient } from "../client";
 import type { DrizzleTables } from "../schema";
@@ -111,6 +111,66 @@ export const createSourcesRepo = (
     sourceId: StoredSourceRecord["id"],
   ) =>
     client.useTx("rows.sources.remove", async (tx) => {
+      const existingToolPaths = (
+        await tx
+          .select({
+            path: tables.toolArtifactsTable.path,
+          })
+          .from(tables.toolArtifactsTable)
+          .where(
+            and(
+              eq(tables.toolArtifactsTable.workspaceId, workspaceId),
+              eq(tables.toolArtifactsTable.sourceId, sourceId),
+            ),
+          )
+      ).map((row) => row.path);
+
+      if (existingToolPaths.length > 0) {
+        await tx
+          .delete(tables.toolArtifactParametersTable)
+          .where(
+            and(
+              eq(tables.toolArtifactParametersTable.workspaceId, workspaceId),
+              or(
+                ...existingToolPaths.map((path) => eq(tables.toolArtifactParametersTable.path, path)),
+              ),
+            ),
+          );
+
+        await tx
+          .delete(tables.toolArtifactRequestBodyContentTypesTable)
+          .where(
+            and(
+              eq(tables.toolArtifactRequestBodyContentTypesTable.workspaceId, workspaceId),
+              or(
+                ...existingToolPaths.map((path) =>
+                  eq(tables.toolArtifactRequestBodyContentTypesTable.path, path)
+                ),
+              ),
+            ),
+          );
+
+        await tx
+          .delete(tables.toolArtifactRefHintKeysTable)
+          .where(
+            and(
+              eq(tables.toolArtifactRefHintKeysTable.workspaceId, workspaceId),
+              or(
+                ...existingToolPaths.map((path) => eq(tables.toolArtifactRefHintKeysTable.path, path)),
+              ),
+            ),
+          );
+      }
+
+      await tx
+        .delete(tables.toolArtifactsTable)
+        .where(
+          and(
+            eq(tables.toolArtifactsTable.workspaceId, workspaceId),
+            eq(tables.toolArtifactsTable.sourceId, sourceId),
+          ),
+        );
+
       await tx
         .delete(tables.sourceCredentialBindingsTable)
         .where(
