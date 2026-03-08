@@ -135,6 +135,7 @@ export const sourcesTable = pgTable(
     authHeaderName: text("auth_header_name"),
     authPrefix: text("auth_prefix"),
     sourceHash: text("source_hash"),
+    sourceDocumentText: text("source_document_text"),
     lastError: text("last_error"),
     createdAt: bigint("created_at", { mode: "number" }).notNull(),
     updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
@@ -205,6 +206,9 @@ export const toolArtifactsTable = pgTable(
     openApiMethod: text("openapi_method"),
     openApiPathTemplate: text("openapi_path_template"),
     openApiOperationHash: text("openapi_operation_hash"),
+    openApiRawToolId: text("openapi_raw_tool_id"),
+    openApiOperationId: text("openapi_operation_id"),
+    openApiTagsJson: text("openapi_tags_json"),
     openApiRequestBodyRequired: boolean("openapi_request_body_required"),
     createdAt: bigint("created_at", { mode: "number" }).notNull(),
     updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
@@ -236,6 +240,9 @@ export const toolArtifactsTable = pgTable(
           and ${table.openApiMethod} is null
           and ${table.openApiPathTemplate} is null
           and ${table.openApiOperationHash} is null
+          and ${table.openApiRawToolId} is null
+          and ${table.openApiOperationId} is null
+          and ${table.openApiTagsJson} is null
           and ${table.openApiRequestBodyRequired} is null
         )`,
     ),
@@ -247,6 +254,8 @@ export const toolArtifactsTable = pgTable(
           and ${table.openApiMethod} in ('get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace')
           and ${table.openApiPathTemplate} is not null
           and ${table.openApiOperationHash} is not null
+          and ${table.openApiRawToolId} is not null
+          and ${table.openApiTagsJson} is not null
         )`,
     ),
   ],

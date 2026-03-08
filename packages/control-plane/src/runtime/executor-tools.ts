@@ -373,8 +373,8 @@ export const createExecutorToolMap = (input: {
       },
     },
     metadata: {
-      inputHint: EXECUTOR_SOURCES_ADD_INPUT_HINT,
-      outputHint: EXECUTOR_SOURCES_ADD_OUTPUT_SIGNATURE,
+      inputType: EXECUTOR_SOURCES_ADD_INPUT_HINT,
+      outputType: EXECUTOR_SOURCES_ADD_OUTPUT_SIGNATURE,
       inputSchemaJson: EXECUTOR_SOURCES_ADD_INPUT_SCHEMA_JSON,
       outputSchemaJson: EXECUTOR_SOURCES_ADD_OUTPUT_SCHEMA_JSON,
       sourceKey: "executor",

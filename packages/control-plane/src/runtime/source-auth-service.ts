@@ -165,7 +165,7 @@ const persistSource = (rows: SqlControlPlaneRows, source: Source) =>
     if (Option.isNone(existing)) {
       yield* rows.sources.insert(sourceRecord);
     } else {
-      const { id: _id, workspaceId: _workspaceId, createdAt: _createdAt, ...patch } = sourceRecord;
+      const { id: _id, workspaceId: _workspaceId, createdAt: _createdAt, sourceDocumentText: _sourceDocumentText, ...patch } = sourceRecord;
       yield* rows.sources.update(source.workspaceId, source.id, patch);
     }
 
@@ -431,12 +431,19 @@ const updateSourceStatus = (rows: SqlControlPlaneRows, source: Source, input: {
   lastError?: string | null;
   auth?: Source["auth"];
 }) =>
-  persistSource(rows, {
-    ...source,
-    status: input.status,
-    lastError: input.lastError ?? null,
-    auth: input.auth ?? source.auth,
-    updatedAt: Date.now(),
+  Effect.gen(function* () {
+    const latest = yield* loadSourceById(rows, {
+      workspaceId: source.workspaceId,
+      sourceId: source.id,
+    });
+
+    return yield* persistSource(rows, {
+      ...latest,
+      status: input.status,
+      lastError: input.lastError ?? null,
+      auth: input.auth ?? latest.auth,
+      updatedAt: Date.now(),
+    });
   });
 
 const upsertSecretMaterial = (rows: SqlControlPlaneRows, input: {

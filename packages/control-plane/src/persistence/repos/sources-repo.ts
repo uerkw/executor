@@ -35,6 +35,7 @@ const toSourceUpdateSet = (
   if (patch.authHeaderName !== undefined) set.authHeaderName = patch.authHeaderName;
   if (patch.authPrefix !== undefined) set.authPrefix = patch.authPrefix;
   if (patch.sourceHash !== undefined) set.sourceHash = patch.sourceHash;
+  if (patch.sourceDocumentText !== undefined) set.sourceDocumentText = patch.sourceDocumentText;
   if (patch.lastError !== undefined) set.lastError = patch.lastError;
   if (patch.updatedAt !== undefined) set.updatedAt = patch.updatedAt;
 

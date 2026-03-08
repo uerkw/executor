@@ -7,10 +7,18 @@ export {
   extractOpenApiManifest,
 } from "./openapi-extraction";
 export {
+  compileOpenApiToolDefinitions,
+  openApiProviderDataJsonFromDefinition,
+  OpenApiToolDefinitionSchema,
+  type OpenApiToolDefinition,
+} from "./openapi-definitions";
+export { buildOpenApiToolPresentation, type OpenApiToolPresentation } from "./openapi-tool-presentation";
+export {
   OpenApiToolInvocationError,
   createOpenApiToolsFromManifest,
   createOpenApiToolsFromSpec,
 } from "./openapi-tools";
+export { resolveSchemaJsonWithRefHints, resolveTypingSchemasWithRefHints } from "./openapi-schema-refs";
 export {
   OPEN_API_HTTP_METHODS,
   OPEN_API_PARAMETER_LOCATIONS,
@@ -22,6 +30,11 @@ export {
   OpenApiToolManifestSchema,
   OpenApiToolParameterSchema,
   OpenApiToolRequestBodySchema,
+  OpenApiExampleSchema,
+  OpenApiParameterDocumentationSchema,
+  OpenApiRequestBodyDocumentationSchema,
+  OpenApiResponseDocumentationSchema,
+  OpenApiToolDocumentationSchema,
   type DiscoveryTypingPayload,
   type OpenApiExtractedTool,
   type OpenApiHttpMethod,
@@ -34,4 +47,11 @@ export {
   type OpenApiToolManifest,
   type OpenApiToolParameter,
   type OpenApiToolRequestBody,
+} from "./openapi-types";
+export type {
+  OpenApiExample,
+  OpenApiParameterDocumentation,
+  OpenApiRequestBodyDocumentation,
+  OpenApiResponseDocumentation,
+  OpenApiToolDocumentation,
 } from "./openapi-types";

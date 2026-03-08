@@ -287,16 +287,16 @@ describe("codemode-core", () => {
           path: asToolPath("source.docs.search"),
           sourceKey: "source.docs",
           description: "Search docs",
-          inputHint: "object",
-          outputHint: "object",
+          inputType: "object",
+          outputType: "object",
         },
         "source.issues.create": {
           path: asToolPath("source.issues.create"),
           sourceKey: "source.issues",
           description: "Create issue",
           interaction: "required",
-          inputHint: "object",
-          outputHint: "object",
+          inputType: "object",
+          outputType: "object",
         },
       };
 
@@ -327,7 +327,6 @@ describe("codemode-core", () => {
                 ...descriptor,
                 inputSchemaJson: includeSchemas ? descriptor.inputSchemaJson : undefined,
                 outputSchemaJson: includeSchemas ? descriptor.outputSchemaJson : undefined,
-                refHintKeys: includeSchemas ? descriptor.refHintKeys : undefined,
               })),
           ),
         getToolByPath: ({ path }) =>

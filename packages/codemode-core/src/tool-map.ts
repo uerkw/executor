@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as JSONSchema from "effect/JSONSchema";
+import { typeSignatureFromSchemaJson } from "./schema-types";
 
 import type {
   ElicitationRequest,
@@ -355,50 +356,11 @@ const stringifySchema = (value: unknown): string | undefined => {
   }
 };
 
-const inferHintFromSchemaJson = (
+const inferTypeFromSchemaJson = (
   schemaJson: string | undefined,
   fallback: string,
-): string => {
-  if (!schemaJson) {
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(schemaJson) as Record<string, unknown>;
-    const title = typeof parsed.title === "string" ? parsed.title.trim() : "";
-    if (title.length > 0) {
-      return title;
-    }
-
-    if (parsed.type === "object") {
-      const properties =
-        parsed.properties
-          && typeof parsed.properties === "object"
-          && !Array.isArray(parsed.properties)
-          ? Object.keys(parsed.properties as Record<string, unknown>)
-          : [];
-      if (properties.length > 0) {
-        const shown = properties.slice(0, 3).join(", ");
-        return properties.length <= 3
-          ? `object { ${shown} }`
-          : `object { ${shown}, ... }`;
-      }
-      return "object";
-    }
-
-    if (parsed.type === "array") {
-      return "array";
-    }
-
-    if (typeof parsed.type === "string") {
-      return parsed.type;
-    }
-  } catch {
-    // Ignore malformed schema and fall back.
-  }
-
-  return fallback;
-};
+  maxLength: number = 240,
+): string => typeSignatureFromSchemaJson(schemaJson, fallback, maxLength);
 
 export function createToolsFromRecord(input: {
   tools: Record<string, ExecutableTool>;
@@ -470,13 +432,22 @@ export function toolDescriptorsFromTools(input: {
       description: definition.description,
       interaction: metadata?.interaction,
       elicitation: metadata?.elicitation,
-      inputHint:
-        metadata?.inputHint ?? inferHintFromSchemaJson(inputSchemaJson, "input"),
-      outputHint:
-        metadata?.outputHint ?? inferHintFromSchemaJson(outputSchemaJson, "output"),
+      inputType:
+        metadata?.inputType ?? inferTypeFromSchemaJson(inputSchemaJson, "unknown"),
+      outputType:
+        metadata?.outputType ?? inferTypeFromSchemaJson(outputSchemaJson, "unknown"),
       inputSchemaJson,
       outputSchemaJson,
-      refHintKeys: metadata?.refHintKeys,
+      ...(metadata?.exampleInputJson
+        ? { exampleInputJson: metadata.exampleInputJson }
+        : {}),
+      ...(metadata?.exampleOutputJson
+        ? { exampleOutputJson: metadata.exampleOutputJson }
+        : {}),
+      ...(metadata?.providerKind ? { providerKind: metadata.providerKind } : {}),
+      ...(metadata?.providerDataJson
+        ? { providerDataJson: metadata.providerDataJson }
+        : {}),
     } satisfies ToolDescriptor;
   });
 }

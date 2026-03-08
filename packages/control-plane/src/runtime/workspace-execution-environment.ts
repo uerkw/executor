@@ -8,13 +8,19 @@ import {
   type ToolInvoker,
   type ToolNamespace,
   type ToolPath,
+  typeSignatureFromSchemaJson,
 } from "@executor-v3/codemode-core";
 import {
   createSdkMcpConnector,
   createMcpToolsFromManifest,
 } from "@executor-v3/codemode-mcp";
 import {
+  buildOpenApiToolPresentation,
+  compileOpenApiToolDefinitions,
   createOpenApiToolsFromManifest,
+  extractOpenApiManifest,
+  type OpenApiToolDefinition,
+  type OpenApiToolManifest,
 } from "@executor-v3/codemode-openapi";
 import { makeInProcessExecutor } from "@executor-v3/runtime-local-inproc";
 import {
@@ -35,7 +41,7 @@ import type {
   ResolveExecutionEnvironment,
 } from "./execution-state";
 import { createExecutorToolMap } from "./executor-tools";
-import { projectSourceFromStorage } from "./source-definitions";
+import { projectSourceFromStorage, projectSourcesFromStorage } from "./source-definitions";
 import {
   RuntimeSourceAuthServiceTag,
   createDbBackedSecretMaterialResolver,
@@ -57,6 +63,7 @@ const tokenize = (value: string): string[] =>
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+
 
 const LOW_SIGNAL_QUERY_TOKENS = new Set([
   "a",
@@ -207,21 +214,152 @@ const scoreArtifact = (
   return score;
 };
 
-const toDescriptor = (input: {
+const catalogNamespaceFromPath = (path: string): string => {
+  const [first, second] = path.split(".");
+  return second ? `${first}.${second}` : first;
+};
+
+const toPersistedDescriptor = (input: {
   artifact: StoredToolArtifactRecord;
   includeSchemas: boolean;
-  refHintKeys?: readonly string[];
 }): ToolDescriptor => ({
   path: asToolPath(input.artifact.path),
   sourceKey: input.artifact.sourceId,
   description: input.artifact.description ?? input.artifact.title ?? undefined,
   interaction: "auto",
-  inputHint: input.artifact.inputSchemaJson ? "object" : undefined,
-  outputHint: input.artifact.outputSchemaJson ? "output" : undefined,
+  inputType: typeSignatureFromSchemaJson(
+    input.artifact.inputSchemaJson ?? undefined,
+    "unknown",
+    320,
+  ),
+  outputType: typeSignatureFromSchemaJson(
+    input.artifact.outputSchemaJson ?? undefined,
+    "unknown",
+    320,
+  ),
   inputSchemaJson: input.includeSchemas ? input.artifact.inputSchemaJson ?? undefined : undefined,
   outputSchemaJson: input.includeSchemas ? input.artifact.outputSchemaJson ?? undefined : undefined,
-  refHintKeys: input.includeSchemas ? input.refHintKeys : undefined,
+  ...(input.artifact.providerKind ? { providerKind: input.artifact.providerKind } : {}),
 });
+
+type OpenApiWorkspaceTool = {
+  path: ToolPath;
+  source: Source;
+  manifest: OpenApiToolManifest;
+  definition: OpenApiToolDefinition;
+  descriptor: ToolDescriptor;
+  searchNamespace: string;
+  searchText: string;
+};
+
+const loadOpenApiWorkspaceTools = (input: {
+  rows: SqlControlPlaneRows;
+  workspaceId: Source["workspaceId"];
+  includeSchemas: boolean;
+}): Effect.Effect<ReadonlyArray<OpenApiWorkspaceTool>, Error, never> =>
+  Effect.gen(function* () {
+    const [sourceRecords, credentialBindings] = yield* Effect.all([
+      input.rows.sources.listByWorkspaceId(input.workspaceId),
+      input.rows.sourceCredentialBindings.listByWorkspaceId(input.workspaceId),
+    ]).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
+      ),
+    );
+
+    const documentBySourceId = new Map(
+      sourceRecords.map((record) => [record.id, record.sourceDocumentText]),
+    );
+    const sources = yield* projectSourcesFromStorage({
+      sourceRecords,
+      credentialBindings,
+    });
+
+    const connectedOpenApiSources = sources.filter((source) =>
+      source.enabled
+      && source.status === "connected"
+      && source.kind === "openapi"
+      && typeof documentBySourceId.get(source.id) === "string"
+      && documentBySourceId.get(source.id)!.length > 0,
+    );
+
+    const toolGroups = yield* Effect.forEach(
+      connectedOpenApiSources,
+      (source) =>
+        Effect.gen(function* () {
+          const openApiDocument = documentBySourceId.get(source.id)!;
+          const manifest = yield* extractOpenApiManifest(
+            source.name,
+            openApiDocument,
+          ).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof Error ? cause : new Error(String(cause)),
+            ),
+          );
+          const definitions = compileOpenApiToolDefinitions(manifest);
+          const namespace = source.namespace ?? namespaceFromSourceName(source.name);
+
+          return definitions.map((definition) => {
+            const presentation = buildOpenApiToolPresentation({
+              manifest,
+              definition,
+            });
+            const path = asToolPath(
+              namespace ? `${namespace}.${definition.toolId}` : definition.toolId,
+            );
+            const searchNamespace = catalogNamespaceFromPath(path);
+            const searchText = [
+              path,
+              searchNamespace,
+              definition.name,
+              definition.description,
+              definition.rawToolId,
+              definition.tags.join(" "),
+              definition.method.toUpperCase(),
+              definition.path,
+            ]
+              .filter((part): part is string => typeof part === "string" && part.length > 0)
+              .join(" ")
+              .toLowerCase();
+
+            return {
+              path,
+              source,
+              manifest,
+              definition,
+              descriptor: {
+                path,
+                sourceKey: source.id,
+                description: definition.description,
+                interaction: "auto",
+                inputType: presentation.inputType,
+                outputType: presentation.outputType,
+                ...(input.includeSchemas && presentation.inputSchemaJson
+                  ? { inputSchemaJson: presentation.inputSchemaJson }
+                  : {}),
+                ...(input.includeSchemas && presentation.outputSchemaJson
+                  ? { outputSchemaJson: presentation.outputSchemaJson }
+                  : {}),
+                ...(presentation.exampleInputJson
+                  ? { exampleInputJson: presentation.exampleInputJson }
+                  : {}),
+                ...(presentation.exampleOutputJson
+                  ? { exampleOutputJson: presentation.exampleOutputJson }
+                  : {}),
+                providerKind: "openapi",
+                providerDataJson: presentation.providerDataJson,
+              } satisfies ToolDescriptor,
+              searchNamespace,
+              searchText,
+            } satisfies OpenApiWorkspaceTool;
+          });
+        }),
+      { concurrency: "unbounded" },
+    );
+
+    return toolGroups.flat();
+  });
+
 
 const loadSourceById = (input: {
   rows: SqlControlPlaneRows;
@@ -265,7 +403,7 @@ const createWorkspaceToolCatalog = (input: {
 }): ToolCatalog => ({
   listNamespaces: ({ limit }) =>
     Effect.gen(function* () {
-      const [persisted, executor] = yield* Effect.all([
+      const [persisted, openApiTools, executor] = yield* Effect.all([
         input.rows.toolArtifacts.listNamespacesByWorkspaceId(input.workspaceId, {
           limit,
         }).pipe(
@@ -273,12 +411,24 @@ const createWorkspaceToolCatalog = (input: {
             cause instanceof Error ? cause : new Error(String(cause)),
           ),
         ),
+        loadOpenApiWorkspaceTools({
+          rows: input.rows,
+          workspaceId: input.workspaceId,
+          includeSchemas: false,
+        }),
         input.executorCatalog.listNamespaces({ limit }),
       ]);
 
       const merged = new Map<string, ToolNamespace>();
       for (const namespace of persisted) {
         merged.set(namespace.namespace, namespace);
+      }
+      for (const tool of openApiTools) {
+        const existing = merged.get(tool.searchNamespace);
+        merged.set(tool.searchNamespace, {
+          namespace: tool.searchNamespace,
+          toolCount: (existing?.toolCount ?? 0) + 1,
+        });
       }
       for (const namespace of executor) {
         const existing = merged.get(namespace.namespace);
@@ -299,7 +449,7 @@ const createWorkspaceToolCatalog = (input: {
 
   listTools: ({ namespace, query, limit, includeSchemas = false }) =>
     Effect.gen(function* () {
-      const [persisted, executor] = yield* Effect.all([
+      const [persisted, openApiTools, executor] = yield* Effect.all([
         namespace?.startsWith("executor")
           ? Effect.succeed([] as readonly StoredToolArtifactRecord[])
           : input.rows.toolArtifacts.listByWorkspaceId(input.workspaceId, {
@@ -311,6 +461,23 @@ const createWorkspaceToolCatalog = (input: {
                 cause instanceof Error ? cause : new Error(String(cause)),
               ),
             ),
+        loadOpenApiWorkspaceTools({
+          rows: input.rows,
+          workspaceId: input.workspaceId,
+          includeSchemas,
+        }).pipe(
+          Effect.map((tools) =>
+            tools.filter((tool) => {
+              if (namespace && tool.searchNamespace !== namespace) {
+                return false;
+              }
+              if (!query) {
+                return true;
+              }
+              return tokenize(query).every((token) => tool.searchText.includes(token));
+            }),
+          ),
+        ),
         input.executorCatalog.listTools({
           ...(namespace !== undefined ? { namespace } : {}),
           ...(query !== undefined ? { query } : {}),
@@ -319,35 +486,18 @@ const createWorkspaceToolCatalog = (input: {
         }),
       ]);
 
-      const persistedDescriptors = includeSchemas
-        ? yield* Effect.forEach(
-            persisted,
-            (artifact) =>
-              input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
-                input.workspaceId,
-                artifact.path,
-              ).pipe(
-                Effect.map((rows) =>
-                  toDescriptor({
-                    artifact,
-                    includeSchemas,
-                    refHintKeys: rows.map((row) => row.refHintKey),
-                  })
-                ),
-                Effect.mapError((cause) =>
-                  cause instanceof Error ? cause : new Error(String(cause)),
-                ),
-              ),
-            { concurrency: "unbounded" },
-          )
-        : persisted.map((artifact) =>
-            toDescriptor({
-              artifact,
-              includeSchemas,
-            })
-          );
+      const persistedDescriptors = persisted.map((artifact) =>
+        toPersistedDescriptor({
+          artifact,
+          includeSchemas,
+        }),
+      );
 
-      return [...persistedDescriptors, ...executor]
+      return [
+        ...persistedDescriptors,
+        ...openApiTools.map((tool) => tool.descriptor),
+        ...executor,
+      ]
         .sort((left, right) => left.path.localeCompare(right.path))
         .slice(0, limit);
     }),
@@ -360,6 +510,16 @@ const createWorkspaceToolCatalog = (input: {
       });
       if (executor) {
         return executor;
+      }
+
+      const openApiTools = yield* loadOpenApiWorkspaceTools({
+        rows: input.rows,
+        workspaceId: input.workspaceId,
+        includeSchemas,
+      });
+      const openApiTool = openApiTools.find((tool) => tool.path === path);
+      if (openApiTool) {
+        return openApiTool.descriptor;
       }
 
       const artifact = yield* input.rows.toolArtifacts.getByWorkspaceAndPath(
@@ -375,29 +535,16 @@ const createWorkspaceToolCatalog = (input: {
         return null;
       }
 
-      const refHintKeys = includeSchemas
-        ? yield* input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
-            input.workspaceId,
-            path,
-          ).pipe(
-            Effect.map((rows) => rows.map((row) => row.refHintKey)),
-            Effect.mapError((cause) =>
-              cause instanceof Error ? cause : new Error(String(cause)),
-            ),
-          )
-        : undefined;
-
-      return toDescriptor({
+      return toPersistedDescriptor({
         artifact: artifact.value,
         includeSchemas,
-        refHintKeys,
       });
     }),
 
   searchTools: ({ query, namespace, limit }) =>
     Effect.gen(function* () {
       const queryTokens = tokenize(query);
-      const [persisted, executor] = yield* Effect.all([
+      const [persisted, openApiTools, executor] = yield* Effect.all([
         namespace?.startsWith("executor")
           ? Effect.succeed([] as readonly StoredToolArtifactRecord[])
           : input.rows.toolArtifacts.searchByWorkspaceId(input.workspaceId, {
@@ -408,6 +555,15 @@ const createWorkspaceToolCatalog = (input: {
                 cause instanceof Error ? cause : new Error(String(cause)),
               ),
             ),
+        loadOpenApiWorkspaceTools({
+          rows: input.rows,
+          workspaceId: input.workspaceId,
+          includeSchemas: false,
+        }).pipe(
+          Effect.map((tools) =>
+            tools.filter((tool) => !namespace || tool.searchNamespace === namespace),
+          ),
+        ),
         input.executorCatalog.searchTools({
           query,
           ...(namespace !== undefined ? { namespace } : {}),
@@ -422,7 +578,17 @@ const createWorkspaceToolCatalog = (input: {
         }))
         .filter((hit) => hit.score > 0);
 
-      return [...persistedHits, ...executor]
+      const openApiHits: SearchHit[] = openApiTools
+        .map((tool) => ({
+          path: tool.path,
+          score: tokenize(query).reduce(
+            (total, token) => total + (tool.searchText.includes(token) ? 1 : 0),
+            0,
+          ),
+        }))
+        .filter((hit) => hit.score > 0);
+
+      return [...persistedHits, ...openApiHits, ...executor]
         .sort((left, right) =>
           right.score - left.score || left.path.localeCompare(right.path),
         )
@@ -470,6 +636,37 @@ const createWorkspaceToolInvoker = (input: {
     context?: Record<string, unknown>;
   }) =>
     Effect.gen(function* () {
+      const openApiTools = yield* loadOpenApiWorkspaceTools({
+        rows: input.rows,
+        workspaceId: input.workspaceId,
+        includeSchemas: false,
+      });
+      const openApiTool = openApiTools.find((tool) => tool.path === invocation.path);
+      if (openApiTool) {
+        const auth = yield* resolveSourceAuthMaterial({
+          source: openApiTool.source,
+          resolveSecretMaterial: input.resolveSecretMaterial,
+        });
+
+        const tools = createOpenApiToolsFromManifest({
+          manifest: openApiTool.manifest,
+          baseUrl: openApiTool.source.endpoint,
+          namespace: openApiTool.source.namespace ?? namespaceFromSourceName(openApiTool.source.name),
+          sourceKey: openApiTool.source.id,
+          defaultHeaders: openApiTool.source.defaultHeaders ?? {},
+          credentialHeaders: auth.headers,
+        });
+
+        return yield* makeToolInvokerFromTools({
+          tools,
+          onElicitation: input.onElicitation,
+        }).invoke({
+          path: invocation.path,
+          args: invocation.args,
+          context: invocation.context,
+        });
+      }
+
       const artifactOption = yield* input.rows.toolArtifacts
         .getByWorkspaceAndPath(input.workspaceId, invocation.path)
         .pipe(
@@ -523,79 +720,6 @@ const createWorkspaceToolInvoker = (input: {
           }),
           namespace: source.namespace ?? namespaceFromSourceName(source.name),
           sourceKey: source.id,
-        });
-
-        return yield* makeToolInvokerFromTools({
-          tools,
-          onElicitation: input.onElicitation,
-        }).invoke({
-          path: invocation.path,
-          args: invocation.args,
-          context: invocation.context,
-        });
-      }
-
-      if (artifact.providerKind === "openapi") {
-        const [parameters, requestBodyContentTypes, refHintKeys] = yield* Effect.all([
-          input.rows.toolArtifacts.listParametersByWorkspaceAndPath(
-            input.workspaceId,
-            artifact.path,
-          ),
-          input.rows.toolArtifacts.listRequestBodyContentTypesByWorkspaceAndPath(
-            input.workspaceId,
-            artifact.path,
-          ),
-          input.rows.toolArtifacts.listRefHintKeysByWorkspaceAndPath(
-            input.workspaceId,
-            artifact.path,
-          ),
-        ]).pipe(
-          Effect.mapError((cause) =>
-            cause instanceof Error ? cause : new Error(String(cause)),
-          ),
-        );
-
-        const tools = createOpenApiToolsFromManifest({
-          manifest: {
-            version: 1,
-            sourceHash: source.sourceHash ?? "stored",
-            tools: [{
-              toolId: storedToolIdFromArtifact(artifact),
-              name: artifact.title ?? storedToolIdFromArtifact(artifact),
-              description: artifact.description ?? null,
-              method: artifact.openApiMethod!,
-              path: artifact.openApiPathTemplate!,
-              invocation: {
-                method: artifact.openApiMethod!,
-                pathTemplate: artifact.openApiPathTemplate!,
-                parameters: parameters.map((parameter) => ({
-                  name: parameter.name,
-                  location: parameter.location,
-                  required: parameter.required,
-                })),
-                requestBody:
-                  artifact.openApiRequestBodyRequired === null
-                    ? null
-                    : {
-                        required: artifact.openApiRequestBodyRequired,
-                        contentTypes: requestBodyContentTypes.map((row) => row.contentType),
-                      },
-              },
-              operationHash: artifact.openApiOperationHash!,
-              typing: {
-                ...(artifact.inputSchemaJson ? { inputSchemaJson: artifact.inputSchemaJson } : {}),
-                ...(artifact.outputSchemaJson ? { outputSchemaJson: artifact.outputSchemaJson } : {}),
-                ...(refHintKeys.length > 0
-                  ? { refHintKeys: refHintKeys.map((row) => row.refHintKey) }
-                  : {}),
-              },
-            }],
-          },
-          baseUrl: source.endpoint,
-          namespace: source.namespace ?? namespaceFromSourceName(source.name),
-          sourceKey: source.id,
-          defaultHeaders: source.defaultHeaders ?? {},
-          credentialHeaders: auth.headers,
         });
 
         return yield* makeToolInvokerFromTools({

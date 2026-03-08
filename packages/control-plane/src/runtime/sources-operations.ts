@@ -87,10 +87,11 @@ const syncArtifactsForSource = (input: {
             const { sourceRecord } = splitSourceForStorage({
               source: erroredSource,
             });
+            const { sourceDocumentText: _sourceDocumentText, ...sourcePatch } = sourceRecord;
             yield* mapPersistenceError(
               input.operation.child("source_error"),
               input.store.sources.update(input.source.workspaceId, input.source.id, {
-                ...sourceRecord,
+                ...sourcePatch,
                 updatedAt: erroredSource.updatedAt,
               }),
             );
@@ -264,11 +265,12 @@ export const updateSource = (input: {
       const { sourceRecord, credentialBinding } = splitSourceForStorage({
         source: updatedSource,
       });
+      const { sourceDocumentText: _sourceDocumentText, ...sourcePatch } = sourceRecord;
 
       const stored = yield* mapPersistenceError(
         sourceOps.update.child("source"),
         store.sources.update(input.workspaceId, input.sourceId, {
-          ...sourceRecord,
+          ...sourcePatch,
           updatedAt: updatedSource.updatedAt,
         }),
       );

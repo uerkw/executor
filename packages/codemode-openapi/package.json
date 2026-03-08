@@ -9,6 +9,7 @@
     "src"
   ],
   "scripts": {
+    "extractor:build": "./openapi-extractor-rs/build-wasm.sh",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest"

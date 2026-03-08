@@ -255,6 +255,7 @@ export const splitSourceForStorage = (input: {
       input.source.auth.kind === "none" ? null : input.source.auth.headerName,
     authPrefix: input.source.auth.kind === "none" ? null : input.source.auth.prefix,
     sourceHash: input.source.sourceHash,
+    sourceDocumentText: null,
     lastError: input.source.lastError,
     createdAt: input.source.createdAt,
     updatedAt: input.source.updatedAt,

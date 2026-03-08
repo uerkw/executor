@@ -19,12 +19,14 @@
     "zod": "^4.3.6"
   },
   "scripts": {
+    "dev": "turbo run dev --filter=@executor-v3/web",
     "executor": "./apps/executor/bin/executor",
     "typecheck": "bun run --filter='*' typecheck",
     "knip": "knip"
   },
   "devDependencies": {
     "knip": "^5.85.0",
+    "turbo": "^2.5.6",
     "typescript": "^5.9.3"
   }
 }

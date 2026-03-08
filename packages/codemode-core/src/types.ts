@@ -77,12 +77,15 @@ export type OnElicitation = (
 export type ToolMetadata = {
   interaction?: "auto" | "required";
   elicitation?: ElicitationRequest;
-  inputHint?: string;
-  outputHint?: string;
+  inputType?: string;
+  outputType?: string;
   inputSchemaJson?: string;
   outputSchemaJson?: string;
-  refHintKeys?: readonly string[];
+  exampleInputJson?: string;
+  exampleOutputJson?: string;
   sourceKey?: string;
+  providerKind?: string;
+  providerDataJson?: string;
 };
 
 export type ToolExecutionContext = {
@@ -127,11 +130,14 @@ export type ToolDescriptor = {
   description?: string;
   interaction?: "auto" | "required";
   elicitation?: ElicitationRequest;
-  inputHint?: string;
-  outputHint?: string;
+  inputType?: string;
+  outputType?: string;
   inputSchemaJson?: string;
   outputSchemaJson?: string;
-  refHintKeys?: readonly string[];
+  exampleInputJson?: string;
+  exampleOutputJson?: string;
+  providerKind?: string;
+  providerDataJson?: string;
 };
 
 export type ToolNamespace = {

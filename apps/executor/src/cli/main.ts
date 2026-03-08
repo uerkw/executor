@@ -32,12 +32,12 @@ import {
   DEFAULT_SERVER_PORT,
   SERVER_POLL_INTERVAL_MS,
   SERVER_START_TIMEOUT_MS,
-} from "../server/config";
+  runLocalExecutorServer,
+} from "@executor-v3/server";
 import {
   seedDemoMcpSourceInWorkspace,
   seedGithubOpenApiSourceInWorkspace,
 } from "./dev";
-import { runLocalExecutorServer } from "../server";
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));

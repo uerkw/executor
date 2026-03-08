@@ -24,8 +24,8 @@ const searchableTextForTool = (tool: ToolDescriptor): string =>
     tool.path,
     tool.sourceKey,
     tool.description ?? "",
-    tool.inputHint ?? "",
-    tool.outputHint ?? "",
+    tool.inputType ?? "",
+    tool.outputType ?? "",
   ]
     .join(" ")
     .toLowerCase();
@@ -44,7 +44,6 @@ const projectDescriptor = (input: {
     ...descriptor,
     inputSchemaJson: undefined,
     outputSchemaJson: undefined,
-    refHintKeys: undefined,
   };
 };
 
@@ -229,13 +228,12 @@ export function createDiscoveryPrimitivesFromToolCatalog(input: {
             score: hit.score,
             description: descriptor.description,
             interaction: descriptor.interaction ?? "auto",
-            inputHint: descriptor.inputHint,
-            outputHint: descriptor.outputHint,
+            inputType: descriptor.inputType,
+            outputType: descriptor.outputType,
             ...(includeSchemas
               ? {
                   inputSchemaJson: descriptor.inputSchemaJson,
                   outputSchemaJson: descriptor.outputSchemaJson,
-                  refHintKeys: descriptor.refHintKeys,
                 }
               : {}),
           };

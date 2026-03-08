@@ -277,6 +277,8 @@ describe("openapi-tools", () => {
 
       const resolvedGet = resolveToolDefinition(tools["source.demo.repos.getRepo"]!);
       expect(resolvedGet.metadata?.sourceKey).toBe("api.demo");
+      expect(resolvedGet.metadata?.providerKind).toBe("openapi");
+      expect(resolvedGet.metadata?.providerDataJson).toContain('"group":"repos"');
       expect(resolvedGet.metadata?.inputSchemaJson).toBeDefined();
     }),
   );
@@ -303,6 +305,7 @@ describe("openapi-tools", () => {
       );
 
       expect(result).toEqual({
+        ok: true,
         status: 200,
         headers: expect.any(Object),
         body: {
@@ -337,6 +340,7 @@ describe("openapi-tools", () => {
       );
 
       expect(getResult).toEqual({
+        ok: true,
         status: 200,
         headers: expect.any(Object),
         body: {
@@ -354,6 +358,7 @@ describe("openapi-tools", () => {
       );
 
       expect(postResult).toEqual({
+        ok: true,
         status: 201,
         headers: expect.any(Object),
         body: {
@@ -433,6 +438,7 @@ describe("openapi-tools", () => {
       );
 
       expect(result).toEqual({
+        ok: true,
         status: 200,
         headers: expect.any(Object),
         body: {
@@ -482,6 +488,7 @@ describe("openapi-tools", () => {
       );
 
       expect(result).toEqual({
+        ok: true,
         status: 200,
         headers: expect.any(Object),
         body: {
@@ -491,6 +498,58 @@ describe("openapi-tools", () => {
       });
       expect(server.requests).toHaveLength(1);
       expect(server.requests[0]?.path).toBe("/repos/octocat/hello-world");
+    }),
+  );
+
+  it.effect("normalizes slash-based operationIds into grouped dotted tool paths", () =>
+    Effect.gen(function* () {
+      const tools = createOpenApiToolsFromManifest({
+        manifest: {
+          version: 2,
+          sourceHash: "fixture",
+          tools: [
+            {
+              toolId: "actions/create-workflow-dispatch",
+              operationId: "actions/create-workflow-dispatch",
+              tags: ["actions"],
+              name: "Create workflow dispatch",
+              description: null,
+              method: "post",
+              path: "/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+              invocation: {
+                method: "post",
+                pathTemplate: "/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+                parameters: [],
+                requestBody: null,
+              },
+              operationHash: "hash_actions_create_workflow_dispatch",
+            },
+            {
+              toolId: "users/get-authenticated",
+              operationId: "users/get-authenticated",
+              tags: ["users"],
+              name: "Get authenticated user",
+              description: null,
+              method: "get",
+              path: "/user",
+              invocation: {
+                method: "get",
+                pathTemplate: "/user",
+                parameters: [],
+                requestBody: null,
+              },
+              operationHash: "hash_users_get_authenticated",
+            },
+          ],
+        },
+        baseUrl: "https://api.github.com",
+        namespace: "source.github",
+      });
+
+      expect(Object.keys(tools).sort()).toEqual([
+        "source.github.actions.createWorkflowDispatch",
+        "source.github.users.getAuthenticated",
+      ]);
     }),
   );
 });

@@ -18,6 +18,11 @@ import {
   updateSource,
 } from "../../runtime/sources-operations";
 import {
+  discoverSourceInspectionTools,
+  getSourceInspection,
+  getSourceInspectionToolDetail,
+} from "../../runtime/source-inspection";
+import {
   completeSourceCredentialSetup,
   getSourceCredentialInteraction,
   submitSourceCredentialInteraction,
@@ -508,6 +513,38 @@ export const ControlPlaneSourcesLive = HttpApiBuilder.group(
             getSource({
               workspaceId: path.workspaceId,
               sourceId: path.sourceId,
+            }),
+          ),
+        ),
+      )
+      .handle("inspection", ({ path }) =>
+        withWorkspaceRequestActor("sources.inspection", path.workspaceId, () =>
+          withPolicy(requireReadSources(path.workspaceId))(
+            getSourceInspection({
+              workspaceId: path.workspaceId,
+              sourceId: path.sourceId,
+            }),
+          ),
+        ),
+      )
+      .handle("inspectionTool", ({ path }) =>
+        withWorkspaceRequestActor("sources.inspection_tool", path.workspaceId, () =>
+          withPolicy(requireReadSources(path.workspaceId))(
+            getSourceInspectionToolDetail({
+              workspaceId: path.workspaceId,
+              sourceId: path.sourceId,
+              toolPath: path.toolPath,
+            }),
+          ),
+        ),
+      )
+      .handle("inspectionDiscover", ({ path, payload }) =>
+        withWorkspaceRequestActor("sources.inspection_discover", path.workspaceId, () =>
+          withPolicy(requireReadSources(path.workspaceId))(
+            discoverSourceInspectionTools({
+              workspaceId: path.workspaceId,
+              sourceId: path.sourceId,
+              payload,
             }),
           ),
         ),

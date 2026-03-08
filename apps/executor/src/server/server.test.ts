@@ -31,7 +31,7 @@ import {
   seedDemoMcpSourceInWorkspace,
   seedGithubOpenApiSourceInWorkspace,
 } from "../cli/dev";
-import { createLocalExecutorServer } from ".";
+import { createLocalExecutorServer } from "@executor-v3/server";
 
 const executionResolver: ResolveExecutionEnvironment = () =>
   Effect.succeed({

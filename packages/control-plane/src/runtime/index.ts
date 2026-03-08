@@ -57,6 +57,7 @@ export * from "./schema-type-signature";
 export * from "./source-auth-service";
 export * from "./store";
 export * from "./workspace-execution-environment";
+export * from "./source-inspection";
 
 export type RuntimeControlPlaneOptions = {
   actorResolver?: ControlPlaneActorResolverShape;
@@ -114,7 +115,7 @@ const createRuntimeLayerFromContext = (
     | RuntimeExecutionResolverService
   >;
 
-  return Layer.succeedContext(runtimeContext);
+  return Layer.succeedContext(runtimeContext) as RuntimeControlPlaneLayer;
 };
 
 export const createRuntimeControlPlaneLayer = (

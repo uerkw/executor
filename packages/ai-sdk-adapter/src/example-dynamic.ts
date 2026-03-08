@@ -21,8 +21,8 @@ const catalog: ToolCatalog = {
         path: asToolPath("source.src_api.github.issues.list"),
         sourceKey: "source.src_api",
         description: "Hydrated metadata for selected path",
-        inputHint: "object",
-        outputHint: "object",
+        inputType: "object",
+        outputType: "object",
       },
     ].filter((tool) => !namespace || tool.path.startsWith(`source.${namespace}.`)));
   },
@@ -31,8 +31,8 @@ const catalog: ToolCatalog = {
       path,
       sourceKey: "source.src_api",
       description: "Hydrated metadata for selected path",
-      inputHint: "object",
-      outputHint: "object",
+      inputType: "object",
+      outputType: "object",
     });
   },
   searchTools({ limit }) {

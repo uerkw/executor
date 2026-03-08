@@ -70,6 +70,7 @@ describe("control-plane-persistence-drizzle", () => {
         authHeaderName: null,
         authPrefix: null,
         sourceHash: null,
+        sourceDocumentText: null,
         lastError: null,
         createdAt: now,
         updatedAt: now,

@@ -15,6 +15,11 @@ import {
 } from "@executor-v3/codemode-core";
 
 import {
+  compileOpenApiToolDefinitions,
+  type OpenApiToolDefinition,
+} from "./openapi-definitions";
+import { buildOpenApiToolPresentation } from "./openapi-tool-presentation";
+import {
   extractOpenApiManifest,
   type OpenApiExtractionError,
 } from "./openapi-extraction";
@@ -34,6 +39,44 @@ export class OpenApiToolInvocationError extends Data.TaggedError(
   message: string;
   details: string | null;
 }> {}
+
+const BLOCKED_RESPONSE_HEADER_NAMES = new Set([
+  "authorization",
+  "authentication-info",
+  "cookie",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "set-cookie",
+  "set-cookie2",
+  "www-authenticate",
+  "x-api-key",
+  "x-auth-token",
+  "x-csrf-token",
+]);
+
+const NOISY_RESPONSE_HEADER_NAMES = new Set([
+  "alt-svc",
+  "cf-ray",
+  "server",
+  "traceparent",
+  "tracestate",
+  "via",
+  "x-cache",
+  "x-cache-hits",
+  "x-powered-by",
+  "x-request-id",
+  "x-runtime",
+  "x-served-by",
+  "x-trace-id",
+]);
+
+const NOISY_RESPONSE_HEADER_PREFIXES = [
+  "cf-",
+  "trace-",
+  "x-amz-cf-",
+  "x-b3-",
+  "x-cloud-trace-",
+];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,13 +244,35 @@ const normalizeHttpUrl = (value: string): string => {
   }
 };
 
+const shouldDropResponseHeader = (headerName: string): boolean =>
+  BLOCKED_RESPONSE_HEADER_NAMES.has(headerName)
+  || NOISY_RESPONSE_HEADER_NAMES.has(headerName)
+  || NOISY_RESPONSE_HEADER_PREFIXES.some((prefix) => headerName.startsWith(prefix));
+
+const sanitizeResponseHeaders = (
+  headers: Readonly<Record<string, string>>,
+): Record<string, string> => {
+  const sanitized: Record<string, string> = {};
+
+  for (const [rawName, rawValue] of Object.entries(headers)) {
+    const name = rawName.trim().toLowerCase();
+    if (name.length === 0 || shouldDropResponseHeader(name)) {
+      continue;
+    }
+
+    sanitized[name] = rawValue.length > 4000 ? `${rawValue.slice(0, 4000)}...` : rawValue;
+  }
+
+  return sanitized;
+};
+
 const decodeHttpClientResponseBody = (
   response: Awaited<ReturnType<HttpClient.HttpClient["execute"]>> extends Effect.Effect<
-    infer A,
-    infer _E,
-    infer _R
+    infer Value,
+    infer _Error,
+    infer _Requirements
   >
-    ? A
+    ? Value
     : never,
 ): Effect.Effect<unknown, Error, never> => {
   const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
@@ -242,8 +307,7 @@ const inputSchemaFromTypingJson = (inputSchemaJson: string | undefined) => {
   }
 };
 
-
-type CreateOpenApiToolsFromManifestInput = {
+export type CreateOpenApiToolsFromManifestInput = {
   manifest: OpenApiToolManifest;
   baseUrl: string;
   namespace?: string;
@@ -365,32 +429,38 @@ const buildFetchRequest = (input: {
   };
 };
 
+const createToolPath = (namespace: string | undefined, definition: OpenApiToolDefinition): string =>
+  namespace ? `${namespace}.${definition.toolId}` : definition.toolId;
+
 export const createOpenApiToolsFromManifest = (
   input: CreateOpenApiToolsFromManifestInput,
 ): ToolMap => {
   const baseUrl = normalizeHttpUrl(input.baseUrl);
   const sourceKey = input.sourceKey ?? "openapi.generated";
-  const namespace = input.namespace;
   const defaultHeaders = input.defaultHeaders ?? {};
   const credentialHeaders = input.credentialHeaders ?? {};
   const httpClientLayer = input.httpClientLayer ?? FetchHttpClient.layer;
 
+  const definitions = compileOpenApiToolDefinitions(input.manifest);
   const result: ToolMap = {};
 
-  for (const extracted of input.manifest.tools) {
-    const toolPath = namespace
-      ? `${namespace}.${extracted.toolId}`
-      : extracted.toolId;
+  for (const definition of definitions) {
+    const toolPath = createToolPath(input.namespace, definition);
+    const presentation = buildOpenApiToolPresentation({
+      manifest: input.manifest,
+      definition,
+    });
 
-    const description = extracted.description ?? `${extracted.method.toUpperCase()} ${extracted.path}`;
     result[toolPath] = toTool({
       tool: {
-        description,
-        inputSchema: inputSchemaFromTypingJson(extracted.typing?.inputSchemaJson),
+        description: definition.description,
+        inputSchema: inputSchemaFromTypingJson(
+          presentation.inputSchemaJson ?? definition.typing?.inputSchemaJson,
+        ),
         execute: async (args: unknown) => {
           const decodedArgs = asToolArgs(args);
           const request = buildFetchRequest({
-            payload: extracted.invocation,
+            payload: definition.invocation,
             args: decodedArgs,
             baseUrl,
             defaultHeaders,
@@ -422,8 +492,9 @@ export const createOpenApiToolsFromManifest = (
               const body = yield* decodeHttpClientResponseBody(response);
 
               return {
+                ok: response.status >= 200 && response.status < 300,
                 status: response.status,
-                headers: { ...response.headers },
+                headers: sanitizeResponseHeaders(response.headers),
                 body,
               };
             }).pipe(
@@ -434,9 +505,14 @@ export const createOpenApiToolsFromManifest = (
       },
       metadata: {
         sourceKey,
-        inputSchemaJson: extracted.typing?.inputSchemaJson,
-        outputSchemaJson: extracted.typing?.outputSchemaJson,
-        refHintKeys: extracted.typing?.refHintKeys,
+        inputType: presentation.inputType,
+        outputType: presentation.outputType,
+        inputSchemaJson: presentation.inputSchemaJson,
+        outputSchemaJson: presentation.outputSchemaJson,
+        exampleInputJson: presentation.exampleInputJson,
+        exampleOutputJson: presentation.exampleOutputJson,
+        providerKind: "openapi",
+        providerDataJson: presentation.providerDataJson,
       },
     });
   }
@@ -454,20 +530,22 @@ export const createOpenApiToolsFromSpec = (input: {
   credentialHeaders?: Readonly<Record<string, string>>;
   httpClientLayer?: Layer.Layer<HttpClient.HttpClient, never, never>;
 }): Effect.Effect<
-  { manifest: OpenApiToolManifest; tools: ToolMap },
+  { manifest: OpenApiToolManifest; definitions: Array<OpenApiToolDefinition>; tools: ToolMap },
   OpenApiExtractionError
 > =>
   Effect.map(
     extractOpenApiManifest(input.sourceName, input.openApiSpec),
     (manifest: OpenApiToolManifest) => ({
-    manifest,
-    tools: createOpenApiToolsFromManifest({
       manifest,
-      baseUrl: input.baseUrl,
-      namespace: input.namespace,
-      sourceKey: input.sourceKey,
-      defaultHeaders: input.defaultHeaders,
-      credentialHeaders: input.credentialHeaders,
-      httpClientLayer: input.httpClientLayer,
+      definitions: compileOpenApiToolDefinitions(manifest),
+      tools: createOpenApiToolsFromManifest({
+        manifest,
+        baseUrl: input.baseUrl,
+        namespace: input.namespace,
+        sourceKey: input.sourceKey,
+        defaultHeaders: input.defaultHeaders,
+        credentialHeaders: input.credentialHeaders,
+        httpClientLayer: input.httpClientLayer,
+      }),
     }),
-  }));
+  );

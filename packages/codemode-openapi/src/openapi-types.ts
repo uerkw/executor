@@ -13,7 +13,6 @@ export type OpenApiJsonObject = {
   [key: string]: OpenApiJsonValue;
 };
 
-// Accepts Effect-generated OpenAPI specs and generic JSON-like OpenAPI objects.
 export type OpenApiSpecInput = string | OpenAPISpec | OpenApiJsonObject;
 
 export const OPEN_API_HTTP_METHODS = [
@@ -64,8 +63,44 @@ export const DiscoveryTypingPayloadSchema = Schema.Struct({
   refHintKeys: Schema.optional(Schema.Array(Schema.String)),
 });
 
+export const OpenApiExampleSchema = Schema.Struct({
+  valueJson: Schema.String,
+  mediaType: Schema.optional(Schema.String),
+  label: Schema.optional(Schema.String),
+});
+
+export const OpenApiParameterDocumentationSchema = Schema.Struct({
+  name: Schema.String,
+  location: OpenApiParameterLocationSchema,
+  required: Schema.Boolean,
+  description: Schema.optional(Schema.String),
+  examples: Schema.optional(Schema.Array(OpenApiExampleSchema)),
+});
+
+export const OpenApiRequestBodyDocumentationSchema = Schema.Struct({
+  description: Schema.optional(Schema.String),
+  examples: Schema.optional(Schema.Array(OpenApiExampleSchema)),
+});
+
+export const OpenApiResponseDocumentationSchema = Schema.Struct({
+  statusCode: Schema.String,
+  description: Schema.optional(Schema.String),
+  contentTypes: Schema.Array(Schema.String),
+  examples: Schema.optional(Schema.Array(OpenApiExampleSchema)),
+});
+
+export const OpenApiToolDocumentationSchema = Schema.Struct({
+  summary: Schema.optional(Schema.String),
+  deprecated: Schema.optional(Schema.Boolean),
+  parameters: Schema.Array(OpenApiParameterDocumentationSchema),
+  requestBody: Schema.optional(OpenApiRequestBodyDocumentationSchema),
+  response: Schema.optional(OpenApiResponseDocumentationSchema),
+});
+
 export const OpenApiExtractedToolSchema = Schema.Struct({
   toolId: Schema.String,
+  operationId: Schema.optional(Schema.String),
+  tags: Schema.Array(Schema.String),
   name: Schema.String,
   description: Schema.NullOr(Schema.String),
   method: OpenApiHttpMethodSchema,
@@ -73,10 +108,11 @@ export const OpenApiExtractedToolSchema = Schema.Struct({
   invocation: OpenApiInvocationPayloadSchema,
   operationHash: Schema.String,
   typing: Schema.optional(DiscoveryTypingPayloadSchema),
+  documentation: Schema.optional(OpenApiToolDocumentationSchema),
 });
 
 export const OpenApiToolManifestSchema = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   sourceHash: Schema.String,
   tools: Schema.Array(OpenApiExtractedToolSchema),
   refHintTable: Schema.optional(
@@ -93,5 +129,10 @@ export type OpenApiToolParameter = typeof OpenApiToolParameterSchema.Type;
 export type OpenApiToolRequestBody = typeof OpenApiToolRequestBodySchema.Type;
 export type OpenApiInvocationPayload = typeof OpenApiInvocationPayloadSchema.Type;
 export type DiscoveryTypingPayload = typeof DiscoveryTypingPayloadSchema.Type;
+export type OpenApiExample = typeof OpenApiExampleSchema.Type;
+export type OpenApiParameterDocumentation = typeof OpenApiParameterDocumentationSchema.Type;
+export type OpenApiRequestBodyDocumentation = typeof OpenApiRequestBodyDocumentationSchema.Type;
+export type OpenApiResponseDocumentation = typeof OpenApiResponseDocumentationSchema.Type;
+export type OpenApiToolDocumentation = typeof OpenApiToolDocumentationSchema.Type;
 export type OpenApiExtractedTool = typeof OpenApiExtractedToolSchema.Type;
 export type OpenApiToolManifest = typeof OpenApiToolManifestSchema.Type;

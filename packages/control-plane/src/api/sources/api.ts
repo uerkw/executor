@@ -3,6 +3,10 @@ import {
   ExecutionInteractionIdSchema,
   SourceAuthSchema,
   SourceIdSchema,
+  SourceInspectionDiscoverPayloadSchema,
+  SourceInspectionDiscoverResultSchema,
+  SourceInspectionSchema,
+  SourceInspectionToolDetailSchema,
   SourceKindSchema,
   SourceSchema,
   SourceStatusSchema,
@@ -72,6 +76,7 @@ export type UpdateSourcePayload = typeof UpdateSourcePayloadSchema.Type;
 
 const workspaceIdParam = HttpApiSchema.param("workspaceId", WorkspaceIdSchema);
 const sourceIdParam = HttpApiSchema.param("sourceId", SourceIdSchema);
+const toolPathParam = HttpApiSchema.param("toolPath", Schema.String);
 
 const CredentialPageUrlParamsSchema = Schema.Struct({
   interactionId: ExecutionInteractionIdSchema,
@@ -160,6 +165,34 @@ export class SourcesApi extends HttpApiGroup.make("sources")
       .setUrlParams(CredentialOauthCompleteUrlParamsSchema)
       .addSuccess(Schema.String)
       .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("inspection")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/inspection`
+      .addSuccess(SourceInspectionSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("inspectionTool")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/tools/${toolPathParam}/inspection`
+      .addSuccess(SourceInspectionToolDetailSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("inspectionDiscover")`/workspaces/${workspaceIdParam}/sources/${sourceIdParam}/inspection/discover`
+      .setPayload(SourceInspectionDiscoverPayloadSchema)
+      .addSuccess(SourceInspectionDiscoverResultSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
       .addError(ControlPlaneNotFoundError)
       .addError(ControlPlaneStorageError),
   )

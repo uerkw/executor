@@ -8,10 +8,7 @@ import {
   discoverMcpToolsFromConnector,
   type McpToolManifestEntry,
 } from "@executor-v3/codemode-mcp";
-import {
-  extractOpenApiManifest,
-  type OpenApiExtractedTool,
-} from "@executor-v3/codemode-openapi";
+import { extractOpenApiManifest } from "@executor-v3/codemode-openapi";
 import type { SqlControlPlaneRows } from "#persistence";
 import {
   type SecretRef,
@@ -22,6 +19,7 @@ import {
   type StoredToolArtifactRequestBodyContentTypeRecord,
 } from "#schema";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 export type ResolveSourceSecretMaterial = (
   ref: SecretRef,
@@ -98,6 +96,9 @@ const toMcpToolArtifactRecord = (input: {
       openApiMethod: null,
       openApiPathTemplate: null,
       openApiOperationHash: null,
+      openApiRawToolId: null,
+      openApiOperationId: null,
+      openApiTagsJson: null,
       openApiRequestBodyRequired: null,
       createdAt: input.now,
       updatedAt: input.now,
@@ -105,71 +106,6 @@ const toMcpToolArtifactRecord = (input: {
   };
 };
 
-const toOpenApiToolArtifactRecord = (input: {
-  workspaceId: Source["workspaceId"];
-  source: Source;
-  extracted: OpenApiExtractedTool;
-  now: number;
-}): IndexedToolArtifactRecord => {
-  const sourceNamespace = input.source.namespace ?? namespaceFromSourceName(input.source.name);
-  const path = joinToolPath(sourceNamespace, input.extracted.toolId);
-  const searchNamespace = catalogNamespaceFromPath(path);
-  const description =
-    input.extracted.description
-    ?? `${input.extracted.method.toUpperCase()} ${input.extracted.path}`;
-
-  return {
-    artifact: {
-      workspaceId: input.workspaceId,
-      path,
-      toolId: input.extracted.toolId,
-      sourceId: input.source.id,
-      title: input.extracted.name,
-      description,
-      searchNamespace,
-      searchText: normalizeSearchText(
-        path,
-        searchNamespace,
-        input.extracted.name,
-        description,
-        input.extracted.method.toUpperCase(),
-        input.extracted.path,
-      ),
-      inputSchemaJson: input.extracted.typing?.inputSchemaJson ?? null,
-      outputSchemaJson: input.extracted.typing?.outputSchemaJson ?? null,
-      providerKind: "openapi",
-      mcpToolName: null,
-      openApiMethod: input.extracted.method,
-      openApiPathTemplate: input.extracted.invocation.pathTemplate,
-      openApiOperationHash: input.extracted.operationHash,
-      openApiRequestBodyRequired: input.extracted.invocation.requestBody?.required ?? null,
-      createdAt: input.now,
-      updatedAt: input.now,
-    },
-    parameters: input.extracted.invocation.parameters.map((parameter, position) => ({
-      workspaceId: input.workspaceId,
-      path,
-      position,
-      name: parameter.name,
-      location: parameter.location,
-      required: parameter.required,
-    })),
-    requestBodyContentTypes:
-      input.extracted.invocation.requestBody?.contentTypes.map((contentType, position) => ({
-        workspaceId: input.workspaceId,
-        path,
-        position,
-        contentType,
-      })) ?? [],
-    refHintKeys:
-      input.extracted.typing?.refHintKeys?.map((refHintKey, position) => ({
-        workspaceId: input.workspaceId,
-        path,
-        position,
-        refHintKey,
-      })) ?? [],
-  };
-};
 
 const shouldIndexSource = (source: Source): boolean =>
   source.enabled
@@ -358,18 +294,30 @@ const indexOpenApiSourceToolArtifacts = (input: {
     );
 
     const now = Date.now();
-    yield* input.rows.toolArtifacts.replaceForSource({
-      workspaceId: input.source.workspaceId,
-      sourceId: input.source.id,
-      artifacts: manifest.tools.map((extracted) =>
-        toOpenApiToolArtifactRecord({
-          workspaceId: input.source.workspaceId,
-          source: input.source,
-          extracted,
-          now,
-        })
+    const updatedSource = yield* input.rows.sources.update(
+      input.source.workspaceId,
+      input.source.id,
+      {
+        sourceHash: manifest.sourceHash,
+        sourceDocumentText: openApiDocument,
+        updatedAt: now,
+      },
+    ).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof Error ? cause : new Error(String(cause)),
       ),
-    }).pipe(
+    );
+
+    if (Option.isNone(updatedSource)) {
+      return yield* Effect.fail(
+        new Error(`Source disappeared while storing OpenAPI document for ${input.source.id}`),
+      );
+    }
+
+    yield* input.rows.toolArtifacts.removeByWorkspaceAndSourceId(
+      input.source.workspaceId,
+      input.source.id,
+    ).pipe(
       Effect.mapError((cause) =>
         cause instanceof Error ? cause : new Error(String(cause)),
       ),

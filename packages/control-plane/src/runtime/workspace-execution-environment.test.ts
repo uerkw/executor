@@ -25,6 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
+import * as Option from "effect/Option";
 import { Schema } from "effect";
 import { z } from "zod/v4";
 
@@ -372,6 +373,7 @@ const persistConnectedEchoTool = (input: {
       authHeaderName: null,
       authPrefix: null,
       sourceHash: null,
+      sourceDocumentText: null,
       lastError: null,
       createdAt: now,
       updatedAt: now,
@@ -406,6 +408,9 @@ const persistConnectedEchoTool = (input: {
           openApiMethod: null,
           openApiPathTemplate: null,
           openApiOperationHash: null,
+          openApiRawToolId: null,
+          openApiOperationId: null,
+          openApiTagsJson: null,
           openApiRequestBodyRequired: null,
           createdAt: now,
           updatedAt: now,
@@ -414,13 +419,89 @@ const persistConnectedEchoTool = (input: {
     });
   });
 
-const persistConnectedGithubSearchArtifacts = (input: {
+const persistConnectedGithubOpenApiSource = (input: {
   persistence: SqlControlPlanePersistence;
   workspaceId: WorkspaceId;
   sourceId: SourceId;
 }) =>
   Effect.gen(function* () {
     const now = Date.now();
+    const openApiDocumentText = JSON.stringify({
+      openapi: "3.0.3",
+      info: {
+        title: "GitHub",
+        version: "1.0.0",
+      },
+      paths: {
+        "/repos/{owner}/{repo}/environments/{environment_name}/secrets/{secret_name}": {
+          get: {
+            operationId: "actions/get-environment-secret",
+            tags: ["actions"],
+            summary: "Get an environment secret",
+            description:
+              "Gets a single environment secret without revealing its encrypted value. Authenticated users must have collaborator access to a repository to create, update, or read secrets.",
+            parameters: [
+              { name: "owner", in: "path", required: true, schema: { type: "string" } },
+              { name: "repo", in: "path", required: true, schema: { type: "string" } },
+              { name: "environment_name", in: "path", required: true, schema: { type: "string" } },
+              { name: "secret_name", in: "path", required: true, schema: { type: "string" } },
+            ],
+            responses: {
+              200: {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: { type: "object" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        "/orgs/{org}/actions/runners/{runner_id}": {
+          get: {
+            operationId: "actions/get-self-hosted-runner-for-org",
+            tags: ["actions"],
+            summary: "Get a self-hosted runner for an organization",
+            description:
+              "Gets a specific self-hosted runner configured in an organization. Authenticated users must have admin access to the organization to use this endpoint.",
+            parameters: [
+              { name: "org", in: "path", required: true, schema: { type: "string" } },
+              { name: "runner_id", in: "path", required: true, schema: { type: "integer" } },
+            ],
+            responses: {
+              200: {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: { type: "object" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        "/user": {
+          get: {
+            operationId: "users/get-authenticated",
+            tags: ["users"],
+            summary: "Get the authenticated user",
+            description:
+              "Gets the authenticated user. OAuth app tokens and personal access tokens need the user scope to include private profile information.",
+            responses: {
+              200: {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: { type: "object" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
 
     yield* input.persistence.rows.sources.insert({
       id: input.sourceId,
@@ -440,88 +521,10 @@ const persistConnectedGithubSearchArtifacts = (input: {
       authHeaderName: null,
       authPrefix: null,
       sourceHash: null,
+      sourceDocumentText: openApiDocumentText,
       lastError: null,
       createdAt: now,
       updatedAt: now,
-    });
-
-    yield* input.persistence.rows.toolArtifacts.replaceForSource({
-      workspaceId: input.workspaceId,
-      sourceId: input.sourceId,
-      artifacts: [
-        {
-          artifact: {
-            workspaceId: input.workspaceId,
-            path: "github.actions/get-environment-secret",
-            toolId: "actions/get-environment-secret",
-            sourceId: input.sourceId,
-            title: "Get an environment secret",
-            description:
-              "Gets a single environment secret without revealing its encrypted value. Authenticated users must have collaborator access to a repository to create, update, or read secrets.",
-            searchNamespace: "github.actions",
-            searchText:
-              "github.actions/get-environment-secret github.actions get an environment secret gets a single environment secret without revealing its encrypted value authenticated users must have collaborator access to a repository to create update or read secrets GET /repos/{owner}/{repo}/environments/{environment_name}/secrets/{secret_name}",
-            inputSchemaJson: null,
-            outputSchemaJson: null,
-            providerKind: "openapi",
-            mcpToolName: null,
-            openApiMethod: "get",
-            openApiPathTemplate: "/repos/{owner}/{repo}/environments/{environment_name}/secrets/{secret_name}",
-            openApiOperationHash: "op_actions_get_environment_secret",
-            openApiRequestBodyRequired: null,
-            createdAt: now,
-            updatedAt: now,
-          },
-        },
-        {
-          artifact: {
-            workspaceId: input.workspaceId,
-            path: "github.actions/get-self-hosted-runner-for-org",
-            toolId: "actions/get-self-hosted-runner-for-org",
-            sourceId: input.sourceId,
-            title: "Get a self-hosted runner for an organization",
-            description:
-              "Gets a specific self-hosted runner configured in an organization. Authenticated users must have admin access to the organization to use this endpoint.",
-            searchNamespace: "github.actions",
-            searchText:
-              "github.actions/get-self-hosted-runner-for-org github.actions get a self hosted runner for an organization gets a specific self hosted runner configured in an organization authenticated users must have admin access to the organization to use this endpoint GET /orgs/{org}/actions/runners/{runner_id}",
-            inputSchemaJson: null,
-            outputSchemaJson: null,
-            providerKind: "openapi",
-            mcpToolName: null,
-            openApiMethod: "get",
-            openApiPathTemplate: "/orgs/{org}/actions/runners/{runner_id}",
-            openApiOperationHash: "op_actions_get_self_hosted_runner_for_org",
-            openApiRequestBodyRequired: null,
-            createdAt: now,
-            updatedAt: now,
-          },
-        },
-        {
-          artifact: {
-            workspaceId: input.workspaceId,
-            path: "github.users/get-authenticated",
-            toolId: "users/get-authenticated",
-            sourceId: input.sourceId,
-            title: "Get the authenticated user",
-            description:
-              "Gets the authenticated user. OAuth app tokens and personal access tokens need the user scope to include private profile information.",
-            searchNamespace: "github.users",
-            searchText:
-              "github.users/get-authenticated github.users get the authenticated user gets the authenticated user oauth app tokens and personal access tokens need the user scope to include private profile information GET /user",
-            inputSchemaJson: null,
-            outputSchemaJson: null,
-            providerKind: "openapi",
-            mcpToolName: null,
-            openApiMethod: "get",
-            openApiPathTemplate: "/user",
-            openApiOperationHash: "op_users_get_authenticated",
-            openApiRequestBodyRequired: null,
-            createdAt: now,
-            updatedAt: now,
-          },
-        },
-      ],
     });
   });
 
@@ -597,7 +600,7 @@ describe("workspace-execution-environment", () => {
       const persistence = yield* makePersistence;
       const workspaceId = WorkspaceIdSchema.make("ws_github_discovery");
       const sourceId = SourceIdSchema.make("src_github_discovery");
-      yield* persistConnectedGithubSearchArtifacts({
+      yield* persistConnectedGithubOpenApiSource({
         persistence,
         workspaceId,
         sourceId,
@@ -613,7 +616,7 @@ describe("workspace-execution-environment", () => {
       const firstQuery = (yield* environment.toolInvoker.invoke({
         path: "discover",
         args: {
-          query: "get authenticated user",
+          query: "current authenticated user profile",
           limit: 5,
         },
       })) as {
@@ -621,8 +624,8 @@ describe("workspace-execution-environment", () => {
         results: Array<{ path: string }>;
       };
 
-      expect(firstQuery.bestPath).toBe("github.users/get-authenticated");
-      expect(firstQuery.results[0]?.path).toBe("github.users/get-authenticated");
+      expect(firstQuery.bestPath).toBe("github.users.getAuthenticated");
+      expect(firstQuery.results[0]?.path).toBe("github.users.getAuthenticated");
 
       const secondQuery = (yield* environment.toolInvoker.invoke({
         path: "discover",
@@ -635,8 +638,8 @@ describe("workspace-execution-environment", () => {
         results: Array<{ path: string }>;
       };
 
-      expect(secondQuery.bestPath).toBe("github.users/get-authenticated");
-      expect(secondQuery.results[0]?.path).toBe("github.users/get-authenticated");
+      expect(secondQuery.bestPath).toBe("github.users.getAuthenticated");
+      expect(secondQuery.results[0]?.path).toBe("github.users.getAuthenticated");
     }),
   );
 
@@ -735,6 +738,7 @@ describe("workspace-execution-environment", () => {
           runId: "exec_add_openapi",
         },
       })) as {
+        id: SourceId;
         kind: string;
         status: string;
         auth: {
@@ -758,11 +762,14 @@ describe("workspace-execution-environment", () => {
         encodeURIComponent("exec_add_openapi:executor.sources.add:"),
       );
 
-      const storedArtifacts = yield* persistence.rows.toolArtifacts.listByWorkspaceId(
+      const storedSource = yield* persistence.rows.sources.getByWorkspaceAndId(
         workspaceId,
+        added.id,
       );
-      expect(storedArtifacts.length).toBeGreaterThan(0);
-      const repoToolPath = storedArtifacts[0]!.path;
+      expect(Option.isSome(storedSource)).toBe(true);
+      if (Option.isSome(storedSource)) {
+        expect(storedSource.value.sourceDocumentText).toContain('"operationId":"repos.getRepo"');
+      }
 
       const freshEnvironment = yield* resolveEnvironment({
         workspaceId,
@@ -780,10 +787,10 @@ describe("workspace-execution-environment", () => {
         bestPath: string | null;
       };
 
-      expect(discovered.bestPath).toBe(repoToolPath);
+      expect(discovered.bestPath).toBe("github.repos.getRepo");
 
       const invoked = (yield* freshEnvironment.toolInvoker.invoke({
-        path: repoToolPath,
+        path: "github.repos.getRepo",
         args: {
           owner: "vercel",
           repo: "ai",
@@ -825,7 +832,7 @@ describe("workspace-execution-environment", () => {
       })) as {
         path: string;
         description?: string;
-        inputHint?: string;
+        inputType?: string;
         inputSchemaJson?: string;
       } | null;
 
@@ -833,8 +840,8 @@ describe("workspace-execution-environment", () => {
       expect(described?.description).toContain("Source add input shapes:");
       expect(described?.description).toContain("specUrl");
       expect(described?.description).toContain("credential setup");
-      expect(described?.inputHint).toContain("endpoint");
-      expect(described?.inputHint).not.toContain("auth");
+      expect(described?.inputType).toContain("endpoint");
+      expect(described?.inputType).not.toContain("auth");
 
       const inputSchema = described?.inputSchemaJson
         ? JSON.parse(described.inputSchemaJson) as Record<string, unknown>
