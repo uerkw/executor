@@ -1,4 +1,3 @@
-import { type Policy } from "#schema";
 import * as Effect from "effect/Effect";
 
 import {
@@ -21,12 +20,15 @@ const trimOrNull = (value: string | null | undefined): string | null => {
 };
 
 export const derivePolicyConfigKey = (
-  policy: Pick<Policy, "configKey" | "resourcePattern" | "effect" | "approvalMode">,
+  policy: {
+    resourcePattern: string;
+    effect: "allow" | "deny";
+    approvalMode: "auto" | "required";
+  },
   used: Set<string>,
 ): string => {
   const base =
-    trimOrNull(policy.configKey)
-    ?? trimOrNull(policy.resourcePattern)
+    trimOrNull(policy.resourcePattern)
     ?? `${policy.effect}-${policy.approvalMode}`;
   const slugBase = slugify(base) || "policy";
   let candidate = slugBase;

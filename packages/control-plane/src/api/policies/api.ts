@@ -1,11 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
 import {
-  AccountIdSchema,
   PolicyIdSchema,
   PolicyApprovalModeSchema,
   PolicyEffectSchema,
-  PolicyMatchTypeSchema,
-  PolicyResourceTypeSchema,
   PolicySchema,
   WorkspaceIdSchema,
 } from "#schema";
@@ -20,33 +17,19 @@ import {
 } from "../errors";
 import { OptionalTrimmedNonEmptyStringSchema } from "../string-schemas";
 
-export const CreatePolicyPayloadSchema = Schema.Struct({
-  resourceType: Schema.optional(PolicyResourceTypeSchema),
+const LocalWorkspacePolicyPayloadSchema = Schema.Struct({
   resourcePattern: OptionalTrimmedNonEmptyStringSchema,
-  matchType: Schema.optional(PolicyMatchTypeSchema),
   effect: Schema.optional(PolicyEffectSchema),
   approvalMode: Schema.optional(PolicyApprovalModeSchema),
-  argumentConditionsJson: Schema.optional(Schema.NullOr(Schema.String)),
   priority: Schema.optional(Schema.Number),
   enabled: Schema.optional(Schema.Boolean),
-  targetAccountId: Schema.optional(Schema.NullOr(AccountIdSchema)),
-  clientId: Schema.optional(Schema.NullOr(Schema.String)),
 });
+
+export const CreatePolicyPayloadSchema = LocalWorkspacePolicyPayloadSchema;
 
 export type CreatePolicyPayload = typeof CreatePolicyPayloadSchema.Type;
 
-export const UpdatePolicyPayloadSchema = Schema.Struct({
-  resourceType: Schema.optional(PolicyResourceTypeSchema),
-  resourcePattern: OptionalTrimmedNonEmptyStringSchema,
-  matchType: Schema.optional(PolicyMatchTypeSchema),
-  effect: Schema.optional(PolicyEffectSchema),
-  approvalMode: Schema.optional(PolicyApprovalModeSchema),
-  argumentConditionsJson: Schema.optional(Schema.NullOr(Schema.String)),
-  priority: Schema.optional(Schema.Number),
-  enabled: Schema.optional(Schema.Boolean),
-  targetAccountId: Schema.optional(Schema.NullOr(AccountIdSchema)),
-  clientId: Schema.optional(Schema.NullOr(Schema.String)),
-});
+export const UpdatePolicyPayloadSchema = LocalWorkspacePolicyPayloadSchema;
 
 export type UpdatePolicyPayload = typeof UpdatePolicyPayloadSchema.Type;
 

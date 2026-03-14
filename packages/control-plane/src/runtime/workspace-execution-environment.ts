@@ -190,19 +190,29 @@ const loadWorkspaceSchemaBundle = (input: {
   id: SourceRecipeSchemaBundleId;
 }): Effect.Effect<ToolSchemaBundle | null, Error, never> =>
   Effect.gen(function* () {
-    const bundle = yield* input.rows.sourceRecipeSchemaBundles.getById(
-      input.id,
-    );
+    const runtimeLocalWorkspace = yield* getRuntimeLocalWorkspaceOption();
+    if (runtimeLocalWorkspace !== null) {
+      const recipes = yield* loadWorkspaceSourceRecipes({
+        rows: input.rows,
+        workspaceId: input.workspaceId,
+      });
+      const localBundle = recipes
+        .flatMap((recipe) => recipe.schemaBundles)
+        .find((schemaBundle) => schemaBundle.id === input.id);
+      return localBundle
+        ? {
+            id: localBundle.id,
+            kind: localBundle.bundleKind,
+            hash: localBundle.contentHash,
+            refsJson: localBundle.refsJson,
+          }
+        : null;
+    }
+
+    const bundle = yield* input.rows.sourceRecipeSchemaBundles.getById(input.id);
     if (Option.isSome(bundle)) {
-      const sourceRecords = yield* input.rows.sources.listByWorkspaceId(
-        input.workspaceId,
-      );
-      if (
-        sourceRecords.some(
-          (sourceRecord) =>
-            sourceRecord.recipeRevisionId === bundle.value.recipeRevisionId,
-        )
-      ) {
+      const sourceRecords = yield* input.rows.sources.listByWorkspaceId(input.workspaceId);
+      if (sourceRecords.some((sourceRecord) => sourceRecord.recipeRevisionId === bundle.value.recipeRevisionId)) {
         return {
           id: bundle.value.id,
           kind: bundle.value.bundleKind,
@@ -211,22 +221,7 @@ const loadWorkspaceSchemaBundle = (input: {
         };
       }
     }
-
-    const recipes = yield* loadWorkspaceSourceRecipes({
-      rows: input.rows,
-      workspaceId: input.workspaceId,
-    });
-    const localBundle = recipes
-      .flatMap((recipe) => recipe.schemaBundles)
-      .find((schemaBundle) => schemaBundle.id === input.id);
-    return localBundle
-      ? {
-          id: localBundle.id,
-          kind: localBundle.bundleKind,
-          hash: localBundle.contentHash,
-          refsJson: localBundle.refsJson,
-        }
-      : null;
+    return null;
   });
 
 const scoreRecipeTool = (

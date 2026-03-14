@@ -56,53 +56,6 @@ const localPolicyIdForConfigKey = (input: {
     `pol_local_${createHash("sha256").update(`${input.workspaceRoot}:${input.configKey}`).digest("hex").slice(0, 16)}`,
   );
 
-const ensureLocalWorkspacePolicyCompatible = (
-  operation: OperationErrors,
-  payload: CreatePolicyPayload | UpdatePolicyPayload,
-) =>
-  Effect.gen(function* () {
-    if (payload.targetAccountId !== undefined && payload.targetAccountId !== null) {
-      return yield* Effect.fail(
-        operation.badRequest(
-          "Unsupported local workspace policy field",
-          "targetAccountId is not supported in .executor/executor.jsonc policies",
-        ),
-      );
-    }
-    if (payload.clientId !== undefined && payload.clientId !== null) {
-      return yield* Effect.fail(
-        operation.badRequest(
-          "Unsupported local workspace policy field",
-          "clientId is not supported in .executor/executor.jsonc policies",
-        ),
-      );
-    }
-    if (payload.argumentConditionsJson !== undefined && payload.argumentConditionsJson !== null) {
-      return yield* Effect.fail(
-        operation.badRequest(
-          "Unsupported local workspace policy field",
-          "argumentConditionsJson is not supported in .executor/executor.jsonc policies",
-        ),
-      );
-    }
-    if (payload.resourceType !== undefined && payload.resourceType !== "tool_path") {
-      return yield* Effect.fail(
-        operation.badRequest(
-          "Unsupported local workspace policy field",
-          "Only tool_path workspace policies are supported in local config",
-        ),
-      );
-    }
-    if (payload.matchType !== undefined && payload.matchType !== "glob") {
-      return yield* Effect.fail(
-        operation.badRequest(
-          "Unsupported local workspace policy field",
-          "Only glob workspace policies are supported in local config",
-        ),
-      );
-    }
-  });
-
 export const loadRuntimeLocalWorkspacePolicies = (workspaceId: WorkspaceId) =>
   Effect.gen(function* () {
     const runtimeLocalWorkspace = yield* requireRuntimeLocalWorkspace(workspaceId);
@@ -235,19 +188,19 @@ export const createPolicy = (input: {
         ),
       ),
     );
-    yield* ensureLocalWorkspacePolicyCompatible(policyOps.create, input.payload);
-
     const now = Date.now();
     const projectConfig = cloneJson(localWorkspace.loadedConfig.projectConfig ?? {});
     const policies = {
       ...(projectConfig.policies ?? {}),
     };
-    const configKey = derivePolicyConfigKey({
-      configKey: null,
-      resourcePattern: input.payload.resourcePattern ?? "*",
-      effect: input.payload.effect ?? "allow",
-      approvalMode: input.payload.approvalMode ?? "auto",
-    }, new Set(Object.keys(policies)));
+    const configKey = derivePolicyConfigKey(
+      {
+        resourcePattern: input.payload.resourcePattern ?? "*",
+        effect: input.payload.effect ?? "allow",
+        approvalMode: input.payload.approvalMode ?? "auto",
+      },
+      new Set(Object.keys(policies)),
+    );
     const id = localWorkspace.workspaceState.policies[configKey]?.id
       ?? localPolicyIdForConfigKey({
         workspaceRoot: localWorkspace.runtimeLocalWorkspace.context.workspaceRoot,
@@ -346,9 +299,8 @@ export const updatePolicy = (input: {
         ),
       ),
     );
-    yield* ensureLocalWorkspacePolicyCompatible(policyOps.update, input.payload);
     const existing = localWorkspace.policies.find((candidate) => candidate.id === input.policyId) ?? null;
-    if (existing === null || existing.configKey === null || !policyMatchesScope(existing, scope)) {
+    if (existing === null || !policyMatchesScope(existing, scope)) {
       return yield* Effect.fail(
         policyOps.update.notFound(
           "Policy not found",
@@ -426,7 +378,7 @@ export const removePolicy = (input: {
       ),
     );
     const existing = localWorkspace.policies.find((candidate) => candidate.id === input.policyId) ?? null;
-    if (existing === null || existing.configKey === null || !policyMatchesScope(existing, scope)) {
+    if (existing === null || !policyMatchesScope(existing, scope)) {
       return { removed: false };
     }
 
