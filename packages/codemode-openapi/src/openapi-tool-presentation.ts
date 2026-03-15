@@ -297,8 +297,8 @@ const buildExampleOutput = (
 };
 
 export type OpenApiToolPresentation = {
-  previewInputType: string;
-  previewOutputType: string;
+  inputTypePreview: string;
+  outputTypePreview: string;
   inputSchema?: unknown;
   outputSchema?: unknown;
   exampleInput?: unknown;
@@ -319,8 +319,8 @@ export const buildOpenApiToolPresentation = (input: {
   const exampleOutput = buildExampleOutput(input.definition.documentation);
 
   return {
-    previewInputType: typeSignatureFromSchema(inputSchema, "unknown", Infinity),
-    previewOutputType: openApiOutputTypeSignatureFromSchema(outputSchema, Infinity),
+    inputTypePreview: typeSignatureFromSchema(inputSchema, "unknown", Infinity),
+    outputTypePreview: openApiOutputTypeSignatureFromSchema(outputSchema, Infinity),
     ...(inputSchema !== undefined ? { inputSchema } : {}),
     ...(outputSchema !== undefined ? { outputSchema } : {}),
     ...(exampleInput !== undefined ? { exampleInput } : {}),

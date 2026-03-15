@@ -600,13 +600,13 @@ const codemodeDescriptorFromCapability = (input: {
     rawOutputSchema === undefined
       ? undefined
       : applyGraphqlSchemaHints(input.executable, rawOutputSchema);
-  const previewInputType = input.typeProjector.renderSelfContainedShape(
+  const inputTypePreview = input.typeProjector.renderSelfContainedShape(
     projectedDescriptor.callShapeId,
     {
       aliasHint: joinTypeNameSegments(...projectedDescriptor.toolPath, "call"),
     },
   );
-  const previewOutputType = projectedDescriptor.resultShapeId
+  const outputTypePreview = projectedDescriptor.resultShapeId
     ? input.typeProjector.renderSelfContainedShape(projectedDescriptor.resultShapeId, {
         aliasHint: joinTypeNameSegments(...projectedDescriptor.toolPath, "result"),
       })
@@ -619,8 +619,8 @@ const codemodeDescriptorFromCapability = (input: {
     interaction,
     ...(inputSchema !== undefined ? { inputSchema } : {}),
     ...(outputSchema !== undefined ? { outputSchema } : {}),
-    previewInputType,
-    ...(previewOutputType !== undefined ? { previewOutputType } : {}),
+    inputTypePreview,
+    ...(outputTypePreview !== undefined ? { outputTypePreview } : {}),
     providerKind: input.executable.protocol,
     providerData: {
       capabilityId: input.capability.id,

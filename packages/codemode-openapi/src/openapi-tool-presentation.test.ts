@@ -214,9 +214,9 @@ describe("buildOpenApiToolPresentation", () => {
           refHintTable: manifest.refHintTable,
         });
 
-        expect(presentation.previewInputType).toContain("body");
-        expect(presentation.previewInputType).toContain("key_name");
-        expect(presentation.previewOutputType).toContain("key");
+        expect(presentation.inputTypePreview).toContain("body");
+        expect(presentation.inputTypePreview).toContain("key_name");
+        expect(presentation.outputTypePreview).toContain("key");
         expect(presentation.inputSchema).toMatchObject({
           type: "object",
           properties: {
@@ -267,9 +267,9 @@ describe("buildOpenApiToolPresentation", () => {
           refHintTable: manifest.refHintTable,
         });
 
-        expect(presentation.previewInputType).toBe("unknown");
-        expect(presentation.previewOutputType).toContain("id");
-        expect(presentation.previewOutputType).toContain("name");
+        expect(presentation.inputTypePreview).toBe("unknown");
+        expect(presentation.outputTypePreview).toContain("id");
+        expect(presentation.outputTypePreview).toContain("name");
         expect(presentation.outputSchema).toMatchObject({
           type: "array",
           items: {

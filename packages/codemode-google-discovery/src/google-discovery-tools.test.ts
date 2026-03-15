@@ -152,9 +152,9 @@ describe("google discovery tools", () => {
         definition: batchUpdate!,
       });
 
-      expect(presentation.previewInputType).toContain("spreadsheetId: string");
-      expect(presentation.previewInputType).toContain("repeatCell?");
-      expect(presentation.previewOutputType).toContain("spreadsheetId");
+      expect(presentation.inputTypePreview).toContain("spreadsheetId: string");
+      expect(presentation.inputTypePreview).toContain("repeatCell?");
+      expect(presentation.outputTypePreview).toContain("spreadsheetId");
       expect(presentation.inputSchema).toMatchObject({
         type: "object",
         properties: {

@@ -521,8 +521,8 @@ export const createOpenApiToolFromDefinition = (
     },
     metadata: {
       sourceKey: input.sourceKey,
-      previewInputType: presentation.previewInputType,
-      previewOutputType: presentation.previewOutputType,
+      inputTypePreview: presentation.inputTypePreview,
+      outputTypePreview: presentation.outputTypePreview,
       ...((presentation.inputSchema ?? input.definition.typing?.inputSchema) !== undefined
         ? { inputSchema: presentation.inputSchema ?? input.definition.typing?.inputSchema }
         : {}),

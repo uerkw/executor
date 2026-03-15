@@ -104,8 +104,8 @@ export type GraphqlToolDefinition = {
 };
 
 export type GraphqlToolPresentation = {
-  previewInputType: string;
-  previewOutputType: string;
+  inputTypePreview: string;
+  outputTypePreview: string;
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
   exampleInput?: unknown;
@@ -1297,12 +1297,12 @@ const graphqlToolPresentationResolver = (
       });
 
       const presentation = {
-        previewInputType: typeSignatureFromSchema(
+        inputTypePreview: typeSignatureFromSchema(
           inputSchema,
           "unknown",
           GRAPHQL_PRESENTATION_TYPE_MAX_LENGTH,
         ),
-        previewOutputType: typeSignatureFromSchema(
+        outputTypePreview: typeSignatureFromSchema(
           outputSchema,
           "unknown",
           GRAPHQL_PRESENTATION_TYPE_MAX_LENGTH,
@@ -1458,12 +1458,12 @@ export const createGraphqlToolFromPersistedOperation = (input: {
         : providerData.operationType === "query"
           ? "auto"
           : "required",
-    previewInputType: typeSignatureFromSchema(
+    inputTypePreview: typeSignatureFromSchema(
       input.inputSchema,
       "unknown",
       GRAPHQL_PRESENTATION_TYPE_MAX_LENGTH,
     ),
-    previewOutputType: typeSignatureFromSchema(
+    outputTypePreview: typeSignatureFromSchema(
       input.outputSchema,
       "unknown",
       GRAPHQL_PRESENTATION_TYPE_MAX_LENGTH,
@@ -1545,8 +1545,8 @@ export const graphqlToolDescriptorFromDefinition = (input: {
     description: input.definition.description,
     interaction:
       input.definition.operationType === "query" ? "auto" : "required",
-    previewInputType: presentation.previewInputType,
-    previewOutputType: presentation.previewOutputType,
+    inputTypePreview: presentation.inputTypePreview,
+    outputTypePreview: presentation.outputTypePreview,
     ...(input.includeSchemas && presentation.inputSchema !== undefined
       ? { inputSchema: presentation.inputSchema }
       : {}),

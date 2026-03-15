@@ -26,6 +26,8 @@
     "docs:dev": "turbo run dev --filter=@executor/docs",
     "test": "turbo run test",
     "executor": "./apps/executor/bin/executor",
+    "release:beta:dry-run": "bun run --cwd apps/executor release:beta:dry-run",
+    "release:beta": "bun run --cwd apps/executor release:beta",
     "typecheck": "bun run --filter='*' typecheck",
     "knip": "knip"
   },

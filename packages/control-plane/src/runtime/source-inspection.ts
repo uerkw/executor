@@ -51,15 +51,15 @@ const formatOptionalTypeScript = (value: string | undefined) =>
 const formatInspectionToolDetail = (detail: SourceInspectionToolDetail) =>
   Effect.gen(function* () {
     const summary = yield* Effect.all({
-      previewInputType: formatOptionalTypeScript(detail.summary.previewInputType),
-      previewOutputType: formatOptionalTypeScript(detail.summary.previewOutputType),
+      inputTypePreview: formatOptionalTypeScript(detail.summary.inputTypePreview),
+      outputTypePreview: formatOptionalTypeScript(detail.summary.outputTypePreview),
       fullInputType: formatOptionalTypeScript(detail.summary.fullInputType),
       fullOutputType: formatOptionalTypeScript(detail.summary.fullOutputType),
     }).pipe(
-      Effect.map(({ previewInputType, previewOutputType, fullInputType, fullOutputType }) => ({
+      Effect.map(({ inputTypePreview, outputTypePreview, fullInputType, fullOutputType }) => ({
         ...detail.summary,
-        ...(previewInputType ? { previewInputType } : {}),
-        ...(previewOutputType ? { previewOutputType } : {}),
+        ...(inputTypePreview ? { inputTypePreview } : {}),
+        ...(outputTypePreview ? { outputTypePreview } : {}),
         ...(fullInputType ? { fullInputType } : {}),
         ...(fullOutputType ? { fullOutputType } : {}),
       })),
@@ -145,11 +145,11 @@ const persistedToolSummaryFromTool = (tool: LoadedSourceCatalogTool): SourceInsp
     tags: [...details.tags],
     method: details.method,
     pathTemplate: details.pathTemplate,
-    ...(tool.descriptor.previewInputType
-      ? { previewInputType: tool.descriptor.previewInputType }
+    ...(tool.descriptor.inputTypePreview
+      ? { inputTypePreview: tool.descriptor.inputTypePreview }
       : {}),
-    ...(tool.descriptor.previewOutputType
-      ? { previewOutputType: tool.descriptor.previewOutputType }
+    ...(tool.descriptor.outputTypePreview
+      ? { outputTypePreview: tool.descriptor.outputTypePreview }
       : {}),
   };
 };
@@ -292,8 +292,8 @@ const scoreTool = (input: {
     path: input.tool.path,
     score,
     ...(summary.description ? { description: summary.description } : {}),
-    ...(summary.previewInputType ? { previewInputType: summary.previewInputType } : {}),
-    ...(summary.previewOutputType ? { previewOutputType: summary.previewOutputType } : {}),
+    ...(summary.inputTypePreview ? { inputTypePreview: summary.inputTypePreview } : {}),
+    ...(summary.outputTypePreview ? { outputTypePreview: summary.outputTypePreview } : {}),
     reasons,
   };
 };

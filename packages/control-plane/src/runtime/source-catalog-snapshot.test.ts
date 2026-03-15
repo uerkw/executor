@@ -939,8 +939,8 @@ describe("source-catalog-snapshot", () => {
       }],
     });
 
-    expect(presentation.previewInputType).toContain("{ input: {");
-    expect(presentation.previewOutputType).not.toContain("unknown[]");
+    expect(presentation.inputTypePreview).toContain("{ input: {");
+    expect(presentation.outputTypePreview).not.toContain("unknown[]");
 
     const executable = Object.values(snapshot.catalog.executables)[0]!;
     const argumentShape = snapshot.catalog.symbols[executable.argumentShapeId];

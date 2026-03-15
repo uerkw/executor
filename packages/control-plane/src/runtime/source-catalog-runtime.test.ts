@@ -328,8 +328,8 @@ describe("source-catalog-runtime", () => {
       const serializedInput = JSON.stringify(tool?.descriptor.inputSchema);
       expect(serializedInput).not.toContain("\"$ref\":\"#/$defs/shape_");
       expect(serializedInput).not.toContain("\"shape_");
-      expect(tool?.descriptor.previewInputType).toContain("filter?: {");
-      expect(tool?.descriptor.previewOutputType).toContain("nodes?: {");
+      expect(tool?.descriptor.inputTypePreview).toContain("filter?: {");
+      expect(tool?.descriptor.outputTypePreview).toContain("nodes?: {");
     }));
 
   it.effect("projects a single tool by path without expanding the whole catalog", () =>
@@ -501,12 +501,12 @@ describe("source-catalog-runtime", () => {
       });
 
       expect(tool).not.toBeNull();
-      expect(tool?.descriptor.previewOutputType).toContain("actor?: string;");
-      expect(tool?.descriptor.previewOutputType).toContain('action: "blocked";');
-      expect(tool?.descriptor.previewOutputType).toContain('action: "unblocked";');
-      expect(tool?.descriptor.previewOutputType).toContain('action: "route-blocked";');
-      expect(tool?.descriptor.previewOutputType).toContain("& (");
-      expect(tool?.descriptor.previewOutputType).not.toContain("Member2");
+      expect(tool?.descriptor.outputTypePreview).toContain("actor?: string;");
+      expect(tool?.descriptor.outputTypePreview).toContain('action: "blocked";');
+      expect(tool?.descriptor.outputTypePreview).toContain('action: "unblocked";');
+      expect(tool?.descriptor.outputTypePreview).toContain('action: "route-blocked";');
+      expect(tool?.descriptor.outputTypePreview).toContain("& (");
+      expect(tool?.descriptor.outputTypePreview).not.toContain("Member2");
     }));
 
   it.effect("uses the shared TS projector for unsupported preview shapes", () =>
@@ -556,6 +556,6 @@ describe("source-catalog-runtime", () => {
       });
 
       expect(tool).not.toBeNull();
-      expect(tool?.descriptor.previewInputType).toContain("unsupported?: unknown;");
+      expect(tool?.descriptor.inputTypePreview).toContain("unsupported?: unknown;");
     }));
 });

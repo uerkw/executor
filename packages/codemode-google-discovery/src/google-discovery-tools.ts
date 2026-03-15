@@ -371,8 +371,8 @@ export type CreateGoogleDiscoveryToolFromDefinitionInput = {
 };
 
 export type GoogleDiscoveryToolPresentation = {
-  previewInputType: string;
-  previewOutputType: string;
+  inputTypePreview: string;
+  outputTypePreview: string;
   inputSchema?: unknown;
   outputSchema?: unknown;
   providerData: typeof GoogleDiscoveryToolProviderDataSchema.Type;
@@ -414,8 +414,8 @@ export const buildGoogleDiscoveryToolPresentation = (input: {
         });
 
   return {
-    previewInputType: typeSignatureFromSchema(inputSchema, "unknown", Infinity),
-    previewOutputType: typeSignatureFromSchema(outputSchema, "unknown", Infinity),
+    inputTypePreview: typeSignatureFromSchema(inputSchema, "unknown", Infinity),
+    outputTypePreview: typeSignatureFromSchema(outputSchema, "unknown", Infinity),
     ...(inputSchema !== undefined ? { inputSchema } : {}),
     ...(outputSchema !== undefined ? { outputSchema } : {}),
     providerData: googleDiscoveryProviderDataFromDefinition({

@@ -18,8 +18,8 @@ export const SourceInspectionToolSummarySchema = Schema.Struct({
   tags: Schema.Array(Schema.String),
   method: Schema.NullOr(Schema.String),
   pathTemplate: Schema.NullOr(Schema.String),
-  previewInputType: Schema.optional(Schema.String),
-  previewOutputType: Schema.optional(Schema.String),
+  inputTypePreview: Schema.optional(Schema.String),
+  outputTypePreview: Schema.optional(Schema.String),
   fullInputType: Schema.optional(Schema.String),
   fullOutputType: Schema.optional(Schema.String),
 });
@@ -57,8 +57,8 @@ export const SourceInspectionDiscoverResultItemSchema = Schema.Struct({
   path: Schema.String,
   score: Schema.Number,
   description: Schema.optional(Schema.String),
-  previewInputType: Schema.optional(Schema.String),
-  previewOutputType: Schema.optional(Schema.String),
+  inputTypePreview: Schema.optional(Schema.String),
+  outputTypePreview: Schema.optional(Schema.String),
   reasons: Schema.Array(Schema.String),
 });
 
