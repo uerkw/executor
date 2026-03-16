@@ -23,5 +23,5 @@
     "vitest": "catalog:",
     "zod": "catalog:"
   },
-  "version": null
+  "version": "0.0.0"
 }

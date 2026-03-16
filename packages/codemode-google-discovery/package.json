@@ -25,5 +25,5 @@
     "bun-types": "catalog:",
     "vitest": "catalog:"
   },
-  "version": null
+  "version": "0.0.0"
 }
