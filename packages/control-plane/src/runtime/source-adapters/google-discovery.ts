@@ -15,9 +15,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  createGoogleDiscoveryCatalogSnapshot,
+  createCatalogImportMetadata,
+  createGoogleDiscoveryCatalogFragment,
   type GoogleDiscoveryCatalogOperationInput,
 } from "../source-catalog-snapshot";
+import { createSourceCatalogSyncResult } from "../source-catalog-support";
 import type { SourceAdapter } from "./types";
 import {
   ConnectHttpAuthSchema,
@@ -336,8 +338,8 @@ export const googleDiscoverySourceAdapter: SourceAdapter = {
       const definitions = compileGoogleDiscoveryToolDefinitions(manifest);
       const now = Date.now();
 
-      return {
-        snapshot: createGoogleDiscoveryCatalogSnapshot({
+      return createSourceCatalogSyncResult({
+        fragment: createGoogleDiscoveryCatalogFragment({
           source,
           documents: [{
             documentKind: "google_discovery",
@@ -352,8 +354,12 @@ export const googleDiscoverySourceAdapter: SourceAdapter = {
             })
           ),
         }),
+        importMetadata: createCatalogImportMetadata({
+          source,
+          adapterKey: "google_discovery",
+        }),
         sourceHash: manifest.sourceHash,
-      };
+      });
     }),
   getOauth2SetupConfig: ({ source }) => googleDiscoveryOauth2SetupConfig(source),
   normalizeOauthClientInput: (input) =>

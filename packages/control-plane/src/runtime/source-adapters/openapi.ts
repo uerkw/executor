@@ -20,9 +20,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  createOpenApiCatalogSnapshot,
+  createCatalogImportMetadata,
+  createOpenApiCatalogFragment,
   type OpenApiCatalogOperationInput,
 } from "../source-catalog-snapshot";
+import { createSourceCatalogSyncResult } from "../source-catalog-support";
 import type { SourceAdapter } from "./types";
 import {
   ConnectHttpAuthSchema,
@@ -299,8 +301,8 @@ export const openApiSourceAdapter: SourceAdapter = {
       const definitions = compileOpenApiToolDefinitions(manifest);
       const now = Date.now();
 
-      return {
-        snapshot: createOpenApiCatalogSnapshot({
+      return createSourceCatalogSyncResult({
+        fragment: createOpenApiCatalogFragment({
           source,
           documents: [{
             documentKind: "openapi",
@@ -314,7 +316,11 @@ export const openApiSourceAdapter: SourceAdapter = {
               refHintTable: manifest.refHintTable,
             })),
         }),
+        importMetadata: createCatalogImportMetadata({
+          source,
+          adapterKey: "openapi",
+        }),
         sourceHash: manifest.sourceHash,
-      };
+      });
     }),
 };

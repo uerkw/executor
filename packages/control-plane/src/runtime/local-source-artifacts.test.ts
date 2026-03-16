@@ -20,8 +20,9 @@ import {
 } from "./local-source-artifacts";
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
 import {
-  createGraphqlCatalogSnapshot,
-  createOpenApiCatalogSnapshot,
+  createCatalogImportMetadata,
+  createGraphqlCatalogFragment,
+  createOpenApiCatalogFragment,
 } from "./source-catalog-snapshot";
 
 const makeContext = (): ResolvedLocalWorkspaceContext => {
@@ -33,6 +34,7 @@ const makeContext = (): ResolvedLocalWorkspaceContext => {
     configDirectory: join(workspaceRoot, ".executor"),
     projectConfigPath: join(workspaceRoot, ".executor", "executor.jsonc"),
     homeConfigPath: join(workspaceRoot, ".executor-home.jsonc"),
+    homeStateDirectory: join(workspaceRoot, ".executor-home-state"),
     artifactsDirectory: join(workspaceRoot, ".executor", "artifacts"),
     stateDirectory: join(workspaceRoot, ".executor", "state"),
   };
@@ -63,7 +65,7 @@ const makeSource = (): Source => ({
 
 const makeArtifact = () => {
   const source = makeSource();
-  const snapshot = createOpenApiCatalogSnapshot({
+  const fragment = createOpenApiCatalogFragment({
     source,
     documents: [{
       documentKind: "openapi",
@@ -77,7 +79,11 @@ const makeArtifact = () => {
   return buildLocalSourceArtifact({
     source,
     syncResult: {
-      snapshot,
+      fragment,
+      importMetadata: createCatalogImportMetadata({
+        source,
+        adapterKey: "openapi",
+      }),
       sourceHash: source.sourceHash,
     },
   });
@@ -92,7 +98,7 @@ const makeGraphqlArtifact = () => {
       defaultHeaders: null,
     },
   };
-  const snapshot = createGraphqlCatalogSnapshot({
+  const fragment = createGraphqlCatalogFragment({
     source,
     documents: [{
       documentKind: "graphql_introspection",
@@ -128,7 +134,11 @@ const makeGraphqlArtifact = () => {
   return buildLocalSourceArtifact({
     source,
     syncResult: {
-      snapshot,
+      fragment,
+      importMetadata: createCatalogImportMetadata({
+        source,
+        adapterKey: "graphql",
+      }),
       sourceHash: source.sourceHash,
     },
   });

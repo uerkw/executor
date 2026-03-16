@@ -1650,6 +1650,15 @@ export const createCatalogSnapshotV1 = (input: {
   };
 };
 
+export const createCatalogSnapshotV1FromFragments = (input: {
+  import: ImportMetadata;
+  fragments: readonly CatalogFragmentV1[];
+}) =>
+  createCatalogSnapshotV1({
+    import: input.import,
+    catalog: mergeCatalogFragments(input.fragments),
+  });
+
 export const mergeCatalogFragments = (fragments: readonly CatalogFragmentV1[]): CatalogV1 => {
   const catalog = emptyCatalog();
   const seenByCollection = new Map<string, string>();

@@ -19,11 +19,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  createMcpCatalogSnapshot,
+  createCatalogImportMetadata,
+  createMcpCatalogFragment,
   type McpCatalogOperationInput,
 } from "../source-catalog-snapshot";
 import {
   contentHash,
+  createSourceCatalogSyncResult,
   type SourceCatalogSyncResult,
 } from "../source-catalog-support";
 import { namespaceFromSourceName } from "../source-names";
@@ -160,8 +162,8 @@ export const catalogSyncResultFromMcpManifest = (input: {
   const manifestJson = JSON.stringify(input.manifest);
   const manifestHash = contentHash(manifestJson);
 
-  return {
-    snapshot: createMcpCatalogSnapshot({
+  return createSourceCatalogSyncResult({
+    fragment: createMcpCatalogFragment({
       source: input.source,
       documents: [{
         documentKind: "mcp_manifest",
@@ -176,8 +178,12 @@ export const catalogSyncResultFromMcpManifest = (input: {
         })
       ),
     }),
+    importMetadata: createCatalogImportMetadata({
+      source: input.source,
+      adapterKey: "mcp",
+    }),
     sourceHash: manifestHash,
-  };
+  });
 };
 
 export const mcpSourceAdapter: SourceAdapter = {

@@ -26,6 +26,7 @@ import {
   expandCatalogToolByPath,
   type LoadedSourceCatalog,
 } from "../source-catalog-runtime";
+import { snapshotFromSourceCatalogSyncResult } from "../source-catalog-support";
 import { createSourceFromPayload } from "../source-definitions";
 import { mcpSourceAdapter } from "./mcp";
 
@@ -252,13 +253,14 @@ describe("mcp source adapter", () => {
             cookies: {},
             bodyValues: {},
             expiresAt: null,
-            refreshAfter: null,
-          }),
+          refreshAfter: null,
+        }),
       });
+      const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
 
-      const capability = Object.values(syncResult.snapshot.catalog.capabilities)[0]!;
-      const executable = Object.values(syncResult.snapshot.catalog.executables)[0]!;
-      const document = Object.values(syncResult.snapshot.catalog.documents)[0]!;
+      const capability = Object.values(snapshot.catalog.capabilities)[0]!;
+      const executable = Object.values(snapshot.catalog.executables)[0]!;
+      const document = Object.values(snapshot.catalog.documents)[0]!;
       const rawManifest = document.native?.[0]?.value;
 
       expect(capability.surface.title).toBe("Read File");
@@ -339,14 +341,15 @@ describe("mcp source adapter", () => {
             cookies: {},
             bodyValues: {},
             expiresAt: null,
-            refreshAfter: null,
-          }),
+          refreshAfter: null,
+        }),
       });
+      const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
 
       const tool = yield* expandCatalogToolByPath({
         catalogs: [makeLoadedCatalog({
           source,
-          snapshot: syncResult.snapshot,
+          snapshot,
         })],
         path: "mcp.demo.read_file",
       });

@@ -1,5 +1,10 @@
 import { sha256Hex } from "@executor/codemode-core";
-import type { CatalogSnapshotV1 } from "../ir/model";
+import { createCatalogSnapshotV1FromFragments } from "../ir/catalog";
+import type {
+  CatalogFragmentV1,
+  CatalogSnapshotV1,
+  ImportMetadata,
+} from "../ir/model";
 
 export const normalizeSearchText = (
   ...parts: ReadonlyArray<string | null | undefined>
@@ -13,6 +18,19 @@ export const normalizeSearchText = (
 export const contentHash = (value: string): string => sha256Hex(value);
 
 export type SourceCatalogSyncResult = {
-  snapshot: CatalogSnapshotV1;
+  fragment: CatalogFragmentV1;
+  importMetadata: ImportMetadata;
   sourceHash: string | null;
 };
+
+export const createSourceCatalogSyncResult = (
+  input: SourceCatalogSyncResult,
+): SourceCatalogSyncResult => input;
+
+export const snapshotFromSourceCatalogSyncResult = (
+  syncResult: SourceCatalogSyncResult,
+): CatalogSnapshotV1 =>
+  createCatalogSnapshotV1FromFragments({
+    import: syncResult.importMetadata,
+    fragments: [syncResult.fragment],
+  });

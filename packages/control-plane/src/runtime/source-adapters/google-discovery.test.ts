@@ -6,6 +6,7 @@ import { SourceIdSchema } from "#schema";
 import * as Effect from "effect/Effect";
 
 import { googleDiscoverySourceAdapter } from "./google-discovery";
+import { snapshotFromSourceCatalogSyncResult } from "../source-catalog-support";
 import { createSourceFromPayload } from "../source-definitions";
 
 const fetchLiveDiscoveryDocument = async (): Promise<string> => {
@@ -102,12 +103,14 @@ describe("google discovery source adapter", () => {
                 }),
             }),
           );
+          const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
 
-          expect(Object.values(syncResult.snapshot.catalog.documents)[0]?.kind).toBe("google-discovery");
-          expect(Object.keys(syncResult.snapshot.catalog.resources)).not.toHaveLength(0);
-          expect(Object.keys(syncResult.snapshot.catalog.capabilities).length).toBeGreaterThan(50);
+          expect(syncResult.fragment.version).toBe("ir.v1.fragment");
+          expect(Object.values(snapshot.catalog.documents)[0]?.kind).toBe("google-discovery");
+          expect(Object.keys(snapshot.catalog.resources)).not.toHaveLength(0);
+          expect(Object.keys(snapshot.catalog.capabilities).length).toBeGreaterThan(50);
           expect(
-            Object.values(syncResult.snapshot.catalog.capabilities).some((capability) =>
+            Object.values(snapshot.catalog.capabilities).some((capability) =>
               capability.surface.toolPath.join(".") === "google.sheets.spreadsheets.values.get"
             ),
           ).toBe(true);

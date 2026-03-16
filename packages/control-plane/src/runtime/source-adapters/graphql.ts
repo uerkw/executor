@@ -16,9 +16,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
-  createGraphqlCatalogSnapshot,
+  createCatalogImportMetadata,
+  createGraphqlCatalogFragment,
   type GraphqlCatalogOperationInput,
 } from "../source-catalog-snapshot";
+import { createSourceCatalogSyncResult } from "../source-catalog-support";
 import type { SourceAdapter } from "./types";
 import {
   ConnectHttpAuthSchema,
@@ -327,8 +329,8 @@ export const graphqlSourceAdapter: SourceAdapter = {
         }),
       );
       const now = Date.now();
-      const snapshot = yield* Effect.sync(() =>
-        createGraphqlCatalogSnapshot({
+      const fragment = yield* Effect.sync(() =>
+        createGraphqlCatalogFragment({
           source,
           documents: [{
             documentKind: "graphql_introspection",
@@ -347,10 +349,14 @@ export const graphqlSourceAdapter: SourceAdapter = {
         }),
       );
 
-      return {
-        snapshot,
+      return createSourceCatalogSyncResult({
+        fragment,
+        importMetadata: createCatalogImportMetadata({
+          source,
+          adapterKey: "graphql",
+        }),
         sourceHash: manifest.sourceHash,
-      };
+      });
     }).pipe(
       Effect.withSpan("graphql.syncCatalog", {
         attributes: {

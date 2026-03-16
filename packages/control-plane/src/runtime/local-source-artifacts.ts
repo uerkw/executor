@@ -16,10 +16,15 @@ import * as Schema from "effect/Schema";
 import { decodeCatalogSnapshotV1 } from "../ir/catalog";
 import {
   CatalogSnapshotV1Schema,
+  type CatalogSnapshotV1,
   type NativeBlob,
   type SourceDocument,
 } from "../ir/model";
-import type { SourceCatalogSyncResult } from "./source-catalog-support";
+import {
+  contentHash,
+  snapshotFromSourceCatalogSyncResult,
+  type SourceCatalogSyncResult,
+} from "./source-catalog-support";
 import type { ResolvedLocalWorkspaceContext } from "./local-config";
 import {
   LocalFileSystemError,
@@ -30,8 +35,6 @@ import {
   createSourceCatalogRevisionRecord,
   stableSourceCatalogId,
 } from "./source-definitions";
-import { contentHash } from "./source-catalog-support";
-
 const LOCAL_SOURCE_ARTIFACT_VERSION = 3 as const;
 
 export const LocalSourceArtifactSchema = Schema.Struct({
@@ -155,10 +158,10 @@ const hydrateArtifactSourceDocuments = (input: {
   return nextArtifact;
 };
 
-const snapshotHash = (snapshot: SourceCatalogSyncResult["snapshot"]): string =>
+const snapshotHash = (snapshot: CatalogSnapshotV1): string =>
   contentHash(JSON.stringify(snapshot));
 
-const importMetadataHash = (snapshot: SourceCatalogSyncResult["snapshot"]): string =>
+const importMetadataHash = (snapshot: { import: SourceCatalogSyncResult["importMetadata"] }): string =>
   contentHash(JSON.stringify(snapshot.import));
 
 export const buildLocalSourceArtifact = (input: {
@@ -167,13 +170,14 @@ export const buildLocalSourceArtifact = (input: {
 }): LocalSourceArtifact => {
   const catalogId: SourceCatalogId = stableSourceCatalogId(input.source);
   const generatedAt = Date.now();
-  const importHash = importMetadataHash(input.syncResult.snapshot);
-  const hash = snapshotHash(input.syncResult.snapshot);
+  const snapshot = snapshotFromSourceCatalogSyncResult(input.syncResult);
+  const importHash = importMetadataHash(snapshot);
+  const hash = snapshotHash(snapshot);
   const revision = createSourceCatalogRevisionRecord({
     source: input.source,
     catalogId,
     revisionNumber: 1,
-    importMetadataJson: JSON.stringify(input.syncResult.snapshot.import),
+    importMetadataJson: JSON.stringify(snapshot.import),
     importMetadataHash: importHash,
     snapshotHash: hash,
   });
@@ -184,7 +188,7 @@ export const buildLocalSourceArtifact = (input: {
     catalogId,
     generatedAt,
     revision,
-    snapshot: input.syncResult.snapshot,
+    snapshot,
   };
 };
 

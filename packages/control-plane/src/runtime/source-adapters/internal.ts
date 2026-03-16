@@ -2,6 +2,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { Source } from "#schema";
 
+import { createCatalogImportMetadata } from "../source-catalog-snapshot";
+import { createSourceCatalogSyncResult } from "../source-catalog-support";
 import type { SourceAdapter } from "./types";
 import {
   decodeBindingConfig,
@@ -99,28 +101,19 @@ export const internalSourceAdapter: SourceAdapter = {
       };
     }),
   shouldAutoProbe: () => false,
-  syncCatalog: () => Effect.succeed({
-    snapshot: {
-      version: "ir.v1.snapshot",
-      import: {
-        sourceKind: "custom",
-        adapterKey: "internal",
+  syncCatalog: ({ source }) =>
+    Effect.succeed(createSourceCatalogSyncResult({
+      fragment: {
+        version: "ir.v1.fragment",
+      },
+      importMetadata: {
+        ...createCatalogImportMetadata({
+          source,
+          adapterKey: "internal",
+        }),
         importerVersion: "ir.v1.internal",
-        importedAt: new Date().toISOString(),
         sourceConfigHash: "internal",
       },
-      catalog: {
-        version: "ir.v1",
-        documents: {},
-        resources: {},
-        scopes: {},
-        symbols: {},
-        capabilities: {},
-        executables: {},
-        responseSets: {},
-        diagnostics: {},
-      },
-    },
-    sourceHash: null,
-  }),
+      sourceHash: null,
+    })),
 };

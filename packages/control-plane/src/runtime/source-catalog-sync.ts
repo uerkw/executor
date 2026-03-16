@@ -31,6 +31,7 @@ import {
   catalogSyncResultFromMcpManifest,
 } from "./source-adapters/mcp";
 import { SecretMaterialResolverService } from "./secret-material-providers";
+import { snapshotFromSourceCatalogSyncResult } from "./source-catalog-support";
 import {
   refreshSourceTypeDeclarationInBackground,
 } from "./source-type-declarations";
@@ -139,6 +140,7 @@ const syncSourceCatalogWithDeps = (
           actorAccountId: input.actorAccountId,
         }),
     });
+    const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
     yield* deps.sourceArtifactStore.write({
       context: workspaceContext,
       sourceId: input.source.id,
@@ -172,7 +174,7 @@ const syncSourceCatalogWithDeps = (
       refreshSourceTypeDeclarationInBackground({
         context: workspaceContext,
         source: input.source,
-        snapshot: syncResult.snapshot,
+        snapshot,
       });
     });
   }).pipe(
@@ -203,6 +205,7 @@ const persistMcpCatalogSnapshotFromManifestWithDeps = (
       endpoint: input.source.endpoint,
       manifest: input.manifest,
     });
+    const snapshot = snapshotFromSourceCatalogSyncResult(syncResult);
 
     yield* deps.sourceArtifactStore.write({
       context: workspaceContext,
@@ -217,7 +220,7 @@ const persistMcpCatalogSnapshotFromManifestWithDeps = (
       refreshSourceTypeDeclarationInBackground({
         context: workspaceContext,
         source: input.source,
-        snapshot: syncResult.snapshot,
+        snapshot,
       });
     });
   });

@@ -14,8 +14,7 @@ import type {
 import type { Source } from "#schema";
 
 import {
-  createCatalogSnapshotV1,
-  createEmptyCatalogV1,
+  createCatalogSnapshotV1FromFragments,
 } from "../ir/catalog";
 import {
   CapabilityIdSchema,
@@ -36,8 +35,8 @@ import {
 import type {
   AuthRequirement,
   Capability,
+  CatalogFragmentV1,
   CatalogSnapshotV1,
-  CatalogV1,
   ContentSpec,
   DocumentationBlock,
   EffectKind,
@@ -62,6 +61,18 @@ import type { GraphqlToolProviderData } from "./graphql-tools";
 import { namespaceFromSourceName } from "./source-names";
 
 type JsonSchema = boolean | Record<string, unknown>;
+
+type CatalogFragmentBuilder = {
+  version: "ir.v1.fragment";
+  documents: NonNullable<CatalogFragmentV1["documents"]>;
+  resources: NonNullable<CatalogFragmentV1["resources"]>;
+  scopes: NonNullable<CatalogFragmentV1["scopes"]>;
+  symbols: NonNullable<CatalogFragmentV1["symbols"]>;
+  capabilities: NonNullable<CatalogFragmentV1["capabilities"]>;
+  executables: NonNullable<CatalogFragmentV1["executables"]>;
+  responseSets: NonNullable<CatalogFragmentV1["responseSets"]>;
+  diagnostics: NonNullable<CatalogFragmentV1["diagnostics"]>;
+};
 
 export type CatalogSourceDocumentInput = {
   documentKind: string;
@@ -262,8 +273,37 @@ const importMetadataFor = (input: {
     }),
 });
 
+export const createCatalogImportMetadata = (input: {
+  source: Source;
+  adapterKey: string;
+}) => importMetadataFor(input);
+
+const createEmptyCatalogFragment = (): CatalogFragmentBuilder => ({
+  version: "ir.v1.fragment",
+  documents: {},
+  resources: {},
+  scopes: {},
+  symbols: {},
+  capabilities: {},
+  executables: {},
+  responseSets: {},
+  diagnostics: {},
+});
+
+const finalizeCatalogFragment = (fragment: CatalogFragmentBuilder): CatalogFragmentV1 => ({
+  version: "ir.v1.fragment",
+  ...(Object.keys(fragment.documents).length > 0 ? { documents: fragment.documents } : {}),
+  ...(Object.keys(fragment.resources).length > 0 ? { resources: fragment.resources } : {}),
+  ...(Object.keys(fragment.scopes).length > 0 ? { scopes: fragment.scopes } : {}),
+  ...(Object.keys(fragment.symbols).length > 0 ? { symbols: fragment.symbols } : {}),
+  ...(Object.keys(fragment.capabilities).length > 0 ? { capabilities: fragment.capabilities } : {}),
+  ...(Object.keys(fragment.executables).length > 0 ? { executables: fragment.executables } : {}),
+  ...(Object.keys(fragment.responseSets).length > 0 ? { responseSets: fragment.responseSets } : {}),
+  ...(Object.keys(fragment.diagnostics).length > 0 ? { diagnostics: fragment.diagnostics } : {}),
+});
+
 const addDiagnostic = (
-  catalog: CatalogV1,
+  catalog: CatalogFragmentBuilder,
   input: Omit<ImportDiagnostic, "id">,
 ) => {
   const id = DiagnosticIdSchema.make(`diag_${stableHash(input)}`);
@@ -310,7 +350,7 @@ const docsFrom = (input: {
 };
 
 const createJsonSchemaImporter = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   resourceId: ReturnType<typeof ResourceIdSchema.make>;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
@@ -800,7 +840,7 @@ const createJsonSchemaImporter = (input: {
 };
 
 const exampleSymbolFromValue = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   pointer: string;
@@ -886,7 +926,7 @@ const preferredResponseContentTypes = (
 };
 
 const createServiceScope = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   defaults?: Scope["defaults"];
@@ -936,7 +976,7 @@ const googleDiscoveryServerSpecs = (
 };
 
 const createOperationScope = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   parentScopeId: ReturnType<typeof ScopeIdSchema.make>;
@@ -967,7 +1007,7 @@ const createOperationScope = (input: {
 };
 
 const responseSetFromSingleResponse = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   responseId: ReturnType<typeof ResponseSymbolIdSchema.make>;
   provenance: ProvenanceRef[];
   traits?: ResponseSet["variants"][number]["traits"];
@@ -993,7 +1033,7 @@ const responseSetFromSingleResponse = (input: {
 };
 
 const responseSetFromVariants = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   variants: ResponseSet["variants"];
   provenance: ProvenanceRef[];
 }) => {
@@ -1038,7 +1078,7 @@ const statusMatchFromHttpStatusCode = (
 };
 
 const ensureOpenApiSecuritySchemeSymbol = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   schemeName: string;
@@ -1147,7 +1187,7 @@ const ensureOpenApiSecuritySchemeSymbol = (input: {
 };
 
 const openApiAuthRequirementToIr = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   authRequirement: OpenApiToolProviderData["authRequirement"] | undefined;
@@ -1199,7 +1239,7 @@ const openApiAuthRequirementToIr = (input: {
 };
 
 const contentSpecsFromOpenApiContents = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   importer: JsonSchemaImporter;
@@ -1239,7 +1279,7 @@ const contentSpecsFromOpenApiContents = (input: {
   });
 
 const createOpenApiHeaderSymbol = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   importer: JsonSchemaImporter;
@@ -1307,7 +1347,7 @@ const createOpenApiHeaderSymbol = (input: {
 };
 
 const createHttpCapabilityFromOpenApi = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   serviceScopeId: ReturnType<typeof ScopeIdSchema.make>;
@@ -1714,7 +1754,7 @@ const createHttpCapabilityFromOpenApi = (input: {
 };
 
 const createHttpCapabilityFromGoogleDiscovery = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   serviceScopeId: ReturnType<typeof ScopeIdSchema.make>;
@@ -1927,7 +1967,7 @@ const createHttpCapabilityFromGoogleDiscovery = (input: {
 };
 
 const createGraphqlCapability = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   serviceScopeId: ReturnType<typeof ScopeIdSchema.make>;
@@ -2047,7 +2087,7 @@ const createGraphqlCapability = (input: {
 };
 
 const createMcpCapability = (input: {
-  catalog: CatalogV1;
+  catalog: CatalogFragmentBuilder;
   source: Source;
   documentId: ReturnType<typeof DocumentIdSchema.make>;
   serviceScopeId: ReturnType<typeof ScopeIdSchema.make>;
@@ -2147,19 +2187,18 @@ const createMcpCapability = (input: {
   } satisfies Capability;
 };
 
-const buildCatalogSnapshot = (input: {
+const buildCatalogFragment = (input: {
   source: Source;
-  adapterKey: string;
   documents: readonly CatalogSourceDocumentInput[];
   serviceScopeDefaults?: Scope["defaults"];
   registerOperations: (context: {
-    catalog: CatalogV1;
+    catalog: CatalogFragmentBuilder;
     documentId: ReturnType<typeof DocumentIdSchema.make>;
     serviceScopeId: ReturnType<typeof ScopeIdSchema.make>;
     importer: JsonSchemaImporter;
   }) => void;
-}): CatalogSnapshotV1 => {
-  const catalog = createEmptyCatalogV1();
+}): CatalogFragmentV1 => {
+  const catalog = createEmptyCatalogFragment();
   const documents = input.documents.length > 0
     ? input.documents
     : [{
@@ -2237,19 +2276,14 @@ const buildCatalogSnapshot = (input: {
   });
   importer.finalize();
 
-  const snapshot = createCatalogSnapshotV1({
-    import: importMetadataFor(input),
-    catalog,
-  });
-
-  return snapshot;
+  return finalizeCatalogFragment(catalog);
 };
 
-export const createOpenApiCatalogSnapshot = (input: {
+export const createOpenApiCatalogFragment = (input: {
   source: Source;
   documents: readonly CatalogSourceDocumentInput[];
   operations: readonly OpenApiCatalogOperationInput[];
-}): CatalogSnapshotV1 => {
+}): CatalogFragmentV1 => {
   const rootSchema = (() => {
     const primaryDocumentText = input.documents[0]?.contentText;
     if (!primaryDocumentText) {
@@ -2263,9 +2297,8 @@ export const createOpenApiCatalogSnapshot = (input: {
     }
   })();
 
-  return buildCatalogSnapshot({
+  return buildCatalogFragment({
     source: input.source,
-    adapterKey: "openapi",
     documents: input.documents,
     serviceScopeDefaults: (() => {
       const documentServers = openApiServerSpecs(
@@ -2292,14 +2325,26 @@ export const createOpenApiCatalogSnapshot = (input: {
   });
 };
 
-export const createGoogleDiscoveryCatalogSnapshot = (input: {
+export const createOpenApiCatalogSnapshot = (input: {
+  source: Source;
+  documents: readonly CatalogSourceDocumentInput[];
+  operations: readonly OpenApiCatalogOperationInput[];
+}): CatalogSnapshotV1 =>
+  createCatalogSnapshotV1FromFragments({
+    import: createCatalogImportMetadata({
+      source: input.source,
+      adapterKey: "openapi",
+    }),
+    fragments: [createOpenApiCatalogFragment(input)],
+  });
+
+export const createGoogleDiscoveryCatalogFragment = (input: {
   source: Source;
   documents: readonly CatalogSourceDocumentInput[];
   operations: readonly GoogleDiscoveryCatalogOperationInput[];
-}): CatalogSnapshotV1 =>
-  buildCatalogSnapshot({
+}): CatalogFragmentV1 =>
+  buildCatalogFragment({
     source: input.source,
-    adapterKey: "google_discovery",
     documents: input.documents,
     serviceScopeDefaults: (() => {
       const servers = googleDiscoveryServerSpecs(input.operations[0]);
@@ -2319,18 +2364,65 @@ export const createGoogleDiscoveryCatalogSnapshot = (input: {
     },
   });
 
+export const createGoogleDiscoveryCatalogSnapshot = (input: {
+  source: Source;
+  documents: readonly CatalogSourceDocumentInput[];
+  operations: readonly GoogleDiscoveryCatalogOperationInput[];
+}): CatalogSnapshotV1 =>
+  createCatalogSnapshotV1FromFragments({
+    import: createCatalogImportMetadata({
+      source: input.source,
+      adapterKey: "google_discovery",
+    }),
+    fragments: [createGoogleDiscoveryCatalogFragment(input)],
+  });
+
+export const createGraphqlCatalogFragment = (input: {
+  source: Source;
+  documents: readonly CatalogSourceDocumentInput[];
+  operations: readonly GraphqlCatalogOperationInput[];
+}): CatalogFragmentV1 =>
+  buildCatalogFragment({
+    source: input.source,
+    documents: input.documents,
+    registerOperations: ({ catalog, documentId, serviceScopeId, importer }) => {
+      for (const operation of input.operations) {
+        createGraphqlCapability({
+          catalog,
+          source: input.source,
+          documentId,
+          serviceScopeId,
+          operation,
+          importer,
+        });
+      }
+    },
+  });
+
 export const createGraphqlCatalogSnapshot = (input: {
   source: Source;
   documents: readonly CatalogSourceDocumentInput[];
   operations: readonly GraphqlCatalogOperationInput[];
 }): CatalogSnapshotV1 =>
-  buildCatalogSnapshot({
+  createCatalogSnapshotV1FromFragments({
+    import: createCatalogImportMetadata({
+      source: input.source,
+      adapterKey: "graphql",
+    }),
+    fragments: [createGraphqlCatalogFragment(input)],
+  });
+
+export const createMcpCatalogFragment = (input: {
+  source: Source;
+  documents: readonly CatalogSourceDocumentInput[];
+  operations: readonly McpCatalogOperationInput[];
+}): CatalogFragmentV1 =>
+  buildCatalogFragment({
     source: input.source,
-    adapterKey: "graphql",
     documents: input.documents,
     registerOperations: ({ catalog, documentId, serviceScopeId, importer }) => {
       for (const operation of input.operations) {
-        createGraphqlCapability({
+        createMcpCapability({
           catalog,
           source: input.source,
           documentId,
@@ -2347,20 +2439,10 @@ export const createMcpCatalogSnapshot = (input: {
   documents: readonly CatalogSourceDocumentInput[];
   operations: readonly McpCatalogOperationInput[];
 }): CatalogSnapshotV1 =>
-  buildCatalogSnapshot({
-    source: input.source,
-    adapterKey: "mcp",
-    documents: input.documents,
-    registerOperations: ({ catalog, documentId, serviceScopeId, importer }) => {
-      for (const operation of input.operations) {
-        createMcpCapability({
-          catalog,
-          source: input.source,
-          documentId,
-          serviceScopeId,
-          operation,
-          importer,
-        });
-      }
-    },
+  createCatalogSnapshotV1FromFragments({
+    import: createCatalogImportMetadata({
+      source: input.source,
+      adapterKey: "mcp",
+    }),
+    fragments: [createMcpCatalogFragment(input)],
   });
