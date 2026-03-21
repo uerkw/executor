@@ -5,11 +5,15 @@ import { NodeFileSystem, NodeHttpServer } from "@effect/platform-node";
 import { describe, expect, it } from "@effect/vitest";
 import {
   createControlPlaneApiLayer,
+} from "@executor/platform-api";
+import {
   createControlPlaneRuntime,
-  type LocalInstallation,
-  type Source,
   type ControlPlaneRuntime,
-} from "@executor/control-plane";
+} from "@executor/platform-sdk/runtime";
+import type {
+  LocalInstallation,
+  Source,
+} from "@executor/platform-sdk/schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

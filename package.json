@@ -35,7 +35,7 @@
     "release:pre:exit": "changeset pre exit",
     "release:beta:start": "changeset pre enter beta",
     "release:beta:stop": "changeset pre exit",
-    "fixture:release:capture": "bun run --cwd packages/platform/control-plane fixture:release:capture",
+    "fixture:release:capture": "bun run --cwd packages/platform/sdk fixture:release:capture",
     "typecheck": "bun run --filter='*' typecheck",
     "knip": "knip"
   },

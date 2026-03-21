@@ -1,35 +1,37 @@
 import { Atom, Result } from "@effect-atom/atom";
 import type * as Registry from "@effect-atom/atom/Registry";
 import { RegistryContext, RegistryProvider, useAtomValue } from "@effect-atom/atom-react";
-import { createControlPlaneClient } from "@executor/control-plane/client";
+import {
+  createControlPlaneClient,
+  type CompleteSourceOAuthResult,
+  type ConnectSourceBatchPayload,
+  type ConnectSourceBatchResult,
+  type ConnectSourcePayload,
+  type ConnectSourceResult,
+  type ControlPlaneClient,
+  type CreateSecretPayload,
+  type CreateSecretResult,
+  type CreateSourcePayload,
+  type CreateWorkspaceOauthClientPayload,
+  type DeleteSecretResult,
+  type DiscoverSourcePayload,
+  type InstanceConfig,
+  type LocalInstallation,
+  type SecretListItem,
+  type StartSourceOAuthPayload,
+  type StartSourceOAuthResult,
+  type UpdateSecretPayload,
+  type UpdateSecretResult,
+  type UpdateSourcePayload,
+} from "@executor/platform-api";
 import type {
-  CompleteSourceOAuthResult,
-  ConnectSourceBatchPayload,
-  ConnectSourceBatchResult,
-  ConnectSourcePayload,
-  ConnectSourceResult,
-  ControlPlaneClient,
-  CreateSecretPayload,
-  CreateSecretResult,
-  CreateSourcePayload,
-  CreateWorkspaceOauthClientPayload,
-  DeleteSecretResult,
-  DiscoverSourcePayload,
-  InstanceConfig,
-  LocalInstallation,
-  SecretListItem,
   Source,
   SourceDiscoveryResult,
   SourceInspection,
   SourceInspectionDiscoverResult,
   SourceInspectionToolDetail,
-  StartSourceOAuthPayload,
-  StartSourceOAuthResult,
-  UpdateSecretPayload,
-  UpdateSecretResult,
-  UpdateSourcePayload,
   WorkspaceOauthClient,
-} from "@executor/control-plane";
+} from "@executor/platform-sdk/schema";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

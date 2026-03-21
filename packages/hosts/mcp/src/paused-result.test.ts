@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { ExecutionEnvelope, ExecutionInteraction } from "@executor/control-plane";
+import type {
+  ExecutionEnvelope,
+  ExecutionInteraction,
+} from "@executor/platform-sdk/schema";
 
 import {
   buildPausedResultText,

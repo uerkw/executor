@@ -1,15 +1,15 @@
 import type {
   ExecutionEnvelope,
-  ControlPlaneRuntime,
-} from "@executor/control-plane";
+} from "@executor/platform-sdk/schema";
 import {
   EXECUTOR_SOURCES_ADD_HELP_LINES,
-  ExecutionIdSchema,
   RuntimeExecutionResolverService,
   createExecution,
   getExecution,
   resumeExecution,
-} from "@executor/control-plane";
+  type ControlPlaneRuntime,
+} from "@executor/platform-sdk/runtime";
+import { ExecutionIdSchema } from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";

@@ -5,8 +5,8 @@ import * as Effect from "effect/Effect";
 
 import {
   createControlPlaneClient,
-  type SourceDiscoveryKind,
-} from "@executor/control-plane";
+} from "@executor/platform-api";
+import { type SourceDiscoveryKind } from "@executor/platform-sdk/schema";
 import { createLocalExecutorServer } from "@executor/server";
 
 const REAL_VERCEL_SPEC_URL = "https://openapi.vercel.sh";

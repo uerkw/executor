@@ -1,0 +1,62 @@
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "@effect/platform";
+import {
+  CreateExecutionPayloadSchema,
+  ResumeExecutionPayloadSchema,
+} from "@executor/platform-sdk/executions/contracts";
+export type {
+  CreateExecutionPayload,
+  ResumeExecutionPayload,
+} from "@executor/platform-sdk/executions/contracts";
+import {
+  ExecutionIdSchema,
+  ExecutionEnvelopeSchema,
+  WorkspaceIdSchema,
+} from "@executor/platform-sdk/schema";
+
+import {
+  ControlPlaneBadRequestError,
+  ControlPlaneForbiddenError,
+  ControlPlaneNotFoundError,
+  ControlPlaneStorageError,
+  ControlPlaneUnauthorizedError,
+} from "@executor/platform-sdk/errors";
+
+export {
+  CreateExecutionPayloadSchema,
+  ResumeExecutionPayloadSchema,
+};
+
+const workspaceIdParam = HttpApiSchema.param("workspaceId", WorkspaceIdSchema);
+const executionIdParam = HttpApiSchema.param("executionId", ExecutionIdSchema);
+
+export class ExecutionsApi extends HttpApiGroup.make("executions")
+  .add(
+    HttpApiEndpoint.post("create")`/workspaces/${workspaceIdParam}/executions`
+      .setPayload(CreateExecutionPayloadSchema)
+      .addSuccess(ExecutionEnvelopeSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.get("get")`/workspaces/${workspaceIdParam}/executions/${executionIdParam}`
+      .addSuccess(ExecutionEnvelopeSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("resume")`/workspaces/${workspaceIdParam}/executions/${executionIdParam}/resume`
+      .setPayload(ResumeExecutionPayloadSchema)
+      .addSuccess(ExecutionEnvelopeSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneUnauthorizedError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .prefix("/v1") {}

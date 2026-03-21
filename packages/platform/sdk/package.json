@@ -1,0 +1,65 @@
+{
+  "name": "@executor/platform-sdk",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./errors": "./src/errors.ts",
+    "./string-schemas": "./src/string-schemas.ts",
+    "./executions/contracts": "./src/executions/contracts.ts",
+    "./schema": "./src/schema/index.ts",
+    "./runtime": "./src/runtime/index.ts",
+    "./local/contracts": "./src/local/contracts.ts",
+    "./local/operations": "./src/local/operations.ts",
+    "./local/secrets": "./src/local/secrets.ts",
+    "./policies/contracts": "./src/policies/contracts.ts",
+    "./policies/operations": "./src/policies/operations.ts",
+    "./sources/contracts": "./src/sources/contracts.ts",
+    "./sources/discovery": "./src/sources/discovery.ts",
+    "./sources/inspection": "./src/sources/inspection.ts",
+    "./sources/operations": "./src/sources/operations.ts"
+  },
+  "imports": {
+    "#runtime": "./src/runtime/index.ts",
+    "#schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "fixture:release:capture": "bun run ./src/runtime/local/capture-release-workspace-fixture.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@effect/platform": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@executor/auth-mcp-oauth": "workspace:*",
+    "@executor/auth-oauth2": "workspace:*",
+    "@executor/codemode-core": "workspace:*",
+    "@executor/ir": "workspace:*",
+    "@executor/runtime-deno-subprocess": "workspace:*",
+    "@executor/runtime-quickjs": "workspace:*",
+    "@executor/runtime-ses": "workspace:*",
+    "@executor/source-core": "workspace:*",
+    "@executor/source-builtins": "workspace:*",
+    "@executor/source-google-discovery": "workspace:*",
+    "@executor/source-graphql": "workspace:*",
+    "@executor/source-mcp": "workspace:*",
+    "@executor/source-openapi": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@executor/platform-api": "workspace:*",
+    "@executor/platform-internal": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@types/node": "catalog:",
+    "bun-types": "catalog:",
+    "graphql": "^16.12.0",
+    "jsonc-parser": "3.3.1",
+    "postgres": "^3.4.8",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "catalog:"
+  },
+  "version": "0.0.0"
+}

@@ -10,12 +10,15 @@ import { FileSystem, HttpApiBuilder, HttpServer } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import {
   createControlPlaneApiLayer,
+} from "@executor/platform-api";
+import { createExecutorMcpRequestHandler } from "@executor/executor-mcp";
+import { createExecutorAdminToolMap } from "@executor/platform-internal";
+import {
   createControlPlaneRuntime,
   type ResolveExecutionEnvironment,
   type ResolveSecretMaterial,
   type ControlPlaneRuntime,
-} from "@executor/control-plane";
-import { createExecutorMcpRequestHandler } from "@executor/executor-mcp";
+} from "@executor/platform-sdk/runtime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -110,6 +113,7 @@ const createRuntime = (
   createControlPlaneRuntime({
     workspaceRoot: options.workspaceRoot,
     executionResolver: options.executionResolver,
+    createInternalToolMap: createExecutorAdminToolMap,
     resolveSecretMaterial: options.resolveSecretMaterial,
     getLocalServerBaseUrl,
     localDataDir,

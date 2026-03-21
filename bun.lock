@@ -19,7 +19,7 @@
     },
     "apps/executor": {
       "name": "executor",
-      "version": "1.2.3",
+      "version": "1.2.4-beta.4",
       "bin": {
         "executor": "bin/executor",
       },
@@ -28,8 +28,10 @@
         "@effect/platform": "catalog:",
         "@effect/platform-node": "catalog:",
         "@executor/codemode-core": "workspace:*",
-        "@executor/control-plane": "workspace:*",
         "@executor/executor-mcp": "workspace:*",
+        "@executor/platform-api": "workspace:*",
+        "@executor/platform-internal": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
         "@executor/server": "workspace:*",
         "effect": "catalog:",
       },
@@ -129,7 +131,8 @@
       "dependencies": {
         "@effect-atom/atom": "0.5.3",
         "@effect-atom/atom-react": "0.5.0",
-        "@executor/control-plane": "workspace:*",
+        "@executor/platform-api": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
@@ -156,7 +159,7 @@
         "@effect/platform": "catalog:",
         "@executor/ai-sdk-adapter": "workspace:*",
         "@executor/codemode-core": "workspace:*",
-        "@executor/control-plane": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
         "@executor/runtime-ses": "workspace:*",
         "@executor/source-openapi": "workspace:*",
         "effect": "catalog:",
@@ -187,7 +190,7 @@
       "name": "@executor/executor-mcp",
       "version": "0.0.0",
       "dependencies": {
-        "@executor/control-plane": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.26.0",
         "effect": "catalog:",
         "zod": "catalog:",
@@ -270,11 +273,41 @@
         "bun-types": "catalog:",
       },
     },
-    "packages/platform/control-plane": {
-      "name": "@executor/control-plane",
+    "packages/platform/api": {
+      "name": "@executor/platform-api",
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform": "catalog:",
+        "@executor/platform-sdk": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "bun-types": "catalog:",
+        "typescript": "^5.9.3",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/platform/internal": {
+      "name": "@executor/platform-internal",
+      "version": "0.0.0",
+      "dependencies": {
+        "@executor/codemode-core": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
+        "typescript": "^5.9.3",
+      },
+    },
+    "packages/platform/sdk": {
+      "name": "@executor/platform-sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform": "catalog:",
+        "@effect/platform-node": "catalog:",
         "@executor/auth-mcp-oauth": "workspace:*",
         "@executor/auth-oauth2": "workspace:*",
         "@executor/codemode-core": "workspace:*",
@@ -289,20 +322,20 @@
         "@executor/source-mcp": "workspace:*",
         "@executor/source-openapi": "workspace:*",
         "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@executor/platform-api": "workspace:*",
+        "@executor/platform-internal": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.26.0",
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
         "graphql": "^16.12.0",
         "jsonc-parser": "3.3.1",
         "postgres": "^3.4.8",
         "prettier": "^3.8.1",
         "typescript": "^5.9.3",
-      },
-      "devDependencies": {
-        "@effect/platform-node": "catalog:",
-        "@effect/vitest": "catalog:",
-        "@modelcontextprotocol/sdk": "^1.26.0",
-        "@types/node": "catalog:",
-        "bun-types": "catalog:",
         "vitest": "catalog:",
-        "zod": "catalog:",
       },
     },
     "packages/platform/server": {
@@ -312,8 +345,10 @@
         "@effect/opentelemetry": "^0.61.0",
         "@effect/platform": "catalog:",
         "@effect/platform-node": "catalog:",
-        "@executor/control-plane": "workspace:*",
         "@executor/executor-mcp": "workspace:*",
+        "@executor/platform-api": "workspace:*",
+        "@executor/platform-internal": "workspace:*",
+        "@executor/platform-sdk": "workspace:*",
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/exporter-trace-otlp-grpc": "^0.213.0",
         "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
@@ -641,8 +676,6 @@
 
     "@executor/codemode-core": ["@executor/codemode-core@workspace:packages/kernel/core"],
 
-    "@executor/control-plane": ["@executor/control-plane@workspace:packages/platform/control-plane"],
-
     "@executor/docs": ["@executor/docs@workspace:apps/docs"],
 
     "@executor/executor-mcp": ["@executor/executor-mcp@workspace:packages/hosts/mcp"],
@@ -652,6 +685,12 @@
     "@executor/kitchen-sink": ["@executor/kitchen-sink@workspace:packages/dev/kitchen-sink"],
 
     "@executor/mcp-elicitation-demo": ["@executor/mcp-elicitation-demo@workspace:examples/mcp-elicitation-demo"],
+
+    "@executor/platform-api": ["@executor/platform-api@workspace:packages/platform/api"],
+
+    "@executor/platform-internal": ["@executor/platform-internal@workspace:packages/platform/internal"],
+
+    "@executor/platform-sdk": ["@executor/platform-sdk@workspace:packages/platform/sdk"],
 
     "@executor/react": ["@executor/react@workspace:packages/clients/react"],
 

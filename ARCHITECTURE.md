@@ -88,7 +88,7 @@ Responsibilities:
 
 This is an important architectural choice: the API and UI are served by the same local process, so the product behaves like one install rather than a pile of separate services.
 
-### `packages/platform/control-plane`: product core
+### `packages/platform/sdk`: product core
 
 This is the center of the system.
 
@@ -408,4 +408,4 @@ A few practical boundaries are worth calling out:
 - `README.md` for the product view and usage guidance
 - `apps/executor/src/cli/main.ts` for the CLI surface
 - `packages/platform/server/src/index.ts` for how the local server is assembled
-- `packages/platform/control-plane/src/runtime/` for the core runtime flows
+- `packages/platform/sdk/src/runtime/` for the core runtime flows

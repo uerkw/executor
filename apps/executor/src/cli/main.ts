@@ -10,16 +10,21 @@ import {
   NodeRuntime,
 } from "@effect/platform-node";
 import {
-  EXECUTOR_SOURCES_ADD_HELP_LINES,
-  ExecutionIdSchema,
-  RuntimeExecutionResolverService,
   createControlPlaneClient,
-  createControlPlaneRuntime,
   type ControlPlaneClient,
+} from "@executor/platform-api";
+import { createExecutorAdminToolMap } from "@executor/platform-internal";
+import {
+  EXECUTOR_SOURCES_ADD_HELP_LINES,
+  RuntimeExecutionResolverService,
+  createControlPlaneRuntime,
+  type ControlPlaneRuntime,
+} from "@executor/platform-sdk/runtime";
+import {
+  ExecutionIdSchema,
   type ExecutionEnvelope,
   type ExecutionInteraction,
-  type ControlPlaneRuntime,
-} from "@executor/control-plane";
+} from "@executor/platform-sdk/schema";
 import type { ToolCatalog } from "@executor/codemode-core";
 
 import * as Effect from "effect/Effect";
@@ -272,6 +277,7 @@ const loadRunWorkflowText = (): Effect.Effect<string, Error, never> =>
   Effect.acquireUseRelease(
     createControlPlaneRuntime({
       localDataDir: DEFAULT_LOCAL_DATA_DIR,
+      createInternalToolMap: createExecutorAdminToolMap,
     }).pipe(Effect.mapError(toError)),
     (runtime) =>
       Effect.gen(function* () {

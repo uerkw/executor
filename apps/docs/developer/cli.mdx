@@ -41,7 +41,7 @@ At a high level, the CLI:
 
 1. ensures the local daemon is available
 2. calls the local HTTP API exposed by `packages/platform/server`
-3. hands off real work to `packages/platform/control-plane`
+3. hands off real work to `packages/platform/sdk` and `packages/platform/api`
 
 That makes the CLI a stable shell over a shared local runtime rather than a second product core.
 

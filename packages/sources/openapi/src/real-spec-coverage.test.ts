@@ -20,7 +20,7 @@ const readFixture = (name: string) =>
     Effect.flatMap((fs) =>
       fs.readFileString(
         fileURLToPath(
-          new URL(`../../../platform/control-plane/src/runtime/fixtures/${name}`, import.meta.url),
+          new URL(`../../../platform/sdk/src/runtime/fixtures/${name}`, import.meta.url),
         ),
         "utf8",
       )

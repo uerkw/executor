@@ -20,15 +20,17 @@ import { makeToolInvokerFromTools, toTool } from "@executor/codemode-core";
 import {
   createControlPlaneClient,
   controlPlaneOpenApiSpec,
+} from "@executor/platform-api";
+import {
   buildLocalSourceArtifact,
   catalogSyncResultFromMcpManifest,
   deriveLocalInstallation,
-  type ResolveExecutionEnvironment,
   resolveLocalWorkspaceContext,
-  SourceIdSchema,
   writeLocalSourceArtifact,
   writeProjectLocalExecutorConfig,
-} from "@executor/control-plane";
+  type ResolveExecutionEnvironment,
+} from "@executor/platform-sdk/runtime";
+import { SourceIdSchema } from "@executor/platform-sdk/schema";
 import { makeSesExecutor } from "@executor/runtime-ses";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";

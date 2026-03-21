@@ -1,7 +1,5 @@
-import {
-  type ControlPlaneClient,
-  WorkspaceIdSchema,
-} from "@executor/control-plane";
+import type { ControlPlaneClient } from "@executor/platform-api";
+import { WorkspaceIdSchema } from "@executor/platform-sdk/schema";
 import * as Effect from "effect/Effect";
 
 const readBindingString = (binding: Record<string, unknown>, key: string): string | null =>
