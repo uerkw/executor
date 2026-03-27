@@ -10,12 +10,12 @@ import {
   useSource,
 } from "@executor/react";
 import {
+  Badge,
   IconCheck,
   IconPencil,
   IconSearch,
   IconSpinner,
   SourceToolExplorer,
-  defineExecutorFrontendPlugin,
   parseSourceToolExplorerSearch,
   type SourceToolExplorerSearch,
   useSourcePluginNavigation,
@@ -355,7 +355,14 @@ const openOauthPopup = (): Window | null => {
       <main style="font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #333;">
         <div style="width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 16px;"></div>
         <p style="margin: 0; font-size: 14px; color: #888;">Redirecting to sign in&hellip;</p>
-        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <style>
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @media (prefers-color-scheme: dark) {
+            main { background: #09090b; color: #fafafa !important; }
+            p { color: #a1a1aa !important; }
+            div { border-color: #3f3f46 !important; }
+          }
+        </style>
       </main>
     `;
   } catch {
@@ -973,7 +980,7 @@ function McpSourceForm(props: {
   );
 }
 
-function McpAddPage() {
+export function McpAddPage() {
   const navigation = useSourcePluginNavigation();
   const initialValue = mcpInputFromSearch(useSourcePluginSearch());
   const installation = useLocalInstallation();
@@ -1012,7 +1019,7 @@ function McpAddPage() {
   );
 }
 
-function McpEditPage(props: {
+export function McpEditPage(props: {
   source: Source;
 }) {
   const navigation = useSourcePluginNavigation();
@@ -1085,7 +1092,7 @@ function McpEditPage(props: {
   );
 }
 
-function McpDetailPage(props: {
+export function McpDetailPage(props: {
   source: Source;
 }) {
   const navigation = useSourcePluginNavigation();
@@ -1127,14 +1134,10 @@ function McpDetailPage(props: {
       : config.endpoint ?? "remote";
 
     return (
-      <div className="space-y-1">
-        <div className="font-mono text-xs text-foreground">{location}</div>
-        <div>
-          Transport: <span className="text-foreground">{config.transport ?? "auto"}</span>
-        </div>
-        <div>
-          Auth: <span className="text-foreground">{config.auth.kind}</span>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className="font-mono text-foreground">{location}</span>
+        <Badge variant="muted">Transport: {config.transport ?? "auto"}</Badge>
+        <Badge variant="muted">Auth: {config.auth.kind}</Badge>
       </div>
     );
   }, [configResult]);
@@ -1265,7 +1268,7 @@ function McpSourceRoute(props: {
   return props.children(source.data);
 }
 
-function McpEditRoute() {
+export function McpEditRoute() {
   return (
     <McpSourceRoute>
       {(source) => <McpEditPage source={source} />}
@@ -1273,33 +1276,10 @@ function McpEditRoute() {
   );
 }
 
-function McpDetailRoute() {
+export function McpDetailRoute() {
   return (
     <McpSourceRoute>
       {(source) => <McpDetailPage source={source} />}
     </McpSourceRoute>
   );
 }
-
-export const McpReactPlugin = defineExecutorFrontendPlugin({
-  key: "mcp",
-  displayName: "MCP",
-  description: "Connect remote or local MCP servers.",
-  routes: [
-    {
-      key: "add",
-      path: "add",
-      component: McpAddPage,
-    },
-    {
-      key: "detail",
-      path: "sources/$sourceId",
-      component: McpDetailRoute,
-    },
-    {
-      key: "edit",
-      path: "sources/$sourceId/edit",
-      component: McpEditRoute,
-    },
-  ],
-});

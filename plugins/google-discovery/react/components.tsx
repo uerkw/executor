@@ -12,9 +12,9 @@ import {
   useSource,
 } from "@executor/react";
 import {
+  Badge,
   IconPencil,
   SourceToolExplorer,
-  defineExecutorFrontendPlugin,
   parseSourceToolExplorerSearch,
   type SourceToolExplorerSearch,
   useSourcePluginNavigation,
@@ -38,47 +38,9 @@ import {
   type GoogleDiscoveryStartBatchOAuthInput,
   type GoogleDiscoveryStartOAuthInput,
 } from "@executor/plugin-google-discovery-shared";
+import { getGoogleDiscoveryIconUrlForService } from "./icons";
 
 const OAUTH_TIMEOUT_MS = 2 * 60_000;
-
-const GOOGLE_DISCOVERY_SERVICE_ICONS: Record<string, string> = {
-  admin: "https://ssl.gstatic.com/images/branding/product/2x/admin_2020q4_48dp.png",
-  bigquery: "https://ssl.gstatic.com/bqui1/favicon.ico",
-  calendar: "https://ssl.gstatic.com/calendar/images/dynamiclogo_2020q4/calendar_31_2x.png",
-  chat: "https://ssl.gstatic.com/chat/favicon/favicon_v2.ico",
-  classroom: "https://ssl.gstatic.com/classroom/favicon.png",
-  cloudresourcemanager: "https://www.gstatic.com/devrel-devsite/prod/v0e0f589edd85502a40d78d7d0825db8ea5ef3b99b1571571945f0f3f764ff61b/cloud/images/favicons/onecloud/favicon.ico",
-  docs: "https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico",
-  drive: "https://ssl.gstatic.com/images/branding/product/2x/drive_2020q4_48dp.png",
-  forms: "https://ssl.gstatic.com/docs/forms/device_home/android_192.png",
-  gmail: "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico",
-  keep: "https://ssl.gstatic.com/keep/icon_2020q4v2_128.png",
-  people: "https://ssl.gstatic.com/images/branding/product/2x/contacts_2022_48dp.png",
-  script: "https://ssl.gstatic.com/script/images/favicon.ico",
-  searchconsole: "https://ssl.gstatic.com/search-console/scfe/search_console-64.png",
-  sheets: "https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico",
-  slides: "https://ssl.gstatic.com/docs/presentations/images/favicon5.ico",
-  tasks: "https://ssl.gstatic.com/tasks/images/favicon.ico",
-  youtube: "https://www.youtube.com/s/desktop/a94e1818/img/favicon_32x32.png",
-};
-
-const getGoogleDiscoveryServiceKey = (
-  source: Pick<Source, "namespace">,
-): string | null => {
-  const namespace = source.namespace?.trim();
-  if (!namespace || !namespace.startsWith("google.")) {
-    return null;
-  }
-
-  return namespace.slice("google.".length).replaceAll(".", "");
-};
-
-export const getGoogleDiscoveryIconUrl = (
-  source: Pick<Source, "namespace">,
-): string | null => {
-  const serviceKey = getGoogleDiscoveryServiceKey(source);
-  return serviceKey ? GOOGLE_DISCOVERY_SERVICE_ICONS[serviceKey] ?? null : null;
-};
 
 const getGoogleDiscoveryHttpClient =
   defineExecutorPluginHttpApiClient<"GoogleDiscoveryReactHttpClient">()(
@@ -477,7 +439,14 @@ const openGoogleOauthPopup = (name: string): Window | null => {
       <main style="font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #333;">
         <div style="width: 20px; height: 20px; border: 2px solid #e5e7eb; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 16px;"></div>
         <p style="margin: 0; font-size: 14px; color: #888;">Redirecting to Google&hellip;</p>
-        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <style>
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @media (prefers-color-scheme: dark) {
+            main { background: #09090b; color: #fafafa !important; }
+            p { color: #a1a1aa !important; }
+            div { border-color: #3f3f46 !important; }
+          }
+        </style>
       </main>
     `;
   } catch {
@@ -1058,8 +1027,7 @@ function GoogleDiscoveryBatchConnectPanel(props: {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {GOOGLE_DISCOVERY_BATCH_TEMPLATES.map((template) => {
           const selected = selectedTemplateIds.includes(template.id);
-          const serviceKey = template.service.replaceAll(".", "");
-          const iconUrl = GOOGLE_DISCOVERY_SERVICE_ICONS[serviceKey] ?? null;
+          const iconUrl = getGoogleDiscoveryIconUrlForService(template.service);
 
           return (
             <button
@@ -1166,7 +1134,7 @@ function GoogleDiscoveryBatchConnectPanel(props: {
   );
 }
 
-function GoogleDiscoveryAddPage() {
+export function GoogleDiscoveryAddPage() {
   const navigation = useSourcePluginNavigation();
   const initialValue = googleInputFromSearch(useSourcePluginSearch());
   const installation = useLocalInstallation();
@@ -1230,7 +1198,7 @@ function GoogleDiscoveryAddPage() {
   );
 }
 
-function GoogleDiscoveryEditPage(props: {
+export function GoogleDiscoveryEditPage(props: {
   source: Source;
 }) {
   const navigation = useSourcePluginNavigation();
@@ -1303,7 +1271,7 @@ function GoogleDiscoveryEditPage(props: {
   );
 }
 
-function GoogleDiscoveryDetailPage(props: {
+export function GoogleDiscoveryDetailPage(props: {
   source: Source;
 }) {
   const navigation = useSourcePluginNavigation();
@@ -1341,9 +1309,9 @@ function GoogleDiscoveryDetailPage(props: {
 
     const config = configResult.value;
     return (
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <div className="text-foreground">{config.service} {config.version}</div>
-        <div className="font-mono truncate">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <Badge variant="muted">{config.service} {config.version}</Badge>
+        <div className="font-mono text-foreground">
           {config.discoveryUrl ?? defaultGoogleDiscoveryUrl(config.service, config.version)}
         </div>
       </div>
@@ -1476,7 +1444,7 @@ function GoogleDiscoverySourceRoute(props: {
   return props.children(source.data);
 }
 
-function GoogleDiscoveryEditRoute() {
+export function GoogleDiscoveryEditRoute() {
   return (
     <GoogleDiscoverySourceRoute>
       {(source) => <GoogleDiscoveryEditPage source={source} />}
@@ -1484,33 +1452,10 @@ function GoogleDiscoveryEditRoute() {
   );
 }
 
-function GoogleDiscoveryDetailRoute() {
+export function GoogleDiscoveryDetailRoute() {
   return (
     <GoogleDiscoverySourceRoute>
       {(source) => <GoogleDiscoveryDetailPage source={source} />}
     </GoogleDiscoverySourceRoute>
   );
 }
-
-export const GoogleDiscoveryReactPlugin = defineExecutorFrontendPlugin({
-  key: GOOGLE_DISCOVERY_PLUGIN_KEY,
-  displayName: "Google Discovery",
-  description: "Connect Google Workspace and Cloud APIs via discovery documents.",
-  routes: [
-    {
-      key: "add",
-      path: "add",
-      component: GoogleDiscoveryAddPage,
-    },
-    {
-      key: "detail",
-      path: "sources/$sourceId",
-      component: GoogleDiscoveryDetailRoute,
-    },
-    {
-      key: "edit",
-      path: "sources/$sourceId/edit",
-      component: GoogleDiscoveryEditRoute,
-    },
-  ],
-});

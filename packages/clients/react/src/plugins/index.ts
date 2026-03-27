@@ -92,6 +92,15 @@ export {
 } from "./components/markdown";
 export {
   SourceToolExplorer,
+} from "./components/source-tool-explorer";
+export {
   type SourceToolExplorerSearch,
   parseSourceToolExplorerSearch,
-} from "./components/source-tool-explorer";
+} from "./components/source-tool-explorer-search";
+export {
+  SourceToolDetailPanel,
+  SourceToolDiscoveryPanel,
+  SourceToolModelWorkbench,
+  type SourceToolDetailPanelProps,
+  type SourceToolDiscoveryResult,
+} from "./components/source-tool-workbench";

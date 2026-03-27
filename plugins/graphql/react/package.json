@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./index.tsx"
+    ".": "./index.ts"
   },
   "files": [
-    "index.tsx"
+    "components.tsx",
+    "index.ts"
   ],
   "scripts": {
     "typecheck": "bunx tsc --noEmit -p tsconfig.json"

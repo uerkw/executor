@@ -11,6 +11,7 @@
     "types": ["bun-types", "node"]
   },
   "include": [
-    "index.tsx"
+    "*.ts",
+    "*.tsx"
   ]
 }
