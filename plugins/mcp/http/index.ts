@@ -55,6 +55,9 @@ type McpExecutorExtension = {
     updateSource: (
       input: McpUpdateSourceInput,
     ) => Effect.Effect<Source, Error>;
+    refreshSource: (
+      sourceId: Source["id"],
+    ) => Effect.Effect<Source, Error>;
     removeSource: (
       sourceId: Source["id"],
     ) => Effect.Effect<boolean, Error>;
@@ -111,6 +114,14 @@ export const McpHttpGroup = HttpApiGroup.make("mcp")
   .add(
     HttpApiEndpoint.put("updateSource")`/workspaces/${workspaceIdParam}/plugins/mcp/sources/${sourceIdParam}`
       .setPayload(McpSourceConfigPayloadSchema)
+      .addSuccess(SourceSchema)
+      .addError(ControlPlaneBadRequestError)
+      .addError(ControlPlaneForbiddenError)
+      .addError(ControlPlaneNotFoundError)
+      .addError(ControlPlaneStorageError),
+  )
+  .add(
+    HttpApiEndpoint.post("refreshSource")`/workspaces/${workspaceIdParam}/plugins/mcp/sources/${sourceIdParam}/refresh`
       .addSuccess(SourceSchema)
       .addError(ControlPlaneBadRequestError)
       .addError(ControlPlaneForbiddenError)
@@ -281,6 +292,17 @@ export const mcpHttpPlugin = (): ExecutorHttpPlugin<
             ),
             Effect.mapError((cause) =>
               mapPluginStorageError("mcp.updateSource", cause)
+            ),
+          )
+        )
+        .handle("refreshSource", ({ path }) =>
+          resolveRequestedLocalWorkspace(
+            "mcp.refreshSource",
+            path.workspaceId,
+          ).pipe(
+            Effect.flatMap(() => executor.mcp.refreshSource(path.sourceId)),
+            Effect.mapError((cause) =>
+              mapPluginStorageError("mcp.refreshSource", cause)
             ),
           )
         )

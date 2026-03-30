@@ -733,6 +733,25 @@ export function McpDetailPage(props: {
     client.mutation("mcp", "removeSource"),
     { mode: "promise" },
   );
+  const refreshSource = useAtomSet(
+    client.mutation("mcp", "refreshSource"),
+    { mode: "promise" },
+  );
+  const refreshMutation = useExecutorMutation<Source["id"], Source>(async (sourceId) =>
+    refreshSource({
+      path: {
+        workspaceId: props.source.scopeId,
+        sourceId,
+      },
+      reactivityKeys: {
+        sources: [props.source.scopeId],
+        source: [props.source.scopeId, sourceId],
+        sourceInspection: [props.source.scopeId, sourceId],
+        sourceInspectionTool: [props.source.scopeId, sourceId],
+        sourceDiscovery: [props.source.scopeId, sourceId],
+      },
+    })
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const configResult = useAtomValue(
@@ -815,6 +834,19 @@ export function McpDetailPage(props: {
         <>
           <Button
             variant="outline"
+            size="sm"
+            type="button"
+            onClick={() => {
+              void refreshMutation.mutateAsync(props.source.id);
+            }}
+            disabled={refreshMutation.status === "pending"}
+          >
+            {refreshMutation.status === "pending" ? "Refreshing..." : "Refresh"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
             onClick={() =>
               void navigation.edit(props.source.id)}
           >

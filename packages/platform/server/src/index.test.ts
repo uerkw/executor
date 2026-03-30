@@ -1334,6 +1334,48 @@ describe("local-executor-server", () => {
     15_000,
   );
 
+  it.scoped("refreshes an MCP source through the API client", () =>
+    Effect.gen(function* () {
+      const demoServer = yield* Effect.acquireRelease(
+        Effect.promise(() => startMcpElicitationDemoServer()),
+        (server) => Effect.promise(() => server.close()).pipe(Effect.orDie),
+      );
+      const { installation, client } = yield* createApiClientHarness();
+
+      const created = yield* client.mcp.createSource({
+        path: {
+          workspaceId: installation.scopeId,
+        },
+        payload: {
+          name: "Demo",
+          endpoint: demoServer.endpoint,
+          transport: "streamable-http",
+          queryParams: null,
+          headers: null,
+          command: null,
+          args: null,
+          env: null,
+          cwd: null,
+          auth: {
+            kind: "none",
+          },
+        },
+      });
+
+      const refreshed = yield* client.mcp.refreshSource({
+        path: {
+          workspaceId: installation.scopeId,
+          sourceId: created.id,
+        },
+      });
+
+      expect(refreshed.id).toBe(created.id);
+      expect(refreshed.kind).toBe("mcp");
+      expect(refreshed.status).toBe("connected");
+    }),
+    15_000,
+  );
+
   it.scoped("can run the same MCP elicitation flow more than once without interaction id collisions", () =>
     Effect.gen(function* () {
       const demoServer = yield* Effect.acquireRelease(

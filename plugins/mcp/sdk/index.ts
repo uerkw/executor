@@ -163,6 +163,9 @@ export type McpSdk = {
   updateSource: (
     input: McpUpdateSourceInput,
   ) => Effect.Effect<Source, Error>;
+  refreshSource: (
+    sourceId: Source["id"],
+  ) => Effect.Effect<Source, Error>;
   removeSource: (
     sourceId: Source["id"],
   ) => Effect.Effect<boolean, Error>;
@@ -949,6 +952,13 @@ export const mcpSdkPlugin = (
       execute: ({ args, source }) => source.updateSource(args),
     },
     {
+      name: "refreshSource",
+      description: "Refresh an MCP source and resync its catalog.",
+      inputSchema: McpSourceIdInputSchema,
+      outputSchema: SourceSchema,
+      execute: ({ args, source }) => source.refreshSource(args.sourceId),
+    },
+    {
       name: "removeSource",
       description: "Remove an MCP source and its stored plugin data.",
       inputSchema: McpSourceIdInputSchema,
@@ -1092,6 +1102,8 @@ export const mcpSdkPlugin = (
         provideRuntime(source.createSource(input)),
       updateSource: (input) =>
         provideRuntime(source.updateSource(input)),
+      refreshSource: (sourceId) =>
+        provideRuntime(source.refreshSource(sourceId)),
       removeSource: (sourceId) =>
         provideRuntime(source.removeSource(sourceId)),
       startOAuth: (input) =>

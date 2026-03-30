@@ -29,18 +29,6 @@
       },
       "kind": "openapi"
     },
-    "github-graphql": {
-      "name": "GitHub GraphQL",
-      "namespace": "github.graphql",
-      "config": {
-        "endpoint": "https://api.github.com/graphql",
-        "defaultHeaders": null,
-        "auth": {
-          "kind": "none"
-        }
-      },
-      "kind": "graphql"
-    },
     "github-graphql-2": {
       "name": "GitHub GraphQL",
       "namespace": "github.graphql",
@@ -61,7 +49,6 @@
     "axiom-mcp": {
       "name": "Axiom MCP",
       "namespace": "axiom.mcp",
-      "kind": "mcp",
       "config": {
         "endpoint": "https://mcp.axiom.co/mcp",
         "transport": "auto",
@@ -128,6 +115,19 @@
             "client_id": "vz0ZIimTduA2ryXo",
             "client_id_issued_at": 1774829875
           }
+        }
+      },
+      "kind": "mcp"
+    },
+    "linear-graphql": {
+      "name": "Linear GraphQL",
+      "namespace": "linear.graphql",
+      "kind": "graphql",
+      "config": {
+        "endpoint": "https://api.linear.app/graphql",
+        "defaultHeaders": null,
+        "auth": {
+          "kind": "none"
         }
       }
     }
