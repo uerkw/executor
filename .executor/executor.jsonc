@@ -41,6 +41,161 @@
         }
       },
       "kind": "graphql"
+    },
+    "axiom-mcp": {
+      "name": "Axiom MCP",
+      "namespace": "axiom.mcp",
+      "config": {
+        "endpoint": "https://mcp.axiom.co/mcp",
+        "transport": "auto",
+        "queryParams": null,
+        "headers": null,
+        "command": null,
+        "args": null,
+        "env": null,
+        "cwd": null,
+        "auth": {
+          "kind": "oauth2",
+          "redirectUri": "http://localhost:8788/v1/plugins/mcp/oauth/callback",
+          "accessTokenRef": {
+            "secretId": "sec_534bd6a9-0bd3-4f66-97ac-ddf22ea2ae82"
+          },
+          "refreshTokenRef": {
+            "secretId": "sec_3e665cbc-2ba9-4d5b-97a4-db811248574f"
+          },
+          "tokenType": "bearer",
+          "expiresAt": 1806390691402,
+          "scope": "",
+          "resourceMetadataUrl": null,
+          "authorizationServerUrl": "https://mcp.axiom.co/",
+          "resourceMetadata": null,
+          "authorizationServerMetadata": {
+            "issuer": "https://mcp.axiom.co",
+            "authorization_endpoint": "https://mcp.axiom.co/authorize",
+            "token_endpoint": "https://mcp.axiom.co/token",
+            "registration_endpoint": "https://mcp.axiom.co/register",
+            "response_types_supported": [
+              "code"
+            ],
+            "response_modes_supported": [
+              "query"
+            ],
+            "grant_types_supported": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "token_endpoint_auth_methods_supported": [
+              "client_secret_basic",
+              "client_secret_post",
+              "none"
+            ],
+            "revocation_endpoint": "https://mcp.axiom.co/token",
+            "code_challenge_methods_supported": [
+              "plain",
+              "S256"
+            ]
+          },
+          "clientInformation": {
+            "redirect_uris": [
+              "http://localhost:8788/v1/plugins/mcp/oauth/callback"
+            ],
+            "token_endpoint_auth_method": "none",
+            "grant_types": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "response_types": [
+              "code"
+            ],
+            "client_name": "Executor Local",
+            "client_id": "PgIDrWWSMRBtHHsg",
+            "client_id_issued_at": 1774854684
+          }
+        }
+      },
+      "kind": "mcp"
+    },
+    "mcp-mcp": {
+      "name": "Mcp MCP",
+      "namespace": "mcp.mcp",
+      "kind": "mcp",
+      "config": {
+        "endpoint": "https://mcp.linear.app/mcp",
+        "transport": "auto",
+        "queryParams": null,
+        "headers": null,
+        "command": null,
+        "args": null,
+        "env": null,
+        "cwd": null,
+        "auth": {
+          "kind": "oauth2",
+          "redirectUri": "http://localhost:8788/v1/plugins/mcp/oauth/callback",
+          "accessTokenRef": {
+            "secretId": "sec_ae3503a2-f813-4fe4-8882-1ee7b0e86cab"
+          },
+          "refreshTokenRef": {
+            "secretId": "sec_3e453bf7-9343-41e4-a00e-1b81448591f7"
+          },
+          "tokenType": "bearer",
+          "expiresAt": 1775459747141,
+          "scope": "",
+          "resourceMetadataUrl": null,
+          "authorizationServerUrl": "https://mcp.linear.app",
+          "resourceMetadata": {
+            "resource": "https://mcp.linear.app",
+            "authorization_servers": [
+              "https://mcp.linear.app"
+            ],
+            "bearer_methods_supported": [
+              "header"
+            ]
+          },
+          "authorizationServerMetadata": {
+            "issuer": "https://mcp.linear.app",
+            "authorization_endpoint": "https://mcp.linear.app/authorize",
+            "token_endpoint": "https://mcp.linear.app/token",
+            "registration_endpoint": "https://mcp.linear.app/register",
+            "response_types_supported": [
+              "code"
+            ],
+            "response_modes_supported": [
+              "query"
+            ],
+            "grant_types_supported": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "token_endpoint_auth_methods_supported": [
+              "client_secret_basic",
+              "client_secret_post",
+              "none"
+            ],
+            "revocation_endpoint": "https://mcp.linear.app/token",
+            "code_challenge_methods_supported": [
+              "plain",
+              "S256"
+            ],
+            "client_id_metadata_document_supported": false
+          },
+          "clientInformation": {
+            "redirect_uris": [
+              "http://localhost:8788/v1/plugins/mcp/oauth/callback"
+            ],
+            "token_endpoint_auth_method": "none",
+            "grant_types": [
+              "authorization_code",
+              "refresh_token"
+            ],
+            "response_types": [
+              "code"
+            ],
+            "client_name": "Executor Local",
+            "client_id": "xYJ-DOv7vWmXjAsi",
+            "client_id_issued_at": 1774854942
+          }
+        }
+      }
     }
   },
   "policies": {
