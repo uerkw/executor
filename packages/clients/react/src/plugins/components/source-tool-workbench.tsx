@@ -455,8 +455,12 @@ const SourceToolListItem = (props: {
         {highlightMatch(label, props.search)}
       </span>
       {props.tool.method && <MethodBadge method={props.tool.method} />}
-      {props.policies && props.policies.length > 0 && (
-        <ToolPermissionDot toolPath={props.tool.path} policies={props.policies} />
+      {props.policies && (
+        <ToolPermissionDot
+          toolPath={props.tool.path}
+          policies={props.policies}
+          interaction={props.tool.interaction}
+        />
       )}
     </Button>
   );
@@ -594,7 +598,7 @@ export const SourceToolDetailPanel = (props: SourceToolDetailPanelProps) => {
               {props.detail.summary.method && (
                 <MethodBadge method={props.detail.summary.method} />
               )}
-              {props.policies && props.policies.length > 0 && (
+              {props.policies && (
                 <ToolPermissionBadge
                   toolPath={props.detail.summary.path}
                   policies={props.policies}

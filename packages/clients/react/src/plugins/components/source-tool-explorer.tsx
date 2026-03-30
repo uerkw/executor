@@ -13,6 +13,7 @@ import { resolveToolPermission, type ToolPermissionLevel } from "./tool-permissi
 import { Badge } from "./ui/badge";
 import { LoadableBlock } from "./loadable";
 import {
+  SourceToolDetailPanel,
   SourceToolModelWorkbench,
   type ToolPermissionChangeRequest,
 } from "./source-tool-workbench";
@@ -32,6 +33,8 @@ export const SourceToolExplorer = (props: {
   actions?: ReactNode;
   summary?: ReactNode;
   policies?: ReadonlyArray<LocalScopePolicy>;
+  renderHeaderMeta?: (detail: SourceInspectionToolDetail) => ReactNode;
+  renderSchemaExtras?: (detail: SourceInspectionToolDetail) => ReactNode;
   renderDetail?: (detail: SourceInspectionToolDetail) => ReactNode;
 }) => {
   const inspection = useSourceInspection(props.sourceId);
@@ -171,7 +174,20 @@ export const SourceToolExplorer = (props: {
                   });
                 }}
                 sourceId={props.sourceId}
-                renderDetail={props.renderDetail}
+                renderDetail={props.renderDetail ?? (
+                  (props.renderHeaderMeta || props.renderSchemaExtras)
+                    ? (toolDetail) => (
+                      <SourceToolDetailPanel
+                        detail={toolDetail}
+                        policies={policies}
+                        onSetPermission={handleSetPermission}
+                        permissionPending={permissionPending}
+                        renderHeaderMeta={props.renderHeaderMeta}
+                        renderSchemaExtras={props.renderSchemaExtras}
+                      />
+                    )
+                    : undefined
+                )}
               />
             </div>
           </div>

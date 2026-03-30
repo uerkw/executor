@@ -1,12 +1,10 @@
 import type {
   LocalScopePolicy,
-  LocalScopePolicyApprovalMode,
-  LocalScopePolicyEffect,
 } from "@executor/platform-sdk/schema";
 
 import { cn } from "../lib/cn";
 
-export type ToolPermissionLevel = "auto-run" | "requires-approval" | "denied" | "unknown";
+export type ToolPermissionLevel = "auto-run" | "requires-approval" | "denied";
 
 const matchesGlob = (pattern: string, value: string): boolean => {
   const escaped = pattern
@@ -21,6 +19,7 @@ const policySpecificity = (policy: LocalScopePolicy): number =>
 export const resolveToolPermission = (
   toolPath: string,
   policies: ReadonlyArray<LocalScopePolicy>,
+  toolInteraction?: "auto" | "required",
 ): {
   level: ToolPermissionLevel;
   matchedPolicy: LocalScopePolicy | null;
@@ -38,7 +37,10 @@ export const resolveToolPermission = (
 
   const matched = matching[0];
   if (!matched) {
-    return { level: "unknown", matchedPolicy: null };
+    // No explicit policy — resolve from the tool's intrinsic interaction mode
+    const defaultLevel: ToolPermissionLevel =
+      toolInteraction === "auto" ? "auto-run" : "requires-approval";
+    return { level: defaultLevel, matchedPolicy: null };
   }
 
   if (matched.effect === "deny") {
@@ -71,42 +73,43 @@ const permissionStyles: Record<
     dotClass: "bg-red-500",
     textClass: "text-red-600 dark:text-red-400",
   },
-  unknown: {
-    label: "",
-    dotClass: "bg-muted-foreground/30",
-    textClass: "text-muted-foreground/50",
-  },
 };
 
 export const ToolPermissionDot = (props: {
   toolPath: string;
   policies: ReadonlyArray<LocalScopePolicy>;
+  interaction?: "auto" | "required";
   className?: string;
 }) => {
-  const { level } = resolveToolPermission(props.toolPath, props.policies);
-  if (level === "unknown") return null;
-
+  const { level } = resolveToolPermission(props.toolPath, props.policies, props.interaction);
   const style = permissionStyles[level];
 
   return (
     <span
-      className={cn("size-1.5 shrink-0 rounded-full", style.dotClass, props.className)}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[9px] font-medium leading-none",
+        style.textClass,
+        props.className,
+      )}
       title={style.label}
-    />
+    >
+      <span className={cn("size-1.5 rounded-full", style.dotClass)} />
+      {style.label}
+    </span>
   );
 };
 
 export const ToolPermissionBadge = (props: {
   toolPath: string;
   policies: ReadonlyArray<LocalScopePolicy>;
+  interaction?: "auto" | "required";
   className?: string;
 }) => {
   const { level, matchedPolicy } = resolveToolPermission(
     props.toolPath,
     props.policies,
+    props.interaction,
   );
-  if (level === "unknown") return null;
-
   const style = permissionStyles[level];
 
   return (
