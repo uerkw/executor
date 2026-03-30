@@ -170,12 +170,14 @@ const buildExecuteWorkflowText = (
         ]
       : []),
     "Workflow:",
-    '1) const matches = await tools.discover({ query: "<intent>", limit: 12 });',
-    "2) const details = await tools.describe.tool({ path, includeSchemas: true });",
-    "3) Call selected tools.<path>(input).",
-    "4) Use source plugins to inspect or add API sources.",
+    '1) const { results, bestPath } = await tools.discover({ query: "<intent>", limit: 12 });',
+    '2) const path = bestPath ?? results[0]?.path; if (!path) return "No matching tools found.";',
+    "3) const details = await tools.describe.tool({ path, includeSchemas: true });",
+    "4) Call selected tools.<path>(input).",
+    "5) Use source plugins to inspect or add API sources.",
     ...getExecutorInternalToolHelpLines(runtime.pluginRegistry),
-    "5) If execution pauses for interaction, resume it with the returned resumePayload or the available resume flow.",
+    "6) If execution pauses for interaction, resume it with the returned resumePayload or the available resume flow.",
+    "The tools object is a lazy proxy, so Object.keys(tools) is not a useful way to discover capabilities.",
     "Do not use fetch; use tools.* only.",
   ].join("\n");
 
