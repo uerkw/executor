@@ -30,13 +30,8 @@
       "name": "@executor/web",
       "version": "0.0.0",
       "dependencies": {
-        "@effect-atom/atom": "^0.5.3",
-        "@effect-atom/atom-react": "^0.5.0",
-        "@effect/platform": "catalog:",
-        "@executor/api": "workspace:*",
-        "@executor/sdk": "workspace:*",
+        "@executor/react": "workspace:*",
         "@executor/server": "workspace:*",
-        "effect": "catalog:",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
       },
@@ -47,6 +42,24 @@
         "@vitejs/plugin-react": "^4.5.2",
         "typescript": "^5.9.3",
         "vite": "^6.3.5",
+      },
+    },
+    "packages/clients/react": {
+      "name": "@executor/react",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect-atom/atom": "^0.5.3",
+        "@effect-atom/atom-react": "^0.5.0",
+        "@effect/platform": "catalog:",
+        "@executor/api": "workspace:*",
+        "@executor/sdk": "workspace:*",
+        "effect": "catalog:",
+        "react": "^19.1.0",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:",
+        "@types/react": "^19.1.0",
+        "typescript": "^5.9.3",
       },
     },
     "packages/core/api": {
@@ -297,6 +310,8 @@
     "@executor/plugin-keychain": ["@executor/plugin-keychain@workspace:packages/plugins/keychain"],
 
     "@executor/plugin-openapi": ["@executor/plugin-openapi@workspace:packages/plugins/openapi"],
+
+    "@executor/react": ["@executor/react@workspace:packages/clients/react"],
 
     "@executor/runtime-quickjs": ["@executor/runtime-quickjs@workspace:packages/kernel/runtime-quickjs"],
 

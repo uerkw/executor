@@ -1,8 +1,9 @@
-import React, { Suspense } from "react";
-import { RegistryProvider, useAtomValue, Result } from "@effect-atom/atom-react";
-
-import { ExecutorClient } from "./api/client";
-import { toolsAtom } from "./api/atoms";
+import React from "react";
+import {
+  ExecutorProvider,
+  useAtomValue,
+  toolsAtom,
+} from "@executor/react";
 
 function ToolList() {
   const tools = useAtomValue(toolsAtom());
@@ -36,11 +37,11 @@ function ToolList() {
 
 export function App() {
   return (
-    <RegistryProvider>
+    <ExecutorProvider>
       <div style={{ fontFamily: "system-ui", padding: "2rem" }}>
         <h1>Executor</h1>
         <ToolList />
       </div>
-    </RegistryProvider>
+    </ExecutorProvider>
   );
 }
