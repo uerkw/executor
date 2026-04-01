@@ -29,7 +29,6 @@ import { makeKvSecretStore } from "./secret-store";
 import { makeKvPolicyEngine } from "./policy-engine";
 
 export { makeSqliteKv, makeInMemoryKv } from "./plugin-kv";
-export { makeFileSecretProvider, type FileSecretProviderConfig } from "./file-secret-provider";
 export { makeKvToolRegistry } from "./tool-registry";
 export { makeKvSecretStore } from "./secret-store";
 export { makeKvPolicyEngine } from "./policy-engine";

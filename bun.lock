@@ -19,6 +19,7 @@
         "@effect/sql": "catalog:",
         "@effect/sql-sqlite-bun": "catalog:",
         "@executor/api": "workspace:*",
+        "@executor/plugin-file-secrets": "workspace:*",
         "@executor/plugin-keychain": "workspace:*",
         "@executor/plugin-openapi": "workspace:*",
         "@executor/sdk": "workspace:*",
@@ -155,6 +156,20 @@
         "@executor/codemode-core": "workspace:*",
         "effect": "catalog:",
         "quickjs-emscripten": "^0.31.0",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@types/node": "catalog:",
+        "bun-types": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/plugins/file-secrets": {
+      "name": "@executor/plugin-file-secrets",
+      "version": "0.0.0",
+      "dependencies": {
+        "@executor/sdk": "workspace:*",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
@@ -422,6 +437,8 @@
     "@executor/codemode-core": ["@executor/codemode-core@workspace:packages/kernel/core"],
 
     "@executor/ir": ["@executor/ir@workspace:packages/kernel/ir"],
+
+    "@executor/plugin-file-secrets": ["@executor/plugin-file-secrets@workspace:packages/plugins/file-secrets"],
 
     "@executor/plugin-keychain": ["@executor/plugin-keychain@workspace:packages/plugins/keychain"],
 
