@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Exit, ScopedCache, Duration, Scope } from "effect";
 
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
@@ -23,8 +23,10 @@ import {
 } from "./binding-store";
 import {
   createMcpConnector,
+  type McpConnection,
   type ConnectorInput,
 } from "./connection";
+import { McpConnectionError } from "./errors";
 import {
   startMcpOAuthAuthorization,
   exchangeMcpOAuthCode,
@@ -235,14 +237,48 @@ export const mcpPlugin = (options?: {
     key: "mcp",
     init: (ctx: PluginContext) =>
       Effect.gen(function* () {
-        yield* ctx.tools.registerInvoker(
-          "mcp",
-          makeMcpInvoker({
-            bindingStore,
-            secrets: ctx.secrets,
-            scopeId: ctx.scope.id,
-          }),
-        );
+        // Create a long-lived scope for the connection cache
+        const cacheScope = yield* Scope.make();
+
+        // Side-channel for deferred connector lookup (populated before
+        // each cache.get call so the lookup knows how to connect)
+        const pendingConnectors = new Map<
+          string,
+          Effect.Effect<McpConnection, McpConnectionError>
+        >();
+
+        // ScopedCache: keyed by source identity, acquireRelease manages
+        // connection lifecycle, TTL evicts idle connections.
+        const connectionCache = yield* ScopedCache.make({
+          lookup: (key: string) =>
+            Effect.acquireRelease(
+              Effect.suspend(() => {
+                const connector = pendingConnectors.get(key);
+                if (!connector) {
+                  return Effect.fail(
+                    new McpConnectionError({
+                      transport: "auto",
+                      message: `No pending connector for key: ${key}`,
+                    }),
+                  );
+                }
+                return connector;
+              }),
+              (connection) =>
+                Effect.promise(() => connection.close().catch(() => {})),
+            ),
+          capacity: 64,
+          timeToLive: Duration.minutes(5),
+        }).pipe(Scope.extend(cacheScope));
+
+        const invoker = makeMcpInvoker({
+          bindingStore,
+          secrets: ctx.secrets,
+          scopeId: ctx.scope.id,
+          connectionCache,
+          pendingConnectors,
+        });
+        yield* ctx.tools.registerInvoker("mcp", invoker);
 
         // Restore source metadata
         const savedMetas = yield* bindingStore.listSourceMeta();
@@ -700,6 +736,8 @@ export const mcpPlugin = (options?: {
 
           close: () =>
             Effect.gen(function* () {
+              yield* invoker.closeConnections();
+              yield* Scope.close(cacheScope, Exit.void);
               for (const sourceId of addedSources.keys()) {
                 yield* ctx.tools.unregisterBySource(sourceId);
               }

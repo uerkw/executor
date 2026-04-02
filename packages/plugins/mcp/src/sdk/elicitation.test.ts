@@ -74,10 +74,17 @@ function createTestMcpServer() {
   return server;
 }
 
+type TestServer = {
+  readonly url: string;
+  readonly httpServer: http.Server;
+  /** Number of MCP sessions created (each connect = 1 session) */
+  readonly sessionCount: () => number;
+};
+
 const serveMcpServer = Effect.acquireRelease(
-  Effect.async<{ url: string; httpServer: http.Server }, Error>((resume) => {
+  Effect.async<TestServer, Error>((resume) => {
     const transports = new Map<string, StreamableHTTPServerTransport>();
-    const servers: McpServer[] = [];
+    let sessions = 0;
 
     const httpServer = http.createServer(async (req, res) => {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -95,7 +102,7 @@ const serveMcpServer = Effect.acquireRelease(
 
       // New session — create a fresh McpServer per connection
       const mcpServer = createTestMcpServer();
-      servers.push(mcpServer);
+      sessions++;
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
@@ -111,7 +118,11 @@ const serveMcpServer = Effect.acquireRelease(
     httpServer.listen(0, () => {
       const addr = httpServer.address();
       const port = typeof addr === "object" && addr ? addr.port : 0;
-      resume(Effect.succeed({ url: `http://127.0.0.1:${port}`, httpServer }));
+      resume(Effect.succeed({
+        url: `http://127.0.0.1:${port}`,
+        httpServer,
+        sessionCount: () => sessions,
+      }));
     });
   }),
   ({ httpServer }) =>
@@ -295,6 +306,54 @@ describe("MCP elicitation (end-to-end)", () => {
           },
           required: ["approved"],
         });
+      }),
+  );
+
+  it.scoped(
+    "connection is reused across multiple tool calls to the same source",
+    () =>
+      Effect.gen(function* () {
+        const server = yield* serveMcpServer;
+        const executor = yield* makeTestExecutor(server.url);
+        const tools = yield* executor.tools.list();
+        const simpleEcho = tools.find((t) => t.name === "simple_echo")!;
+        const gatedEcho = tools.find((t) => t.name === "gated_echo")!;
+
+        // addSource created 1 session during discovery
+        const sessionsAfterAdd = server.sessionCount();
+
+        // First tool call — may create a new session (discovery used a
+        // different connection that was closed)
+        yield* executor.tools.invoke(
+          simpleEcho.id,
+          { value: "call-1" },
+          { onElicitation: "accept-all" },
+        );
+        const sessionsAfterFirst = server.sessionCount();
+
+        // Second call to a different tool on the same source — should reuse
+        yield* executor.tools.invoke(
+          simpleEcho.id,
+          { value: "call-2" },
+          { onElicitation: "accept-all" },
+        );
+        expect(server.sessionCount()).toBe(sessionsAfterFirst);
+
+        // Third call to yet another tool on the same source — still reused
+        yield* executor.tools.invoke(
+          gatedEcho.id,
+          { value: "call-3" },
+          {
+            onElicitation: () =>
+              Effect.succeed(
+                new ElicitationResponse({
+                  action: "accept",
+                  content: { approved: true },
+                }),
+              ),
+          },
+        );
+        expect(server.sessionCount()).toBe(sessionsAfterFirst);
       }),
   );
 });
