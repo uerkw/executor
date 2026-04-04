@@ -5,7 +5,60 @@
 // Used by any ToolRegistry implementation (in-memory, database-backed, etc.)
 // ---------------------------------------------------------------------------
 
-type JsonObj = Record<string, unknown>;
+type Obj = Record<string, unknown>;
+
+/** Canonical $ref prefix used internally. */
+const CANONICAL_PREFIX = "#/$defs/";
+
+/** Patterns we accept as equivalent $ref pointers into shared definitions. */
+const REF_PATTERN = /^#\/(?:\$defs|definitions|components\/schemas)\/(.+)$/;
+
+/** Extract the definition name from a $ref pointer */
+const parseRefName = (ref: string): string | undefined =>
+  ref.match(REF_PATTERN)?.[1];
+
+/**
+ * Normalize a single `$ref` string to canonical `#/$defs/<name>` form.
+ * Returns the string unchanged if it doesn't match a known pattern.
+ */
+const normalizeRef = (ref: string): string => {
+  const name = parseRefName(ref);
+  return name ? `${CANONICAL_PREFIX}${name}` : ref;
+};
+
+/**
+ * Recursively rewrite all `$ref` pointers in a schema to canonical form.
+ * Returns the input unchanged if no rewrites are needed.
+ */
+export const normalizeRefs = (node: unknown): unknown => {
+  if (node == null || typeof node !== "object") return node;
+  if (Array.isArray(node)) {
+    let changed = false;
+    const out = node.map((item) => {
+      const n = normalizeRefs(item);
+      if (n !== item) changed = true;
+      return n;
+    });
+    return changed ? out : node;
+  }
+
+  const obj = node as Obj;
+
+  // Fast path: $ref node — only rewrite the pointer, shallow copy rest
+  if (typeof obj.$ref === "string") {
+    const normalized = normalizeRef(obj.$ref);
+    return normalized !== obj.$ref ? { ...obj, $ref: normalized } : obj;
+  }
+
+  let changed = false;
+  const result: Obj = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const n = normalizeRefs(v);
+    if (n !== v) changed = true;
+    result[k] = n;
+  }
+  return changed ? result : obj;
+};
 
 /**
  * Extract `$defs`, `definitions`, and `components.schemas` from a JSON Schema,
@@ -18,27 +71,27 @@ export const hoistDefinitions = (
   if (schema == null || typeof schema !== "object") {
     return { stripped: schema, defs: {} };
   }
-  const obj = schema as JsonObj;
+  const obj = schema as Obj;
   const defs: Record<string, unknown> = {};
 
   // $defs (JSON Schema draft 2019+, Effect)
   if (obj.$defs && typeof obj.$defs === "object") {
-    for (const [k, v] of Object.entries(obj.$defs as JsonObj)) {
+    for (const [k, v] of Object.entries(obj.$defs as Obj)) {
       defs[k] = v;
     }
   }
 
   // definitions (JSON Schema draft-07)
   if (obj.definitions && typeof obj.definitions === "object") {
-    for (const [k, v] of Object.entries(obj.definitions as JsonObj)) {
+    for (const [k, v] of Object.entries(obj.definitions as Obj)) {
       defs[k] = v;
     }
   }
 
   // components.schemas (OpenAPI)
-  const components = obj.components as JsonObj | undefined;
+  const components = obj.components as Obj | undefined;
   if (components?.schemas && typeof components.schemas === "object") {
-    for (const [k, v] of Object.entries(components.schemas as JsonObj)) {
+    for (const [k, v] of Object.entries(components.schemas as Obj)) {
       defs[k] = v;
     }
   }
@@ -49,7 +102,7 @@ export const hoistDefinitions = (
   if (components && typeof components === "object") {
     const { schemas: _s, ...otherComponents } = components;
     if (Object.keys(otherComponents).length > 0) {
-      (rest as JsonObj).components = otherComponents;
+      (rest as Obj).components = otherComponents;
     }
   }
 
@@ -66,7 +119,7 @@ export const collectRefs = (
   found: Set<string> = new Set(),
 ): Set<string> => {
   if (node == null || typeof node !== "object") return found;
-  const obj = node as JsonObj;
+  const obj = node as Obj;
 
   if (typeof obj.$ref === "string") {
     const name = parseRefName(obj.$ref);
@@ -93,6 +146,9 @@ export const collectRefs = (
 /**
  * Re-attach only the referenced shared definitions into a schema,
  * so the caller gets a self-contained, usable JSON Schema.
+ *
+ * Assumes all `$ref` pointers and definitions have already been normalized
+ * to `#/$defs/<name>` form at registration time.
  */
 export const reattachDefs = (
   schema: unknown,
@@ -108,13 +164,5 @@ export const reattachDefs = (
     if (def) attached[name] = def;
   }
 
-  return { ...(schema as JsonObj), $defs: attached };
-};
-
-/** Extract the definition name from a $ref pointer */
-const parseRefName = (ref: string): string | undefined => {
-  const match = ref.match(
-    /^#\/(?:\$defs|definitions|components\/schemas)\/(.+)$/,
-  );
-  return match?.[1];
+  return { ...(schema as Record<string, unknown>), $defs: attached };
 };

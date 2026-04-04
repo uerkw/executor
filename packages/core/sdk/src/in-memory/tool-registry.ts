@@ -9,7 +9,7 @@ import type {
   InvokeOptions,
   RuntimeToolHandler,
 } from "../tools";
-import { reattachDefs } from "../schema-refs";
+import { reattachDefs, normalizeRefs } from "../schema-refs";
 
 export const makeInMemoryToolRegistry = () => {
   const tools = new Map<string, ToolRegistration>();
@@ -83,14 +83,14 @@ export const makeInMemoryToolRegistry = () => {
     registerDefinitions: (defs: Record<string, unknown>) =>
       Effect.sync(() => {
         for (const [k, v] of Object.entries(defs)) {
-          sharedDefs.set(k, v);
+          sharedDefs.set(k, normalizeRefs(v));
         }
       }),
 
     registerRuntimeDefinitions: (defs: Record<string, unknown>) =>
       Effect.sync(() => {
         for (const [k, v] of Object.entries(defs)) {
-          runtimeDefs.set(k, v);
+          runtimeDefs.set(k, normalizeRefs(v));
         }
       }),
 
@@ -142,14 +142,22 @@ export const makeInMemoryToolRegistry = () => {
     register: (newTools: readonly ToolRegistration[]) =>
       Effect.sync(() => {
         for (const t of newTools) {
-          tools.set(t.id, t);
+          tools.set(t.id, {
+            ...t,
+            inputSchema: normalizeRefs(t.inputSchema),
+            outputSchema: normalizeRefs(t.outputSchema),
+          });
         }
       }),
 
     registerRuntime: (newTools: readonly ToolRegistration[]) =>
       Effect.sync(() => {
         for (const t of newTools) {
-          runtimeTools.set(t.id, t);
+          runtimeTools.set(t.id, {
+            ...t,
+            inputSchema: normalizeRefs(t.inputSchema),
+            outputSchema: normalizeRefs(t.outputSchema),
+          });
         }
       }),
 

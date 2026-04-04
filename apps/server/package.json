@@ -16,6 +16,7 @@
     "@executor/plugin-keychain": "workspace:*",
     "@executor/plugin-onepassword": "workspace:*",
     "@executor/plugin-mcp": "workspace:*",
+    "@executor/plugin-graphql": "workspace:*",
     "@executor/plugin-openapi": "workspace:*",
     "@executor/sdk": "workspace:*",
     "@executor/host-mcp": "workspace:*",

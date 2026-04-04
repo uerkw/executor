@@ -80,7 +80,7 @@ export {
 } from "./plugins/in-memory-tools";
 
 // Schema ref utilities
-export { hoistDefinitions, collectRefs, reattachDefs } from "./schema-refs";
+export { hoistDefinitions, collectRefs, reattachDefs, normalizeRefs } from "./schema-refs";
 
 // Runtime tools
 export {

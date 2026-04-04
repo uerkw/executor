@@ -22,6 +22,7 @@
         "@executor/host-mcp": "workspace:*",
         "@executor/plugin-file-secrets": "workspace:*",
         "@executor/plugin-google-discovery": "workspace:*",
+        "@executor/plugin-graphql": "workspace:*",
         "@executor/plugin-keychain": "workspace:*",
         "@executor/plugin-mcp": "workspace:*",
         "@executor/plugin-onepassword": "workspace:*",
@@ -42,6 +43,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@executor/plugin-google-discovery": "workspace:*",
+        "@executor/plugin-graphql": "workspace:*",
         "@executor/plugin-mcp": "workspace:*",
         "@executor/plugin-onepassword": "workspace:*",
         "@executor/plugin-openapi": "workspace:*",
@@ -245,6 +247,44 @@
       },
       "optionalPeers": [
         "@effect-atom/atom-react",
+        "@executor/react",
+        "@executor/ui",
+        "@tanstack/react-router",
+        "react",
+      ],
+    },
+    "packages/plugins/graphql": {
+      "name": "@executor/plugin-graphql",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform": "catalog:",
+        "@effect/platform-node": "catalog:",
+        "@executor/sdk": "workspace:*",
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect-atom/atom-react": "^0.5.0",
+        "@effect/vitest": "catalog:",
+        "@executor/api": "workspace:*",
+        "@executor/react": "workspace:*",
+        "@executor/ui": "workspace:*",
+        "@types/node": "catalog:",
+        "@types/react": "^19.1.0",
+        "bun-types": "catalog:",
+        "react": "^19.1.0",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "@effect-atom/atom-react": "^0.5.0",
+        "@executor/api": "workspace:*",
+        "@executor/react": "workspace:*",
+        "@executor/ui": "workspace:*",
+        "@tanstack/react-router": "^1.168.10",
+        "react": "^19.1.0",
+      },
+      "optionalPeers": [
+        "@effect-atom/atom-react",
+        "@executor/api",
         "@executor/react",
         "@executor/ui",
         "@tanstack/react-router",
@@ -594,6 +634,8 @@
     "@executor/plugin-file-secrets": ["@executor/plugin-file-secrets@workspace:packages/plugins/file-secrets"],
 
     "@executor/plugin-google-discovery": ["@executor/plugin-google-discovery@workspace:packages/plugins/google-discovery"],
+
+    "@executor/plugin-graphql": ["@executor/plugin-graphql@workspace:packages/plugins/graphql"],
 
     "@executor/plugin-keychain": ["@executor/plugin-keychain@workspace:packages/plugins/keychain"],
 

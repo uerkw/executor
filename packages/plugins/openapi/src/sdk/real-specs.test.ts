@@ -153,7 +153,7 @@ describe("Real specs: Cloudflare API", () => {
         const output = schema.outputSchema as Record<string, unknown>;
 
         expect(output["$ref"]).toBeTypeOf("string");
-        expect((output["$ref"] as string).startsWith("#/components/schemas/")).toBe(true);
+        expect((output["$ref"] as string).startsWith("#/$defs/")).toBe(true);
 
         expect(output["$defs"]).toBeDefined();
         const defs = output["$defs"] as Record<string, unknown>;

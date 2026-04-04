@@ -11,6 +11,7 @@ import { OpenApiGroup } from "@executor/plugin-openapi/api";
 import { McpGroup } from "@executor/plugin-mcp/api";
 import { GoogleDiscoveryGroup } from "@executor/plugin-google-discovery/api";
 import { OnePasswordGroup } from "@executor/plugin-onepassword/api";
+import { GraphqlGroup } from "@executor/plugin-graphql/api";
 import { ToolsHandlers } from "./handlers/tools";
 import { SourcesHandlers } from "./handlers/sources";
 import { SecretsHandlers } from "./handlers/secrets";
@@ -18,6 +19,7 @@ import { OpenApiHandlersLive } from "./handlers/openapi";
 import { McpSourceHandlersLive } from "./handlers/mcp-source";
 import { GoogleDiscoveryHandlersLive } from "./handlers/google-discovery";
 import { OnePasswordHandlersLive } from "./handlers/onepassword";
+import { GraphqlHandlersLive } from "./handlers/graphql";
 import { ExecutorService, ExecutorServiceLayer, getExecutor, type ServerExecutor } from "./services/executor";
 import { createMcpRequestHandler, type McpRequestHandler } from "./mcp";
 
@@ -28,7 +30,8 @@ import { createMcpRequestHandler, type McpRequestHandler } from "./mcp";
 const ExecutorApiWithPlugins = addGroup(OpenApiGroup)
   .add(McpGroup)
   .add(GoogleDiscoveryGroup)
-  .add(OnePasswordGroup);
+  .add(OnePasswordGroup)
+  .add(GraphqlGroup);
 
 // ---------------------------------------------------------------------------
 // API Layer
@@ -43,6 +46,7 @@ const ApiBase = HttpApiBuilder.api(ExecutorApiWithPlugins).pipe(
     McpSourceHandlersLive,
     GoogleDiscoveryHandlersLive,
     OnePasswordHandlersLive,
+    GraphqlHandlersLive,
   ]),
 );
 

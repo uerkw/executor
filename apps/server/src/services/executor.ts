@@ -12,6 +12,11 @@ import {
   makeKvBindingStore as makeKvGoogleDiscoveryBindingStore,
   type GoogleDiscoveryPluginExtension,
 } from "@executor/plugin-google-discovery";
+import {
+  graphqlPlugin,
+  makeKvOperationStore as makeKvGraphqlOperationStore,
+  type GraphqlPluginExtension,
+} from "@executor/plugin-graphql";
 import { keychainPlugin } from "@executor/plugin-keychain";
 import { fileSecretsPlugin } from "@executor/plugin-file-secrets";
 import { onepasswordPlugin, type OnePasswordExtension } from "@executor/plugin-onepassword";
@@ -22,6 +27,7 @@ type ServerPlugins = readonly [
   ExecutorPlugin<"openapi", OpenApiPluginExtension>,
   ExecutorPlugin<"mcp", McpPluginExtension>,
   ExecutorPlugin<"googleDiscovery", GoogleDiscoveryPluginExtension>,
+  ExecutorPlugin<"graphql", GraphqlPluginExtension>,
   ReturnType<typeof keychainPlugin>,
   ReturnType<typeof fileSecretsPlugin>,
   ExecutorPlugin<"onepassword", OnePasswordExtension>,
@@ -77,6 +83,9 @@ const ExecutorLayer = Layer.effect(
         }),
         googleDiscoveryPlugin({
           bindingStore: makeKvGoogleDiscoveryBindingStore(kv, "google-discovery"),
+        }),
+        graphqlPlugin({
+          operationStore: makeKvGraphqlOperationStore(kv, "graphql"),
         }),
         keychainPlugin(),
         fileSecretsPlugin(),
