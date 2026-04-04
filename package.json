@@ -1,5 +1,24 @@
 {
-  "name": "v4-executor",
+  "name": "executor",
+  "version": "1.4.0",
+  "description": "Local AI executor with a CLI, local API server, and web UI.",
+  "keywords": [
+    "executor",
+    "ai",
+    "agent",
+    "cli",
+    "automation",
+    "local-first"
+  ],
+  "homepage": "https://github.com/RhysSullivan/executor",
+  "bugs": {
+    "url": "https://github.com/RhysSullivan/executor/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RhysSullivan/executor.git"
+  },
+  "license": "MIT",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.2.22",

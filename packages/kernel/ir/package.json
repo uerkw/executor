@@ -2,7 +2,7 @@
   "name": "@executor/ir",
   "private": true,
   "type": "module",
-  "version": "0.0.0",
+  "version": "1.4.0",
   "exports": {
     ".": "./src/index.ts"
   },

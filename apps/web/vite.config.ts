@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -77,7 +78,25 @@ const sendWebResponse = async (
   }
 };
 
+const rootPackage = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+) as { version: string; homepage?: string; repository?: string | { url?: string } };
+
+const repositoryUrl =
+  typeof rootPackage.repository === "string"
+    ? rootPackage.repository
+    : rootPackage.repository?.url;
+
+const EXECUTOR_VERSION = rootPackage.version;
+const EXECUTOR_GITHUB_URL = (rootPackage.homepage ?? repositoryUrl ?? "https://github.com/RhysSullivan/executor")
+  .replace(/^git\+/, "")
+  .replace(/\.git$/, "");
+
 export default defineConfig({
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(EXECUTOR_VERSION),
+    "import.meta.env.VITE_GITHUB_URL": JSON.stringify(EXECUTOR_GITHUB_URL),
+  },
   plugins: [
     react(),
     tailwindcss(),
