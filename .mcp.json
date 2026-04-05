@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "executor": {
-      "type": "http",
-      "url": "http://localhost:5173/mcp"
+      "command": "bun",
+      "args": [
+        "run",
+        "/Users/rhyssullivan/src/v4-executor/apps/cli/src/main.ts",
+        "mcp"
+      ]
     }
   }
 }

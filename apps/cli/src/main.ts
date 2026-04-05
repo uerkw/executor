@@ -19,6 +19,7 @@ if (typeof Bun !== "undefined" && await Bun.file(wasmOnDisk).exists()) {
 }
 
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { Command, Options, Args } from "@effect/cli";
 import { BunRuntime } from "@effect/platform-bun";
 import { FetchHttpClient, HttpApiClient } from "@effect/platform";
@@ -143,19 +144,41 @@ const makeApiClient = (baseUrl: string) =>
 // Static file serving from embedded web UI
 // ---------------------------------------------------------------------------
 
+const WEB_DIST_DIR = resolve(import.meta.dirname, "../../web/dist");
+
 const serveStatic = async (pathname: string): Promise<Response | null> => {
-  if (!embeddedWebUI) return null;
-
   const key = pathname.replace(/^\//, "");
-  const match = embeddedWebUI[key] ?? embeddedWebUI["index.html"] ?? null;
-  if (!match) return null;
 
-  const file = Bun.file(match);
+  // Compiled binary: serve from embedded bunfs
+  if (embeddedWebUI) {
+    const match = embeddedWebUI[key] ?? embeddedWebUI["index.html"] ?? null;
+    if (!match) return null;
+    const file = Bun.file(match);
+    if (await file.exists()) {
+      return new Response(file, {
+        headers: { "content-type": file.type || "application/octet-stream" },
+      });
+    }
+    return null;
+  }
+
+  // Dev mode: serve from apps/web/dist on disk
+  const filePath = resolve(WEB_DIST_DIR, key);
+  if (!filePath.startsWith(WEB_DIST_DIR)) return null;
+
+  const file = Bun.file(filePath);
   if (await file.exists()) {
     return new Response(file, {
       headers: { "content-type": file.type || "application/octet-stream" },
     });
   }
+
+  // SPA fallback
+  const index = Bun.file(resolve(WEB_DIST_DIR, "index.html"));
+  if (await index.exists()) {
+    return new Response(index, { headers: { "content-type": "text/html" } });
+  }
+
   return null;
 };
 
@@ -330,18 +353,9 @@ const webCommand = Command.make(
 
 const mcpCommand = Command.make(
   "mcp",
-  {
-    port: Options.integer("port").pipe(Options.withDefault(DEFAULT_PORT)),
-    stdio: Options.boolean("stdio").pipe(Options.withDefault(false)),
-    webPort: Options.integer("web-port").pipe(Options.optional),
-  },
-  ({ port, stdio, webPort }) =>
-    stdio ? runStdioMcpSession() : runForegroundSession({ kind: "mcp", port }),
-).pipe(
-  Command.withDescription(
-    "Start a foreground MCP session, or run stdio MCP with --stdio",
-  ),
-);
+  {},
+  () => runStdioMcpSession(),
+).pipe(Command.withDescription("Start an MCP server over stdio"));
 
 // ---------------------------------------------------------------------------
 // Root command
