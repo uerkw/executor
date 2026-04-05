@@ -198,11 +198,11 @@ const buildWrapperPackage = async (binaries: Record<string, string>) => {
 
   await mkdir(binDir, { recursive: true });
 
-  // Node.js shim that finds + spawns the right platform binary
+  // Node.js shim that spawns the downloaded platform binary
   await writeFile(join(binDir, "executor"), NODE_SHIM);
   await chmod(join(binDir, "executor"), 0o755);
 
-  // Postinstall: hardlink the platform binary for faster startup
+  // Postinstall downloads the matching release asset from GitHub Releases
   await writeFile(join(wrapperDir, "postinstall.mjs"), POSTINSTALL_SCRIPT);
 
   // Package.json
@@ -222,7 +222,9 @@ const buildWrapperPackage = async (binaries: Record<string, string>) => {
         scripts: {
           postinstall: "node ./postinstall.mjs",
         },
-        optionalDependencies: binaries,
+        engines: {
+          node: ">=20",
+        },
       },
       null,
       2,
@@ -237,7 +239,7 @@ const buildWrapperPackage = async (binaries: Record<string, string>) => {
 
   console.log(`\nWrapper package: ${wrapperDir}`);
   console.log(`  ${meta.name}@${meta.version}`);
-  console.log(`  optionalDependencies: ${Object.keys(binaries).join(", ")}`);
+  console.log(`  release assets: ${Object.keys(binaries).join(", ")}`);
 };
 
 // ---------------------------------------------------------------------------
@@ -280,14 +282,7 @@ const publishPackedPackage = async (pkgDir: string, channel: string) => {
 const publish = async (channel: string) => {
   const meta = await readMetadata();
 
-  // Publish platform packages
-  for (const entry of new Bun.Glob("executor-*/package.json").scanSync({ cwd: distDir })) {
-    const pkgDir = join(distDir, dirname(entry));
-    console.log(`Publishing ${pkgDir}...`);
-    await publishPackedPackage(pkgDir, channel);
-  }
-
-  // Publish wrapper package
+  // Publish only the wrapper npm package. Platform binaries are distributed via GitHub release assets.
   const wrapperDir = join(distDir, meta.name);
   console.log(`Publishing ${wrapperDir}...`);
   await publishPackedPackage(wrapperDir, channel);
@@ -330,29 +325,56 @@ const NODE_SHIM = `#!/usr/bin/env node
 const childProcess = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 
 function run(target) {
   const result = childProcess.spawnSync(target, process.argv.slice(2), { stdio: "inherit" });
-  if (result.error) { console.error(result.error.message); process.exit(1); }
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
   process.exit(typeof result.status === "number" ? result.status : 0);
 }
 
-// Check env override
 if (process.env.EXECUTOR_BIN_PATH) run(process.env.EXECUTOR_BIN_PATH);
 
-// Check cached binary from postinstall
 const scriptDir = path.dirname(fs.realpathSync(__filename));
-const cached = path.join(scriptDir, ".executor");
-if (fs.existsSync(cached)) run(cached);
+const cached = path.join(scriptDir, process.platform === "win32" ? ".executor.exe" : ".executor");
+if (!fs.existsSync(cached)) {
+  console.error("executor binary is missing. Reinstall the package or run 'npm rebuild executor'.");
+  process.exit(1);
+}
 
-// Resolve platform
+run(cached);
+`;
+
+// ---------------------------------------------------------------------------
+// Postinstall — hardlink/copy the platform binary for fast startup
+// ---------------------------------------------------------------------------
+
+const POSTINSTALL_SCRIPT = `#!/usr/bin/env node
+const childProcess = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+
+const packageDir = path.dirname(fs.realpathSync(__filename));
+const binDir = path.join(packageDir, "bin");
+const packageJson = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8"));
+
+const repositoryUrl = typeof packageJson.repository === "string"
+  ? packageJson.repository
+  : packageJson.repository && packageJson.repository.url;
+const githubBase = String(packageJson.homepage || repositoryUrl || "https://github.com/RhysSullivan/executor")
+  .replace(/^git\+/, "")
+  .replace(/\.git$/, "");
+const version = packageJson.version;
+
 const platformMap = { darwin: "darwin", linux: "linux", win32: "windows" };
 const platform = platformMap[os.platform()] || os.platform();
 const arch = os.arch() === "arm64" ? "arm64" : "x64";
 const binary = platform === "windows" ? "executor.exe" : "executor";
+const cachedBinary = path.join(binDir, platform === "win32" ? ".executor.exe" : ".executor");
 
-// Detect musl
 const isMusl = (() => {
   if (platform !== "linux") return false;
   try { if (fs.existsSync("/etc/alpine-release")) return true; } catch {}
@@ -363,82 +385,74 @@ const isMusl = (() => {
   return false;
 })();
 
-// Build candidate list
-const base = "executor-" + platform + "-" + arch;
-const names = (() => {
-  if (platform === "linux" && isMusl) {
-    return [base + "-musl", base];
-  }
-  if (platform === "linux") {
-    return [base, base + "-musl"];
-  }
-  return [base];
+const assetBase = (() => {
+  const base = "executor-" + platform + "-" + arch;
+  if (platform === "linux" && isMusl) return base + "-musl";
+  return base;
 })();
+const archiveName = platform === "linux" ? assetBase + ".tar.gz" : assetBase + ".zip";
+const downloadUrl = githubBase + "/releases/download/v" + version + "/" + archiveName;
+const archivePath = path.join(packageDir, archiveName);
 
-// Walk up to find node_modules
-function findBinary(startDir) {
-  let current = startDir;
-  for (;;) {
-    const modules = path.join(current, "node_modules");
-    if (fs.existsSync(modules)) {
-      for (const name of names) {
-        const candidate = path.join(modules, name, "bin", binary);
-        if (fs.existsSync(candidate)) return candidate;
-      }
-    }
-    const parent = path.dirname(current);
-    if (parent === current) return;
-    current = parent;
+const run = (command, args) => {
+  const result = childProcess.spawnSync(command, args, { stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (typeof result.status === "number" && result.status !== 0) {
+    throw new Error(command + " exited with code " + result.status);
   }
-}
+};
 
-const resolved = findBinary(scriptDir);
-if (!resolved) {
-  console.error("Could not find executor binary for your platform. Try installing " + names.map(n => '"' + n + '"').join(" or "));
-  process.exit(1);
-}
-run(resolved);
-`;
+const download = async () => {
+  const response = await fetch(downloadUrl, { redirect: "follow" });
+  if (!response.ok) {
+    throw new Error("Failed to download " + downloadUrl + " (status " + response.status + ")");
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  fs.writeFileSync(archivePath, Buffer.from(arrayBuffer));
+};
 
-// ---------------------------------------------------------------------------
-// Postinstall — hardlink/copy the platform binary for fast startup
-// ---------------------------------------------------------------------------
+const extract = () => {
+  fs.mkdirSync(binDir, { recursive: true });
 
-const POSTINSTALL_SCRIPT = `#!/usr/bin/env node
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
-const { createRequire } = require("module");
+  if (platform === "linux") {
+    run("tar", ["-xzf", archivePath, "-C", binDir]);
+    return;
+  }
 
-const __dirname_resolved = path.dirname(fs.realpathSync(__filename));
-const require_ = createRequire(__filename);
+  if (platform === "darwin") {
+    run("unzip", ["-o", archivePath, "-d", binDir]);
+    return;
+  }
 
-const platformMap = { darwin: "darwin", linux: "linux", win32: "windows" };
-const platform = platformMap[os.platform()] || os.platform();
-const arch = os.arch() === "arm64" ? "arm64" : "x64";
-const binary = platform === "windows" ? "executor.exe" : "executor";
-const base = "executor-" + platform + "-" + arch;
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    "Expand-Archive -LiteralPath '" + archivePath.replace(/'/g, "''") + "' -DestinationPath '" + binDir.replace(/'/g, "''") + "' -Force",
+  ].join("; ");
+  run("powershell.exe", ["-NoLogo", "-NoProfile", "-Command", command]);
+};
 
-const names = platform === "linux" ? [base, base + "-musl"] : [base];
-
-for (const name of names) {
+(async () => {
   try {
-    const pkgJson = require_.resolve(name + "/package.json");
-    const binaryPath = path.join(path.dirname(pkgJson), "bin", binary);
-    if (!fs.existsSync(binaryPath)) continue;
+    await download();
+    extract();
 
-    const target = path.join(__dirname_resolved, "bin", ".executor");
-    const binDir = path.join(__dirname_resolved, "bin");
-    if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
-    if (fs.existsSync(target)) fs.unlinkSync(target);
+    const extractedBinary = path.join(binDir, binary);
+    if (!fs.existsSync(extractedBinary)) {
+      throw new Error("Expected extracted binary at " + extractedBinary);
+    }
 
-    try { fs.linkSync(binaryPath, target); }
-    catch { fs.copyFileSync(binaryPath, target); }
-    fs.chmodSync(target, 0o755);
-    console.log("executor: binary linked for " + name);
-    break;
-  } catch {}
-}
+    if (fs.existsSync(cachedBinary)) {
+      fs.unlinkSync(cachedBinary);
+    }
+    fs.renameSync(extractedBinary, cachedBinary);
+    fs.chmodSync(cachedBinary, 0o755);
+    fs.rmSync(archivePath, { force: true });
+    console.log("executor: installed " + assetBase + " from GitHub Releases");
+  } catch (error) {
+    console.error("executor postinstall failed:", error && error.message ? error.message : error);
+    process.exit(1);
+  }
+})();
 `;
 
 // ---------------------------------------------------------------------------

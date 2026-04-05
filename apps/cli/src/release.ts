@@ -254,16 +254,16 @@ const main = async () => {
     return;
   }
 
-  await runCommand({
-    command: "bun",
-    args: ["run", "src/build.ts", "publish", channel],
-    cwd: cliRoot,
-  });
-
   await syncGitHubRelease({
     tag,
     channel,
     assetPaths,
+  });
+
+  await runCommand({
+    command: "bun",
+    args: ["run", "src/build.ts", "publish", channel],
+    cwd: cliRoot,
   });
 };
 
