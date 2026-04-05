@@ -153,12 +153,15 @@ describe("graphqlPlugin", () => {
     );
 
     const sources = await Effect.runPromise(executor.sources.list());
-    // 1 user source + 1 runtime source (executor.graphql)
+    // 1 user source + 1 built-in runtime source
     const gqlSources = sources.filter((s) => s.kind === "graphql");
-    expect(gqlSources).toHaveLength(2);
+    expect(gqlSources).toHaveLength(1);
     const userSource = gqlSources.find((s) => s.id === "my_gql");
     expect(userSource).toBeDefined();
     expect(userSource!.canRemove).toBe(true);
+    const builtIn = sources.find((s) => s.id === "built-in");
+    expect(builtIn).toBeDefined();
+    expect(builtIn!.runtime).toBe(true);
 
     await Effect.runPromise(executor.close());
   });

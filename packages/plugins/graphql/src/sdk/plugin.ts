@@ -371,13 +371,14 @@ export const graphqlPlugin = (options?: {
           sources: ctx.sources,
           pluginKey: "graphql",
           source: {
-            id: "executor.graphql",
-            name: "GraphQL",
+            id: "built-in",
+            name: "Built In",
+            kind: "built-in",
           },
           tools: [
             runtimeTool({
-              id: "executor.graphql.addSource",
-              name: "addSource",
+              id: "graphql.addSource",
+              name: "graphql.addSource",
               description:
                 "Add a GraphQL endpoint and register its operations as tools",
               inputSchema: AddSourceInputSchema,

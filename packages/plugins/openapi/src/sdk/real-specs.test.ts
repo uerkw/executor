@@ -217,8 +217,8 @@ describe("Real specs: Cloudflare API", () => {
 
       const remaining = yield* executor.tools.list();
       expect(remaining.map((tool) => tool.id)).toEqual([
-        "executor.openapi.previewSpec",
-        "executor.openapi.addSource",
+        "openapi.previewSpec",
+        "openapi.addSource",
       ]);
     }),
   );

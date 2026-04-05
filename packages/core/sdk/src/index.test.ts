@@ -47,9 +47,9 @@ describe("SDK Executor", () => {
       const sources = makeInMemorySourceRegistry();
 
       yield* sources.registerRuntime(new Source({
-        id: "executor.openapi",
-        name: "OpenAPI",
-        kind: "openapi",
+        id: "built-in",
+        name: "Built In",
+        kind: "built-in",
         runtime: true,
         canRemove: false,
         canRefresh: false,
@@ -72,7 +72,7 @@ describe("SDK Executor", () => {
       });
 
       expect((yield* sources.list()).map((source) => source.id)).toEqual([
-        "executor.openapi",
+        "built-in",
         "vercel",
       ]);
     }),

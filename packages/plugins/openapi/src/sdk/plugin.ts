@@ -295,13 +295,14 @@ export const openApiPlugin = (options?: {
           sources: ctx.sources,
           pluginKey: "openapi",
           source: {
-            id: "executor.openapi",
-            name: "OpenAPI",
+            id: "built-in",
+            name: "Built In",
+            kind: "built-in",
           },
           tools: [
             runtimeTool({
-              id: "executor.openapi.previewSpec",
-              name: "previewSpec",
+              id: "openapi.previewSpec",
+              name: "openapi.previewSpec",
               description:
                 "Preview an OpenAPI document before adding it as a source",
               inputSchema: PreviewSpecInputSchema,
@@ -309,8 +310,8 @@ export const openApiPlugin = (options?: {
               handler: ({ spec }: PreviewSpecInput) => previewSpec(spec),
             }),
             runtimeTool({
-              id: "executor.openapi.addSource",
-              name: "addSource",
+              id: "openapi.addSource",
+              name: "openapi.addSource",
               description:
                 "Add an OpenAPI source and register its operations as tools",
               inputSchema: AddSourceInputSchema,

@@ -128,7 +128,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     }),
   );
 
-  it.effect("registers runtime executor.openapi tools", () =>
+  it.effect("registers runtime openapi tools under built-in source", () =>
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
@@ -143,12 +143,12 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
 
       const tools = yield* executor.tools.list();
       const ids = tools.map((t) => t.id);
-      expect(ids).toContain("executor.openapi.previewSpec");
-      expect(ids).toContain("executor.openapi.addSource");
+      expect(ids).toContain("openapi.previewSpec");
+      expect(ids).toContain("openapi.addSource");
     }),
   );
 
-  it.effect("lists executor.openapi as a runtime source", () =>
+  it.effect("lists built-in as a runtime source", () =>
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
@@ -164,9 +164,9 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
       const sources = yield* executor.sources.list();
 
       expect(sources).toContainEqual(expect.objectContaining({
-        id: "executor.openapi",
-        name: "OpenAPI",
-        kind: "openapi",
+        id: "built-in",
+        name: "Built In",
+        kind: "built-in",
         runtime: true,
         canRemove: false,
         canRefresh: false,
@@ -239,7 +239,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
       );
 
       const result = yield* executor.tools.invoke(
-        "executor.openapi.previewSpec",
+        "openapi.previewSpec",
         { spec: specJson },
         autoApprove,
       );
@@ -263,7 +263,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
       );
 
       const result = yield* executor.tools.invoke(
-        "executor.openapi.addSource",
+        "openapi.addSource",
         { spec: specJson, namespace: "runtime" },
         autoApprove,
       );
@@ -459,8 +459,8 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
 
       const remaining = yield* executor.tools.list();
       expect(remaining.map((tool) => tool.id)).toEqual([
-        "executor.openapi.previewSpec",
-        "executor.openapi.addSource",
+        "openapi.previewSpec",
+        "openapi.addSource",
       ]);
     }),
   );
