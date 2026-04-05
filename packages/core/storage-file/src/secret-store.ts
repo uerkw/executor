@@ -109,21 +109,43 @@ export const makeKvSecretStore = (refsKv: ScopedKv) => {
 
     set: (input: SetSecretInput) =>
       Effect.gen(function* () {
-        const provider = findWritableProvider(input.provider);
-        if (!provider?.set) {
+        // When a specific provider is requested, use only that one.
+        // Otherwise try each writable provider in order until one succeeds.
+        // Providers may silently swallow write failures (e.g. keychain on
+        // unsupported platforms), so we verify by reading back after writing.
+        const candidates = input.provider
+          ? providers.filter((p) => p.key === input.provider && p.writable && p.set)
+          : providers.filter((p) => p.writable && p.set);
+
+        if (candidates.length === 0) {
           return yield* new SecretResolutionError({
             secretId: input.id,
             message: `No writable provider found${input.provider ? ` (requested: ${input.provider})` : ""}`,
           });
         }
 
-        yield* provider.set(input.id, input.value);
+        let usedProvider: SecretProvider | undefined;
+        for (const candidate of candidates) {
+          yield* candidate.set!(input.id, input.value);
+          const readBack = yield* candidate.get(input.id);
+          if (readBack !== null) {
+            usedProvider = candidate;
+            break;
+          }
+        }
+
+        if (!usedProvider) {
+          return yield* new SecretResolutionError({
+            secretId: input.id,
+            message: "All writable providers failed to store the secret",
+          });
+        }
 
         const ref = new SecretRef({
           id: input.id,
           scopeId: input.scopeId,
           name: input.name,
-          provider: Option.fromNullable(input.provider),
+          provider: Option.some(usedProvider.key),
           purpose: input.purpose,
           createdAt: new Date(),
         });

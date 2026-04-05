@@ -86,7 +86,7 @@ export function ToolDetail(props: {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 border-b border-border bg-background/95 backdrop-blur-sm">
+      <div className="shrink-0 max-h-[40%] overflow-y-auto border-b border-border bg-background/95 backdrop-blur-sm">
         <div className="flex items-start gap-3 px-5 py-3.5">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <svg viewBox="0 0 16 16" className="size-4">
