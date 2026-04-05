@@ -36,7 +36,7 @@ import { createServerHandlers, runMcpStdioServer, getExecutor } from "@executor/
 
 const CLI_NAME = "executor";
 const { version: CLI_VERSION } = await import("../package.json");
-const DEFAULT_PORT = 8788;
+const DEFAULT_PORT = 4788;
 const DEFAULT_BASE_URL = `http://localhost:${DEFAULT_PORT}`;
 
 // Embedded web UI — baked into compiled binaries via `with { type: "file" }`
