@@ -64,40 +64,37 @@ jobs:
         run: bun run build
         working-directory: apps/web
 
-      - name: Download CLI binary from release
+      - name: Download and extract CLI sidecar (unix)
+        if: matrix.platform != 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p apps/desktop/resources
-          gh release download "${{ inputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "${{ matrix.cli-asset }}" \
-            --dir /tmp/cli-download
-
-      - name: Extract CLI sidecar (unix)
-        if: matrix.platform != 'win'
-        run: |
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "${{ matrix.cli-asset }}" --dir /tmp/cli-download
           cd /tmp/cli-download
           if [[ "${{ matrix.cli-asset }}" == *.tar.gz ]]; then
             tar -xzf "${{ matrix.cli-asset }}"
           else
             unzip -o "${{ matrix.cli-asset }}"
           fi
-          cp executor apps/desktop/resources/executor
-          chmod +x apps/desktop/resources/executor
+          cp executor "${{ github.workspace }}/apps/desktop/resources/executor"
+          chmod +x "${{ github.workspace }}/apps/desktop/resources/executor"
           if [ -f emscripten-module.wasm ]; then
-            cp emscripten-module.wasm apps/desktop/resources/
+            cp emscripten-module.wasm "${{ github.workspace }}/apps/desktop/resources/"
           fi
-        working-directory: ${{ github.workspace }}
 
-      - name: Extract CLI sidecar (windows)
+      - name: Download and extract CLI sidecar (windows)
         if: matrix.platform == 'win'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          Expand-Archive -Path "/tmp/cli-download/${{ matrix.cli-asset }}" -DestinationPath "/tmp/cli-extract" -Force
-          Copy-Item "/tmp/cli-extract/executor.exe" "apps/desktop/resources/executor.exe"
-          if (Test-Path "/tmp/cli-extract/emscripten-module.wasm") {
-            Copy-Item "/tmp/cli-extract/emscripten-module.wasm" "apps/desktop/resources/"
+          New-Item -ItemType Directory -Force -Path "apps/desktop/resources"
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "${{ matrix.cli-asset }}" --dir "$env:TEMP/cli-download"
+          Expand-Archive -Path "$env:TEMP/cli-download/${{ matrix.cli-asset }}" -DestinationPath "$env:TEMP/cli-extract" -Force
+          Copy-Item "$env:TEMP/cli-extract/executor.exe" "apps/desktop/resources/executor.exe"
+          if (Test-Path "$env:TEMP/cli-extract/emscripten-module.wasm") {
+            Copy-Item "$env:TEMP/cli-extract/emscripten-module.wasm" "apps/desktop/resources/"
           }
 
       - name: Build desktop app (TypeScript)
