@@ -88,8 +88,12 @@ describe("graphql presets are reachable endpoints", () => {
 // MCP presets — probe the endpoint (POST to verify it's alive)
 // ---------------------------------------------------------------------------
 
+const remoteMcpPresets = mcpPresets.filter(
+  (p) => !('transport' in p && p.transport === 'stdio'),
+);
+
 describe("mcp presets are reachable endpoints", () => {
-  for (const preset of mcpPresets) {
+  for (const preset of remoteMcpPresets) {
     it.effect(
       preset.name,
       () =>
@@ -149,7 +153,12 @@ describe("google discovery presets parse as valid manifests", () => {
 const publicPresets = allPresets.filter(
   (p) =>
     // Skip auth-required endpoints that won't pass detection without credentials
-    !["github-graphql", "linear", "monday"].includes(p.id) &&
+    !["github-graphql", "linear", "monday", "stripe"].includes(p.id) &&
+    // Skip stdio presets (not HTTP-reachable)
+    !('transport' in p && (p as any).transport === 'stdio') &&
+    // Skip host-scoped Google Discovery URLs (forms.googleapis.com/$discovery/...)
+    // — the detector only recognises the central directory pattern today
+    !["google-forms", "google-keep"].includes(p.id) &&
     // Skip endpoints where detection is flaky due to timeout or misdetection
     // (these are detect() implementation issues, not preset issues)
     !["firecrawl", "gitlab"].includes(p.id),

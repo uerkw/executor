@@ -11,10 +11,15 @@ export interface SourcePreset {
   readonly name: string;
   /** One-line description */
   readonly summary: string;
-  /** URL passed as `initialUrl` to the add form */
-  readonly url: string;
+  /**
+   * URL passed as `initialUrl` to the add form.
+   * Omit for presets that don't use a URL (e.g. stdio MCP presets).
+   */
+  readonly url?: string;
   /** Optional icon URL (favicon, logo) */
   readonly icon?: string;
+  /** When true, this preset is shown in the top-level grid on the sources page. */
+  readonly featured?: boolean;
 }
 
 /**
@@ -42,11 +47,13 @@ export interface SourcePlugin {
    * Plugin controls the entire experience.
    * Call `onComplete` when done, `onCancel` to bail out.
    * `initialUrl` is provided when the user arrived via URL auto-detection.
+   * `initialPreset` is provided when the user clicked a preset card.
    */
   readonly add: ComponentType<{
     readonly onComplete: () => void;
     readonly onCancel: () => void;
     readonly initialUrl?: string;
+    readonly initialPreset?: string;
   }>;
 
   /**

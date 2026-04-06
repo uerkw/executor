@@ -202,17 +202,52 @@ export function SourcesPage() {
 // Preset grid
 // ---------------------------------------------------------------------------
 
+type PresetEntry = { preset: SourcePreset; pluginKey: string; pluginLabel: string };
+
+function PresetCard({ preset, pluginKey, pluginLabel }: PresetEntry) {
+  const search: Record<string, string> = { preset: preset.id };
+  if (preset.url) search.url = preset.url;
+
+  return (
+    <Link
+      to="/sources/add/$pluginKey"
+      params={{ pluginKey }}
+      search={search}
+      className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/25 hover:bg-card/90"
+    >
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground overflow-hidden">
+        {preset.icon ? (
+          <img src={preset.icon} alt="" className="size-5 object-contain" loading="lazy" />
+        ) : (
+          <svg viewBox="0 0 16 16" className="size-3.5" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{preset.name}</span>
+          <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
+            {pluginLabel}
+          </span>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{preset.summary}</p>
+      </div>
+    </Link>
+  );
+}
+
 function PresetGrid(props: {
   plugins: readonly SourcePlugin[];
 }) {
   const allPresets = useMemo(() => {
-    const out: { preset: SourcePreset; pluginKey: string; pluginLabel: string }[] = [];
+    const entries: PresetEntry[] = [];
     for (const plugin of props.plugins) {
       for (const preset of plugin.presets ?? []) {
-        out.push({ preset, pluginKey: plugin.key, pluginLabel: plugin.label });
+        entries.push({ preset, pluginKey: plugin.key, pluginLabel: plugin.label });
       }
     }
-    return out;
+    return entries;
   }, [props.plugins]);
 
   if (allPresets.length === 0) return null;
@@ -220,39 +255,14 @@ function PresetGrid(props: {
   return (
     <section className="mb-8 space-y-3">
       <div>
-        <h2 className="text-sm font-semibold text-foreground">Presets</h2>
+        <h2 className="text-sm font-semibold text-foreground">Popular sources</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
           One-click setup for common APIs and services.
         </p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {allPresets.map(({ preset, pluginKey, pluginLabel }) => (
-          <Link
-            key={`${pluginKey}-${preset.id}`}
-            to="/sources/add/$pluginKey"
-            params={{ pluginKey }}
-            search={{ url: preset.url }}
-            className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/25 hover:bg-card/90"
-          >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground overflow-hidden">
-              {preset.icon ? (
-                <img src={preset.icon} alt="" className="size-5 object-contain" loading="lazy" />
-              ) : (
-                <svg viewBox="0 0 16 16" className="size-3.5" fill="none">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
-                </svg>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium text-foreground">{preset.name}</span>
-                <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                  {pluginLabel}
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{preset.summary}</p>
-            </div>
-          </Link>
+        {allPresets.map((entry) => (
+          <PresetCard key={`${entry.pluginKey}-${entry.preset.id}`} {...entry} />
         ))}
       </div>
     </section>

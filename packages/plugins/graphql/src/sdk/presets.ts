@@ -4,6 +4,7 @@ export interface GraphqlPreset {
   readonly summary: string;
   readonly url: string;
   readonly icon?: string;
+  readonly featured?: boolean;
 }
 
 export const graphqlPresets: readonly GraphqlPreset[] = [
@@ -13,6 +14,7 @@ export const graphqlPresets: readonly GraphqlPreset[] = [
     summary: "Repos, issues, PRs, and users via GitHub's GraphQL API.",
     url: "https://api.github.com/graphql",
     icon: "https://github.com/favicon.ico",
+    featured: true,
   },
   {
     id: "gitlab",
@@ -20,6 +22,7 @@ export const graphqlPresets: readonly GraphqlPreset[] = [
     summary: "Projects, merge requests, pipelines, and users.",
     url: "https://gitlab.com/api/graphql",
     icon: "https://gitlab.com/favicon.ico",
+    featured: true,
   },
   {
     id: "linear",
@@ -27,6 +30,7 @@ export const graphqlPresets: readonly GraphqlPreset[] = [
     summary: "Issues, projects, teams, and cycles.",
     url: "https://api.linear.app/graphql",
     icon: "https://linear.app/favicon.ico",
+    featured: true,
   },
   {
     id: "monday",

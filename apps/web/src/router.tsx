@@ -42,13 +42,18 @@ const toolsRoute = createRoute({
 const sourcesAddRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sources/add/$pluginKey",
-  validateSearch: (search: Record<string, unknown>): { url?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { url?: string; preset?: string } => ({
     url: typeof search.url === "string" ? search.url : undefined,
+    preset: typeof search.preset === "string" ? search.preset : undefined,
   }),
   component: () => {
     const { pluginKey } = sourcesAddRoute.useParams();
-    const { url } = sourcesAddRoute.useSearch();
-    return <SourcesAddPage pluginKey={pluginKey} url={url} />;
+    const { url, preset } = sourcesAddRoute.useSearch();
+    return (
+      <SourcesAddPage pluginKey={pluginKey} url={url} preset={preset} />
+    );
   },
 });
 

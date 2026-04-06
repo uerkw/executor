@@ -26,8 +26,9 @@ const sourcePlugins: SourcePlugin[] = [
 export function SourcesAddPage(props: {
   pluginKey: string;
   url?: string;
+  preset?: string;
 }) {
-  const { pluginKey, url } = props;
+  const { pluginKey, url, preset } = props;
   const scopeId = useScope();
   const refreshSources = useAtomRefresh(sourcesAtom(scopeId));
   const navigate = useNavigate();
@@ -62,9 +63,14 @@ export function SourcesAddPage(props: {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 py-10 lg:px-10 lg:py-14">
-        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+        <Suspense
+          fallback={
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          }
+        >
           <AddComponent
             initialUrl={url}
+            initialPreset={preset}
             onComplete={() => {
               refreshSources();
               void navigate({ to: "/" });

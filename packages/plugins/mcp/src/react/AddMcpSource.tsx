@@ -1,4 +1,4 @@
-import { useReducer, useCallback, useEffect, useRef } from "react";
+import { useReducer, useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect-atom/atom-react";
 
 import { useScope } from "@executor/react";
@@ -8,9 +8,19 @@ import { Label } from "@executor/ui/components/label";
 import { Badge } from "@executor/ui/components/badge";
 import { Spinner } from "@executor/ui/components/spinner";
 import { probeMcpEndpoint, addMcpSource, startMcpOAuth } from "./atoms";
+import { mcpPresets, type McpPreset } from "../sdk/presets";
 
 // ---------------------------------------------------------------------------
-// State machine
+// Preset lookup
+// ---------------------------------------------------------------------------
+
+function findPreset(id: string | undefined): McpPreset | undefined {
+  if (!id) return undefined;
+  return mcpPresets.find((p) => p.id === id);
+}
+
+// ---------------------------------------------------------------------------
+// State machine (remote flow)
 // ---------------------------------------------------------------------------
 
 type OAuthTokens = {
@@ -59,7 +69,6 @@ const init: State = { step: "url", url: "" };
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "set-url":
-      // Changing URL resets everything
       return { step: "url", url: action.url };
 
     case "probe-start":
@@ -108,7 +117,6 @@ function reducer(state: State, action: Action): State {
 
     case "retry": {
       if (state.step !== "error") return state;
-      // Go back to probed if we have a probe, otherwise URL entry
       return state.probe
         ? state.tokens
           ? { step: "oauth-done", url: state.url, probe: state.probe, tokens: state.tokens }
@@ -165,10 +173,38 @@ export default function AddMcpSource(props: {
   onComplete: () => void;
   onCancel: () => void;
   initialUrl?: string;
+  initialPreset?: string;
 }) {
+  const preset = findPreset(props.initialPreset);
+  const isStdioPreset = preset?.transport === "stdio";
+
+  const [transport, setTransport] = useState<"remote" | "stdio">(
+    isStdioPreset ? "stdio" : "remote",
+  );
+
+  // --- Stdio state ---
+  const [stdioCommand, setStdioCommand] = useState(
+    isStdioPreset ? preset.command : "",
+  );
+  const [stdioArgs, setStdioArgs] = useState(
+    isStdioPreset && preset.args ? preset.args.join(" ") : "",
+  );
+  const [stdioEnv, setStdioEnv] = useState("");
+  const [stdioName, setStdioName] = useState(
+    isStdioPreset ? preset.name : "",
+  );
+  const [stdioAdding, setStdioAdding] = useState(false);
+  const [stdioError, setStdioError] = useState<string | null>(null);
+
+  // --- Remote state ---
+  const remoteUrl =
+    !isStdioPreset && preset?.transport === undefined && preset?.url
+      ? preset.url
+      : props.initialUrl ?? "";
+
   const [state, dispatch] = useReducer(
     reducer,
-    props.initialUrl ? { step: "url" as const, url: props.initialUrl } : init,
+    remoteUrl ? { step: "url" as const, url: remoteUrl } : init,
   );
 
   const scopeId = useScope();
@@ -186,7 +222,7 @@ export default function AddMcpSource(props: {
   const canAdd = probe && !needsOAuth && !isAdding && !isOAuthBusy;
   const error = state.step === "error" ? state.error : null;
 
-  // ---- Actions ----
+  // ---- Remote actions ----
 
   const handleProbe = useCallback(async () => {
     dispatch({ type: "probe-start" });
@@ -203,7 +239,7 @@ export default function AddMcpSource(props: {
 
   const autoProbed = useRef(false);
   useEffect(() => {
-    if (props.initialUrl && !autoProbed.current) {
+    if (transport === "remote" && remoteUrl && !autoProbed.current) {
       autoProbed.current = true;
       handleProbe();
     }
@@ -243,7 +279,7 @@ export default function AddMcpSource(props: {
     }
   }, [state.url, doStartOAuth]);
 
-  const handleAdd = useCallback(async () => {
+  const handleAddRemote = useCallback(async () => {
     if (!probe) return;
     dispatch({ type: "add-start" });
     try {
@@ -271,6 +307,54 @@ export default function AddMcpSource(props: {
     }
   }, [probe, tokens, state.url, doAdd, props]);
 
+  // ---- Stdio actions ----
+
+  const parseStdioArgs = (raw: string): string[] => {
+    if (!raw.trim()) return [];
+    const args: string[] = [];
+    const regex = /[^\s"]+|"([^"]*)"/g;
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+      args.push(match[1] ?? match[0]);
+    }
+    return args;
+  };
+
+  const parseStdioEnv = (raw: string): Record<string, string> | undefined => {
+    if (!raw.trim()) return undefined;
+    const env: Record<string, string> = {};
+    for (const line of raw.split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq > 0) {
+        env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+      }
+    }
+    return Object.keys(env).length > 0 ? env : undefined;
+  };
+
+  const handleAddStdio = useCallback(async () => {
+    const cmd = stdioCommand.trim();
+    if (!cmd) return;
+    setStdioAdding(true);
+    setStdioError(null);
+    try {
+      await doAdd({
+        path: { scopeId },
+        payload: {
+          transport: "stdio" as const,
+          name: stdioName.trim() || cmd,
+          command: cmd,
+          args: parseStdioArgs(stdioArgs),
+          env: parseStdioEnv(stdioEnv),
+        },
+      });
+      props.onComplete();
+    } catch (e) {
+      setStdioError(e instanceof Error ? e.message : "Failed to add source");
+      setStdioAdding(false);
+    }
+  }, [stdioCommand, stdioArgs, stdioEnv, stdioName, doAdd, scopeId, props]);
+
   // ---- Render ----
 
   return (
@@ -278,135 +362,237 @@ export default function AddMcpSource(props: {
       <div>
         <h1 className="text-xl font-semibold text-foreground">Add MCP Source</h1>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Connect to a remote MCP server to discover and use its tools.
+          Connect to an MCP server to discover and use its tools.
         </p>
       </div>
 
-      {/* URL input */}
-      <section className="space-y-2">
-        <Label>Server URL</Label>
-        <div className="flex gap-2">
-          <Input
-            value={state.url}
-            onChange={(e) => dispatch({ type: "set-url", url: (e.target as HTMLInputElement).value })}
-            placeholder="https://mcp.example.com"
-            className="flex-1 font-mono text-sm"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && state.url.trim() && isIdle) handleProbe();
-            }}
-            disabled={isProbing}
-          />
-          {!probe && (
-            <Button onClick={handleProbe} disabled={!state.url.trim() || isProbing}>
-              {isProbing ? <><Spinner className="size-3.5" /> Connecting…</> : "Connect"}
-            </Button>
-          )}
-        </div>
-        <p className="text-[12px] text-muted-foreground">
-          Supports Streamable HTTP and SSE transports.
-        </p>
-      </section>
+      {/* Transport toggle */}
+      <div className="flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
+        <button
+          type="button"
+          onClick={() => setTransport("remote")}
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            transport === "remote"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Remote
+        </button>
+        <button
+          type="button"
+          onClick={() => setTransport("stdio")}
+          className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            transport === "stdio"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Stdio
+        </button>
+      </div>
 
-      {/* Server info card */}
-      {probe && (
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <svg viewBox="0 0 16 16" className="size-4" fill="none">
-              <rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M5 7h6M5 9.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-card-foreground leading-none">
-              {probe.serverName ?? probe.name}
+      {transport === "remote" ? (
+        <>
+          {/* URL input */}
+          <section className="space-y-2">
+            <Label>Server URL</Label>
+            <div className="flex gap-2">
+              <Input
+                value={state.url}
+                onChange={(e) => dispatch({ type: "set-url", url: (e.target as HTMLInputElement).value })}
+                placeholder="https://mcp.example.com"
+                className="flex-1 font-mono text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && state.url.trim() && isIdle) handleProbe();
+                }}
+                disabled={isProbing}
+              />
+              {!probe && (
+                <Button onClick={handleProbe} disabled={!state.url.trim() || isProbing}>
+                  {isProbing ? <><Spinner className="size-3.5" /> Connecting…</> : "Connect"}
+                </Button>
+              )}
+            </div>
+            <p className="text-[12px] text-muted-foreground">
+              Supports Streamable HTTP and SSE transports.
             </p>
-            <p className="mt-1 text-[12px] text-muted-foreground leading-none">
-              {probe.connected
-                ? `${probe.toolCount} tool${probe.toolCount !== 1 ? "s" : ""} available`
-                : "OAuth required to discover tools"}
-            </p>
-          </div>
-          {probe.connected ? (
-            <Badge variant="outline" className="border-emerald-500/20 bg-emerald-500/10 text-[10px] text-emerald-600 dark:text-emerald-400">
-              Connected
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="border-amber-500/20 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400">
-              OAuth required
-            </Badge>
-          )}
-        </div>
-      )}
+          </section>
 
-      {/* OAuth section */}
-      {probe?.requiresOAuth && !tokens && (
-        <section className="space-y-2.5">
-          {state.step === "probed" && (
-            <Button onClick={handleOAuth} className="w-full" variant="outline">
-              <svg viewBox="0 0 16 16" fill="none" className="mr-1.5 size-3.5">
-                <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1z" stroke="currentColor" strokeWidth="1.2" />
-                <path d="M8 4v4l2.5 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Server info card */}
+          {probe && (
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <svg viewBox="0 0 16 16" className="size-4" fill="none">
+                  <rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.2" />
+                  <path d="M5 7h6M5 9.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-card-foreground leading-none">
+                  {probe.serverName ?? probe.name}
+                </p>
+                <p className="mt-1 text-[12px] text-muted-foreground leading-none">
+                  {probe.connected
+                    ? `${probe.toolCount} tool${probe.toolCount !== 1 ? "s" : ""} available`
+                    : "OAuth required to discover tools"}
+                </p>
+              </div>
+              {probe.connected ? (
+                <Badge variant="outline" className="border-emerald-500/20 bg-emerald-500/10 text-[10px] text-emerald-600 dark:text-emerald-400">
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-amber-500/20 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400">
+                  OAuth required
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* OAuth section */}
+          {probe?.requiresOAuth && !tokens && (
+            <section className="space-y-2.5">
+              {state.step === "probed" && (
+                <Button onClick={handleOAuth} className="w-full" variant="outline">
+                  <svg viewBox="0 0 16 16" fill="none" className="mr-1.5 size-3.5">
+                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1z" stroke="currentColor" strokeWidth="1.2" />
+                    <path d="M8 4v4l2.5 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Sign in with OAuth
+                </Button>
+              )}
+
+              {state.step === "oauth-starting" && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                  <Spinner className="size-3.5" />
+                  <span className="text-xs text-muted-foreground">Starting authorization…</span>
+                </div>
+              )}
+
+              {state.step === "oauth-waiting" && (
+                <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2.5">
+                  <Spinner className="size-3.5 text-blue-500" />
+                  <span className="text-xs text-blue-600 dark:text-blue-400">Waiting for authorization in popup…</span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* OAuth success */}
+          {tokens && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
+              <svg viewBox="0 0 16 16" fill="none" className="size-3.5 text-emerald-500">
+                <path d="M3 8.5l3 3 7-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              Sign in with OAuth
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Authenticated</span>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+                <p className="text-[12px] text-destructive">{error}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => dispatch({ type: "retry" })} className="text-xs">
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {/* Actions */}
+          {(probe || isProbing) && (
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <Button variant="ghost" onClick={props.onCancel} disabled={isAdding}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddRemote} disabled={!canAdd}>
+                {isAdding ? <><Spinner className="size-3.5" /> Adding…</> : "Add source"}
+              </Button>
+            </div>
+          )}
+
+          {/* Cancel when nothing probed yet */}
+          {!probe && !isProbing && (
+            <div className="flex items-center justify-between pt-1">
+              <Button variant="ghost" onClick={props.onCancel}>Cancel</Button>
+              <div />
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Stdio form */}
+          <section className="space-y-4">
+            <div className="space-y-2">
+              <Label>Command</Label>
+              <Input
+                value={stdioCommand}
+                onChange={(e) => setStdioCommand((e.target as HTMLInputElement).value)}
+                placeholder="npx"
+                className="font-mono text-sm"
+              />
+              <p className="text-[12px] text-muted-foreground">
+                The executable to run (e.g. npx, uvx, node).
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Arguments</Label>
+              <Input
+                value={stdioArgs}
+                onChange={(e) => setStdioArgs((e.target as HTMLInputElement).value)}
+                placeholder="-y chrome-devtools-mcp@latest"
+                className="font-mono text-sm"
+              />
+              <p className="text-[12px] text-muted-foreground">
+                Space-separated arguments passed to the command.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                value={stdioName}
+                onChange={(e) => setStdioName((e.target as HTMLInputElement).value)}
+                placeholder="My MCP Server"
+                className="text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Environment variables <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <textarea
+                value={stdioEnv}
+                onChange={(e) => setStdioEnv(e.target.value)}
+                placeholder={"KEY=value\nANOTHER=value"}
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <p className="text-[12px] text-muted-foreground">
+                One per line, KEY=value format.
+              </p>
+            </div>
+          </section>
+
+          {/* Stdio error */}
+          {stdioError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-[12px] text-destructive">{stdioError}</p>
+            </div>
+          )}
+
+          {/* Stdio actions */}
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <Button variant="ghost" onClick={props.onCancel} disabled={stdioAdding}>
+              Cancel
             </Button>
-          )}
-
-          {state.step === "oauth-starting" && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-              <Spinner className="size-3.5" />
-              <span className="text-xs text-muted-foreground">Starting authorization…</span>
-            </div>
-          )}
-
-          {state.step === "oauth-waiting" && (
-            <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2.5">
-              <Spinner className="size-3.5 text-blue-500" />
-              <span className="text-xs text-blue-600 dark:text-blue-400">Waiting for authorization in popup…</span>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* OAuth success */}
-      {tokens && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
-          <svg viewBox="0 0 16 16" fill="none" className="size-3.5 text-emerald-500">
-            <path d="M3 8.5l3 3 7-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Authenticated</span>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="space-y-2">
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
-            <p className="text-[12px] text-destructive">{error}</p>
+            <Button onClick={handleAddStdio} disabled={!stdioCommand.trim() || stdioAdding}>
+              {stdioAdding ? <><Spinner className="size-3.5" /> Adding…</> : "Add source"}
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={() => dispatch({ type: "retry" })} className="text-xs">
-            Try again
-          </Button>
-        </div>
-      )}
-
-      {/* Actions */}
-      {(probe || isProbing) && (
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <Button variant="ghost" onClick={props.onCancel} disabled={isAdding}>
-            Cancel
-          </Button>
-          <Button onClick={handleAdd} disabled={!canAdd}>
-            {isAdding ? <><Spinner className="size-3.5" /> Adding…</> : "Add source"}
-          </Button>
-        </div>
-      )}
-
-      {/* Cancel when nothing probed yet */}
-      {!probe && !isProbing && (
-        <div className="flex items-center justify-between pt-1">
-          <Button variant="ghost" onClick={props.onCancel}>Cancel</Button>
-          <div />
-        </div>
+        </>
       )}
     </div>
   );
