@@ -3,7 +3,11 @@
   "version": "1.4.0",
   "private": true,
   "description": "Executor desktop app",
-  "author": "Rhys Sullivan",
+  "author": {
+    "name": "Rhys Sullivan",
+    "email": "39114868+RhysSullivan@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/RhysSullivan/executor",
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/dev.js",
