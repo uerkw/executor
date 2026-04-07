@@ -3,10 +3,10 @@
 // ---------------------------------------------------------------------------
 
 import { Effect } from "effect";
-import { eq, and, or, ilike } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
+import { eq, and } from "drizzle-orm";
 
 import type { ToolId } from "@executor/sdk";
+import type { DrizzleDb } from "./types";
 import { ToolNotFoundError, ToolInvocationError, ToolRegistration } from "@executor/sdk";
 import { buildToolTypeScriptPreview } from "@executor/sdk";
 import type {
@@ -19,7 +19,7 @@ import type {
 import { tools, toolDefinitions } from "./schema";
 
 export const makePgToolRegistry = (
-  db: PgDatabase<any, any, any>,
+  db: DrizzleDb,
   teamId: string,
 ) => {
   const runtimeTools = new Map<string, ToolRegistration>();

@@ -46,7 +46,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute(
-    sql`TRUNCATE plugin_kv, policies, secrets, tool_definitions, tools, sources, sessions, invitations, team_members, teams, users`,
+    sql`TRUNCATE plugin_kv, policies, secrets, tool_definitions, tools, sources, invitations, team_members, teams, users`,
   );
 });
 
@@ -408,24 +408,4 @@ describe("UserStore", () => {
     expect(await store.getPendingInvitations("new@example.com")).toHaveLength(0);
   });
 
-  it("session management", async () => {
-    const store = makeUserStore(db);
-    await store.upsertUser({ id: "u1", email: "a@example.com" });
-    const team = await store.createTeam("Team");
-
-    const session = await store.createSession("u1", team.id, new Date(Date.now() + 3600_000));
-    expect((await store.getSession(session.id))!.userId).toBe("u1");
-
-    await store.deleteSession(session.id);
-    expect(await store.getSession(session.id)).toBeNull();
-  });
-
-  it("expired sessions return null", async () => {
-    const store = makeUserStore(db);
-    await store.upsertUser({ id: "u1", email: "a@example.com" });
-    const team = await store.createTeam("Team");
-
-    const session = await store.createSession("u1", team.id, new Date(Date.now() - 1000));
-    expect(await store.getSession(session.id)).toBeNull();
-  });
 });

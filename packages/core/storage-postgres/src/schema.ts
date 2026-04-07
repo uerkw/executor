@@ -58,14 +58,6 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull(),
-  teamId: text("team_id").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
 // ---------------------------------------------------------------------------
 // Domain data — all team-scoped
 // ---------------------------------------------------------------------------

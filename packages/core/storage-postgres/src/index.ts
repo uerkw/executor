@@ -17,9 +17,9 @@
 //
 // ---------------------------------------------------------------------------
 
-import type { PgDatabase } from "drizzle-orm/pg-core";
 import { ScopeId, makeInMemorySourceRegistry } from "@executor/sdk";
 import type { Scope, ExecutorConfig, ExecutorPlugin } from "@executor/sdk";
+import type { DrizzleDb } from "./types";
 
 import { makePgToolRegistry } from "./tool-registry";
 import { makePgSecretStore } from "./secret-store";
@@ -30,8 +30,9 @@ export { makePgToolRegistry } from "./tool-registry";
 export { makePgSecretStore } from "./secret-store";
 export { makePgPolicyEngine } from "./policy-engine";
 export { makeUserStore } from "./user-store";
-export type { User, Team, TeamMember, Invitation, Session } from "./user-store";
+export type { User, Team, TeamMember, Invitation } from "./user-store";
 export { encrypt, decrypt } from "./crypto";
+export type { DrizzleDb } from "./types";
 export * from "./schema";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ export * from "./schema";
 export const makePgConfig = <
   const TPlugins extends readonly ExecutorPlugin<string, object>[] = [],
 >(
-  db: PgDatabase<any, any, any>,
+  db: DrizzleDb,
   options: {
     readonly teamId: string;
     readonly teamName: string;

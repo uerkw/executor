@@ -3,17 +3,16 @@
 // ---------------------------------------------------------------------------
 
 import { eq, and } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
 
-import { users, teams, teamMembers, invitations, sessions } from "./schema";
+import { users, teams, teamMembers, invitations } from "./schema";
+import type { DrizzleDb } from "./types";
 
 export type User = typeof users.$inferSelect;
 export type Team = typeof teams.$inferSelect;
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
-export type Session = typeof sessions.$inferSelect;
 
-export const makeUserStore = (db: PgDatabase<any, any, any>) => ({
+export const makeUserStore = (db: DrizzleDb) => ({
   // --- Users ---
 
   upsertUser: async (user: { id: string; email: string; name?: string; avatarUrl?: string }) => {
@@ -133,29 +132,4 @@ export const makeUserStore = (db: PgDatabase<any, any, any>) => ({
     return updated ?? null;
   },
 
-  // --- Sessions ---
-
-  createSession: async (userId: string, teamId: string, expiresAt: Date) => {
-    const [session] = await db
-      .insert(sessions)
-      .values({ userId, teamId, expiresAt })
-      .returning();
-    return session!;
-  },
-
-  getSession: async (sessionId: string) => {
-    const rows = await db.select().from(sessions).where(eq(sessions.id, sessionId));
-    const session = rows[0];
-    if (!session) return null;
-    if (session.expiresAt < new Date()) return null;
-    return session;
-  },
-
-  deleteSession: async (sessionId: string) => {
-    await db.delete(sessions).where(eq(sessions.id, sessionId));
-  },
-
-  deleteUserSessions: async (userId: string) => {
-    await db.delete(sessions).where(eq(sessions.userId, userId));
-  },
 });

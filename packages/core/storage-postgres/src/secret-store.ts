@@ -4,9 +4,9 @@
 
 import { Effect, Option } from "effect";
 import { eq, and } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
 
 import { SecretRef, SecretId, ScopeId } from "@executor/sdk";
+import type { DrizzleDb } from "./types";
 import { SecretNotFoundError, SecretResolutionError } from "@executor/sdk";
 import type { SecretProvider, SetSecretInput } from "@executor/sdk";
 
@@ -14,7 +14,7 @@ import { secrets } from "./schema";
 import { encrypt, decrypt } from "./crypto";
 
 export const makePgSecretStore = (
-  db: PgDatabase<any, any, any>,
+  db: DrizzleDb,
   teamId: string,
   encryptionKey: string,
 ) => {
@@ -99,14 +99,15 @@ export const makePgSecretStore = (
 
         const row = rows[0];
         if (row) {
-          try {
-            return decrypt(row.encryptedValue, row.iv, encryptionKey);
-          } catch {
-            return yield* new SecretResolutionError({
-              secretId,
-              message: `Failed to decrypt secret "${secretId}"`,
-            });
-          }
+          const decrypted = yield* Effect.try({
+            try: () => decrypt(row.encryptedValue, row.iv, encryptionKey),
+            catch: () =>
+              new SecretResolutionError({
+                secretId,
+                message: `Failed to decrypt secret "${secretId}"`,
+              }),
+          });
+          return decrypted;
         }
 
         // Fall back to registered providers

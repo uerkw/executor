@@ -10,7 +10,7 @@
     "@effect/sql": "catalog:",
     "@effect/sql-pg": "^0.28.0",
     "@executor/sdk": "workspace:*",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "pg": "^8.16.0"
   },

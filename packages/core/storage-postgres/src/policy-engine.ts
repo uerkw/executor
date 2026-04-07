@@ -4,15 +4,15 @@
 
 import { Effect } from "effect";
 import { eq, and } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
 
 import { Policy, PolicyId, ScopeId } from "@executor/sdk";
+import type { DrizzleDb } from "./types";
 import type { PolicyCheckInput } from "@executor/sdk";
 
 import { policies } from "./schema";
 
 export const makePgPolicyEngine = (
-  db: PgDatabase<any, any, any>,
+  db: DrizzleDb,
   teamId: string,
 ) => {
   let counter = 0;

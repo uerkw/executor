@@ -4,12 +4,12 @@
 
 import { Effect } from "effect";
 import { eq, and } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { Kv } from "@executor/sdk";
 
 import { pluginKv } from "./schema";
+import type { DrizzleDb } from "./types";
 
-export const makePgKv = (db: PgDatabase<any, any, any>, teamId: string): Kv => ({
+export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
   get: (namespace, key) =>
     Effect.tryPromise(async () => {
       const rows = await db
