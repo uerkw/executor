@@ -9,7 +9,7 @@ import {
   HttpMiddleware,
   HttpServer,
 } from "@effect/platform";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, Scope } from "effect";
 import { setCookie } from "@tanstack/react-start/server";
 
 import { addGroup, CoreHandlers, ExecutorService, ExecutionEngineService } from "@executor/api";
@@ -66,16 +66,18 @@ const SharedServices = Layer.mergeAll(
   HttpServer.layerContext,
 );
 
-const cloudRuntime = ManagedRuntime.make(SharedServices);
+const sharedServicesScope = Effect.runSync(Scope.make());
+const SharedServicesMemoized = Effect.runSync(
+  Layer.memoize(SharedServices).pipe(
+    Scope.extend(sharedServicesScope),
+  ),
+);
 
 const publicApiHandler = HttpApiBuilder.toWebHandler(
   PublicCloudApiLive.pipe(
-    Layer.provideMerge(SharedServices),
+    Layer.provideMerge(SharedServicesMemoized),
   ),
-  {
-    middleware: HttpMiddleware.logger,
-    memoMap: cloudRuntime.memoMap,
-  },
+  { middleware: HttpMiddleware.logger },
 );
 
 const parseCookie = (cookieHeader: string | null, name: string): string | null => {
@@ -181,21 +183,18 @@ const createProtectedHandler = (
       Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
       Layer.provideMerge(ProtectedCloudApiLive),
       Layer.provideMerge(requestServices),
-      Layer.provideMerge(SharedServices),
+      Layer.provideMerge(SharedServicesMemoized),
     ),
-    {
-      middleware: HttpMiddleware.logger,
-      memoMap: cloudRuntime.memoMap,
-    },
+    { middleware: HttpMiddleware.logger },
   );
 };
-
-type ProtectedHandler = ReturnType<typeof createProtectedHandler>;
 
 const closeExecutor = (executor: TeamExecutor) =>
   executor.close().pipe(
     Effect.orElseSucceed(() => undefined),
   );
+
+type ProtectedHandler = ReturnType<typeof createProtectedHandler>;
 
 const disposeProtectedHandler = (handler: ProtectedHandler) =>
   Effect.promise(() => handler.dispose()).pipe(
@@ -242,8 +241,9 @@ export const handleApiRequest = async (request: Request): Promise<Response> => {
     return response;
   });
 
-  return cloudRuntime.runPromise(
+  return Effect.runPromise(
     requestProgram.pipe(
+      Effect.provide(SharedServicesMemoized),
       Effect.scoped,
     ),
   );

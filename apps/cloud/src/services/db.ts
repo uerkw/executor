@@ -46,7 +46,7 @@ const createDbResource = async (): Promise<DbResource> => {
   return {
     db,
     close: async () => {
-      const closeClient = (client as { close?: () => Promise<void> }).close;
+      const closeClient = client.close;
       if (closeClient) {
         await closeClient.call(client);
       }
