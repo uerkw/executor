@@ -194,9 +194,10 @@ const callCommand = Command.make(
       if (result.status === "completed") {
         if (result.isError) {
           console.error(result.text);
-          process.exitCode = 1;
+          process.exit(1);
         } else {
           console.log(result.text);
+          process.exit(0);
         }
       } else {
         console.log(result.text);
@@ -206,6 +207,7 @@ const callCommand = Command.make(
             `\nTo resume:\n  ${cliPrefix} resume --execution-id ${executionId} --action accept`,
           );
         }
+        process.exit(0);
       }
     }),
 ).pipe(Command.withDescription("Execute code against the local executor"));
@@ -233,9 +235,10 @@ const resumeCommand = Command.make(
 
       if (result.isError) {
         console.error(result.text);
-        process.exitCode = 1;
+        process.exit(1);
       } else {
         console.log(result.text);
+        process.exit(0);
       }
     }),
 ).pipe(Command.withDescription("Resume a paused execution"));
