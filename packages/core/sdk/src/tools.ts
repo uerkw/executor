@@ -36,6 +36,8 @@ export class ToolSchema extends Schema.Class<ToolSchema>("ToolSchema")({
   typeScriptDefinitions: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.String }),
   ),
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
 }) {}
 
 export class ToolInvocationResult extends Schema.Class<ToolInvocationResult>(

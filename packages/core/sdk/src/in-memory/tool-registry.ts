@@ -9,7 +9,7 @@ import type {
   InvokeOptions,
   RuntimeToolHandler,
 } from "../tools";
-import { normalizeRefs } from "../schema-refs";
+import { normalizeRefs, reattachDefs } from "../schema-refs";
 import { buildToolTypeScriptPreview } from "../schema-types";
 
 export const makeInMemoryToolRegistry = () => {
@@ -68,11 +68,19 @@ export const makeInMemoryToolRegistry = () => {
             inputSchema: t.inputSchema,
             outputSchema: t.outputSchema,
             defs,
+            options: {
+              maxLength: Infinity,
+              maxProperties: Infinity,
+              maxCompositeMembers: Infinity,
+              maxRefDepth: 20,
+            },
           });
 
           return {
             id: t.id,
             ...typeScriptPreview,
+            inputSchema: t.inputSchema ? reattachDefs(t.inputSchema, defs) : undefined,
+            outputSchema: t.outputSchema ? reattachDefs(t.outputSchema, defs) : undefined,
           };
         }),
       ),

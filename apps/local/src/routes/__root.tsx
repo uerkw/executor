@@ -17,6 +17,9 @@ export const Route = createRootRoute({
       { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500&display=swap" },
       { rel: "stylesheet", href: appCss },
     ],
+    scripts: import.meta.env.DEV
+      ? [{ src: "https://ui.sh/ui-picker.js" }]
+      : [],
   }),
   component: RootComponent,
   shellComponent: RootDocument,

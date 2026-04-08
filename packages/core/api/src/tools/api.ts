@@ -33,6 +33,8 @@ const ToolSchemaResponse = Schema.Struct({
   typeScriptDefinitions: Schema.optional(
     Schema.Record({ key: Schema.String, value: Schema.String }),
   ),
+  inputSchema: Schema.optional(Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Unknown),
 });
 
 // ---------------------------------------------------------------------------

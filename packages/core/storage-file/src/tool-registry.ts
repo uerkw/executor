@@ -12,7 +12,7 @@ import type {
   InvokeOptions,
   RuntimeToolHandler,
 } from "@executor/sdk";
-import { buildToolTypeScriptPreview } from "@executor/sdk";
+import { buildToolTypeScriptPreview, reattachDefs } from "@executor/sdk";
 
 // ---------------------------------------------------------------------------
 // Serialization — leverage ToolRegistration Schema.Class directly
@@ -101,11 +101,19 @@ export const makeKvToolRegistry = (
           inputSchema: t.inputSchema,
           outputSchema: t.outputSchema,
           defs,
+          options: {
+            maxLength: Infinity,
+            maxProperties: Infinity,
+            maxCompositeMembers: Infinity,
+            maxRefDepth: 20,
+          },
         });
 
         return {
           id: t.id,
           ...typeScriptPreview,
+          inputSchema: t.inputSchema ? reattachDefs(t.inputSchema, defs) : undefined,
+          outputSchema: t.outputSchema ? reattachDefs(t.outputSchema, defs) : undefined,
         };
       }),
 

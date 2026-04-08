@@ -2,6 +2,7 @@ import {
   HttpApiBuilder,
   HttpApiSwagger,
   HttpMiddleware,
+  HttpRouter,
   HttpServer,
 } from "@effect/platform";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
@@ -76,6 +77,7 @@ export const createServerHandlers = async (): Promise<ServerHandlers> => {
       Layer.provideMerge(Layer.succeed(ExecutorService, executor)),
       Layer.provideMerge(Layer.succeed(ExecutionEngineService, engine)),
       Layer.provideMerge(HttpServer.layerContext),
+      Layer.provideMerge(HttpRouter.setRouterConfig({ maxParamLength: 1000 })),
     ),
     { middleware: HttpMiddleware.logger },
   );

@@ -7,6 +7,7 @@ import {
   HttpApiBuilder,
   HttpApiSwagger,
   HttpMiddleware,
+  HttpRouter,
   HttpServer,
 } from "@effect/platform";
 import { Effect, Layer, Scope } from "effect";
@@ -76,6 +77,7 @@ const SharedServicesMemoized = Effect.runSync(
 const publicApiHandler = HttpApiBuilder.toWebHandler(
   PublicCloudApiLive.pipe(
     Layer.provideMerge(SharedServicesMemoized),
+    Layer.provideMerge(HttpRouter.setRouterConfig({ maxParamLength: 1000 })),
   ),
   { middleware: HttpMiddleware.logger },
 );
@@ -184,6 +186,7 @@ const createProtectedHandler = (
       Layer.provideMerge(ProtectedCloudApiLive),
       Layer.provideMerge(requestServices),
       Layer.provideMerge(SharedServicesMemoized),
+      Layer.provideMerge(HttpRouter.setRouterConfig({ maxParamLength: 1000 })),
     ),
     { middleware: HttpMiddleware.logger },
   );
