@@ -1,20 +1,20 @@
 {
-  "name": "@executor/execution",
+  "name": "@executor/runtime-secure-exec",
   "private": true,
   "type": "module",
-  "version": "1.4.0",
+  "version": "0.0.1",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "bunx tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@executor/sdk": "workspace:*",
     "@executor/codemode-core": "workspace:*",
-    "@executor/runtime-secure-exec": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "secure-exec": "^0.2.1"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
