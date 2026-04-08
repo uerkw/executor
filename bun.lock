@@ -178,6 +178,18 @@
         "vitest": "catalog:",
       },
     },
+    "packages/core/env": {
+      "name": "@executor/env",
+      "version": "1.4.0",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "packages/core/execution": {
       "name": "@executor/execution",
       "version": "1.4.0",
@@ -885,6 +897,8 @@
     "@executor/config": ["@executor/config@workspace:packages/core/config"],
 
     "@executor/desktop": ["@executor/desktop@workspace:apps/desktop"],
+
+    "@executor/env": ["@executor/env@workspace:packages/core/env"],
 
     "@executor/execution": ["@executor/execution@workspace:packages/core/execution"],
 
