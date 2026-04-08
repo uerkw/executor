@@ -45,7 +45,7 @@
     "vite": "catalog:"
   },
   "scripts": {
-    "dev": "portless run --name executor-local vite dev",
+    "dev": "portless run --name executor-local bunx --bun vite dev",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   }
