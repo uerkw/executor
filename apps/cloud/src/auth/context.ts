@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { makeUserStore } from "../services/user-store";
 import { DbService } from "../services/db";
-import { UserStoreError } from "./errors";
+import { UserStoreError, withServiceLogging } from "./errors";
 
 // AuthContext is defined in ./middleware.ts to keep middleware-related types together.
 export { AuthContext } from "./middleware";
@@ -12,24 +12,14 @@ export { AuthContext } from "./middleware";
 
 type RawStore = ReturnType<typeof makeUserStore>;
 
-const makeService = (store: RawStore) => {
-  const use = <A>(fn: (s: RawStore) => Promise<A>) =>
-    Effect.tryPromise({
-      try: () => fn(store),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.tapError((cause) =>
-        Effect.sync(() => {
-          // eslint-disable-next-line no-console
-          console.error("[user_store] query failed:", cause);
-        }),
-      ),
-      Effect.mapError(() => new UserStoreError()),
-      Effect.withSpan("user_store"),
-    );
-
-  return { use };
-};
+const makeService = (store: RawStore) => ({
+  use: <A>(fn: (s: RawStore) => Promise<A>) =>
+    withServiceLogging(
+      "user_store",
+      () => new UserStoreError(),
+      Effect.tryPromise({ try: () => fn(store), catch: (e) => e }),
+    ),
+});
 
 type UserStoreServiceType = ReturnType<typeof makeService>;
 

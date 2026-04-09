@@ -4,7 +4,7 @@
 
 import { Context, Effect, Layer } from "effect";
 import { WorkOS } from "@workos-inc/node/worker";
-import { WorkOSError } from "./errors";
+import { WorkOSError, withServiceLogging } from "./errors";
 import { server } from "../env";
 
 const COOKIE_NAME = "wos-session";
@@ -26,18 +26,10 @@ const make = Effect.gen(function* () {
   const workos = new WorkOS({ apiKey, clientId });
 
   const use = <A>(fn: (wos: WorkOS) => Promise<A>) =>
-    Effect.tryPromise({
-      try: () => fn(workos),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.tapError((cause) =>
-        Effect.sync(() => {
-          // eslint-disable-next-line no-console
-          console.error("[workos] call failed:", cause);
-        }),
-      ),
-      Effect.mapError(() => new WorkOSError()),
-      Effect.withSpan("workos"),
+    withServiceLogging(
+      "workos",
+      () => new WorkOSError(),
+      Effect.tryPromise({ try: () => fn(workos), catch: (e) => e }),
     );
 
   const authenticateSealedSession = (sessionData: string) =>
