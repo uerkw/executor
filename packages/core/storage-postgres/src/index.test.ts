@@ -27,8 +27,8 @@ import * as schema from "./schema";
 // Test setup — in-memory Postgres via PGlite + Drizzle migrations
 // ---------------------------------------------------------------------------
 
-const TEST_TEAM_ID = "test-team-1";
-const TEST_TEAM_NAME = "Test Team";
+const TEST_ORG_ID = "test-org-1";
+const TEST_ORG_NAME = "Test Org";
 const TEST_ENCRYPTION_KEY = "test-encryption-key-for-unit-tests";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +45,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute(
-    sql`TRUNCATE plugin_kv, policies, secrets, tool_definitions, tools, sources, invitations, team_members, teams, users`,
+    sql`TRUNCATE plugin_kv, policies, secrets, tool_definitions, tools, sources`,
   );
 });
 
@@ -59,17 +59,17 @@ afterAll(async () => {
 
 const makeTestExecutor = () => {
   const config = makePgConfig(db, {
-    teamId: TEST_TEAM_ID,
-    teamName: TEST_TEAM_NAME,
+    organizationId: TEST_ORG_ID,
+    organizationName: TEST_ORG_NAME,
     encryptionKey: TEST_ENCRYPTION_KEY,
   });
   return createExecutor(config);
 };
 
-const makeTestExecutorForTeam = (teamId: string, teamName: string) => {
+const makeTestExecutorForOrg = (organizationId: string, organizationName: string) => {
   const config = makePgConfig(db, {
-    teamId,
-    teamName,
+    organizationId,
+    organizationName,
     encryptionKey: TEST_ENCRYPTION_KEY,
   });
   return createExecutor(config);
@@ -80,11 +80,11 @@ const makeTestExecutorForTeam = (teamId: string, teamName: string) => {
 // ---------------------------------------------------------------------------
 
 describe("Executor with Postgres storage", () => {
-  it.effect("scope reflects team", () =>
+  it.effect("scope reflects organization", () =>
     Effect.gen(function* () {
       const executor = yield* makeTestExecutor();
-      expect(executor.scope.id).toBe(TEST_TEAM_ID);
-      expect(executor.scope.name).toBe(TEST_TEAM_NAME);
+      expect(executor.scope.id).toBe(TEST_ORG_ID);
+      expect(executor.scope.name).toBe(TEST_ORG_NAME);
     }),
   );
 
@@ -96,8 +96,8 @@ describe("Executor with Postgres storage", () => {
 
       // Register tools via the underlying registry (plugins do this)
       const config = makePgConfig(db, {
-        teamId: TEST_TEAM_ID,
-        teamName: TEST_TEAM_NAME,
+        organizationId: TEST_ORG_ID,
+        organizationName: TEST_ORG_NAME,
         encryptionKey: TEST_ENCRYPTION_KEY,
       });
       yield* config.tools.register([
@@ -129,8 +129,8 @@ describe("Executor with Postgres storage", () => {
     Effect.gen(function* () {
       const executor = yield* makeTestExecutor();
       const config = makePgConfig(db, {
-        teamId: TEST_TEAM_ID,
-        teamName: TEST_TEAM_NAME,
+        organizationId: TEST_ORG_ID,
+        organizationName: TEST_ORG_NAME,
         encryptionKey: TEST_ENCRYPTION_KEY,
       });
       yield* config.tools.register([
@@ -208,7 +208,7 @@ describe("Executor with Postgres storage", () => {
 
   it.effect("encryption with wrong key fails to resolve", () =>
     Effect.gen(function* () {
-      const executor1 = yield* makeTestExecutorForTeam(TEST_TEAM_ID, TEST_TEAM_NAME);
+      const executor1 = yield* makeTestExecutorForOrg(TEST_ORG_ID, TEST_ORG_NAME);
       yield* executor1.secrets.set({
         id: SecretId.make("enc-test"),
         name: "Encrypted",
@@ -217,8 +217,8 @@ describe("Executor with Postgres storage", () => {
 
       // Create executor with different encryption key
       const config2 = makePgConfig(db, {
-        teamId: TEST_TEAM_ID,
-        teamName: TEST_TEAM_NAME,
+        organizationId: TEST_ORG_ID,
+        organizationName: TEST_ORG_NAME,
         encryptionKey: "wrong-key",
       });
       const executor2 = yield* createExecutor(config2);
@@ -236,7 +236,7 @@ describe("Executor with Postgres storage", () => {
     Effect.gen(function* () {
       const executor = yield* makeTestExecutor();
       const policy = yield* executor.policies.add({
-        scopeId: ScopeId.make(TEST_TEAM_ID),
+        scopeId: ScopeId.make(TEST_ORG_ID),
         name: "allow-t1",
         action: "allow" as const,
         match: { toolPattern: "t1" },
@@ -253,7 +253,7 @@ describe("Executor with Postgres storage", () => {
     Effect.gen(function* () {
       const executor = yield* makeTestExecutor();
       const policy = yield* executor.policies.add({
-        scopeId: ScopeId.make(TEST_TEAM_ID),
+        scopeId: ScopeId.make(TEST_ORG_ID),
         name: "allow-t1",
         action: "allow" as const,
         match: { toolPattern: "t1" },
@@ -267,16 +267,16 @@ describe("Executor with Postgres storage", () => {
 
   // --- Team isolation ---
 
-  it.effect("team isolation — tools", () =>
+  it.effect("organization isolation — tools", () =>
     Effect.gen(function* () {
-      const configA = makePgConfig(db, { teamId: "team-a", teamName: "Team A", encryptionKey: TEST_ENCRYPTION_KEY });
-      const configB = makePgConfig(db, { teamId: "team-b", teamName: "Team B", encryptionKey: TEST_ENCRYPTION_KEY });
+      const configA = makePgConfig(db, { organizationId: "org-a", organizationName: "Org A", encryptionKey: TEST_ENCRYPTION_KEY });
+      const configB = makePgConfig(db, { organizationId: "org-b", organizationName: "Org B", encryptionKey: TEST_ENCRYPTION_KEY });
 
       yield* configA.tools.register([
-        new ToolRegistration({ id: ToolId.make("t1"), pluginKey: "test", sourceId: "src", name: "team-a-tool" }),
+        new ToolRegistration({ id: ToolId.make("t1"), pluginKey: "test", sourceId: "src", name: "org-a-tool" }),
       ]);
       yield* configB.tools.register([
-        new ToolRegistration({ id: ToolId.make("t1"), pluginKey: "test", sourceId: "src", name: "team-b-tool" }),
+        new ToolRegistration({ id: ToolId.make("t1"), pluginKey: "test", sourceId: "src", name: "org-b-tool" }),
       ]);
 
       const executorA = yield* createExecutor(configA);
@@ -284,18 +284,18 @@ describe("Executor with Postgres storage", () => {
 
       const aTools = yield* executorA.tools.list();
       expect(aTools).toHaveLength(1);
-      expect(aTools[0]!.name).toBe("team-a-tool");
+      expect(aTools[0]!.name).toBe("org-a-tool");
 
       const bTools = yield* executorB.tools.list();
       expect(bTools).toHaveLength(1);
-      expect(bTools[0]!.name).toBe("team-b-tool");
+      expect(bTools[0]!.name).toBe("org-b-tool");
     }),
   );
 
-  it.effect("team isolation — secrets", () =>
+  it.effect("organization isolation — secrets", () =>
     Effect.gen(function* () {
-      const executorA = yield* makeTestExecutorForTeam("team-a", "Team A");
-      const executorB = yield* makeTestExecutorForTeam("team-b", "Team B");
+      const executorA = yield* makeTestExecutorForOrg("org-a", "Org A");
+      const executorB = yield* makeTestExecutorForOrg("org-b", "Org B");
 
       yield* executorA.secrets.set({
         id: SecretId.make("shared-id"),
@@ -317,7 +317,7 @@ describe("Executor with Postgres storage", () => {
 
   it.effect("plugin KV works via scopeKv", () =>
     Effect.gen(function* () {
-      const kv = makePgKv(db, TEST_TEAM_ID);
+      const kv = makePgKv(db, TEST_ORG_ID);
       const scoped = scopeKv(kv, "my-plugin");
 
       yield* scoped.set("k1", "v1");
@@ -331,16 +331,16 @@ describe("Executor with Postgres storage", () => {
     }),
   );
 
-  it.effect("plugin KV team isolation", () =>
+  it.effect("plugin KV organization isolation", () =>
     Effect.gen(function* () {
-      const kv1 = makePgKv(db, "team-a");
-      const kv2 = makePgKv(db, "team-b");
+      const kv1 = makePgKv(db, "org-a");
+      const kv2 = makePgKv(db, "org-b");
 
-      yield* kv1.set("ns", "key", "team-a-value");
-      yield* kv2.set("ns", "key", "team-b-value");
+      yield* kv1.set("ns", "key", "org-a-value");
+      yield* kv2.set("ns", "key", "org-b-value");
 
-      expect(yield* kv1.get("ns", "key")).toBe("team-a-value");
-      expect(yield* kv2.get("ns", "key")).toBe("team-b-value");
+      expect(yield* kv1.get("ns", "key")).toBe("org-a-value");
+      expect(yield* kv2.get("ns", "key")).toBe("org-b-value");
     }),
   );
 

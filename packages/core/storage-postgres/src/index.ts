@@ -12,7 +12,7 @@
 //   import * as schema from "@executor/storage-postgres/schema"
 //
 //   const db = drizzle(pool, { schema })
-//   const config = makePgConfig(db, { teamId: "...", teamName: "..." })
+//   const config = makePgConfig(db, { organizationId: "...", organizationName: "..." })
 //   const executor = yield* createExecutor(config)
 //
 // ---------------------------------------------------------------------------
@@ -41,24 +41,24 @@ export const makePgConfig = <
 >(
   db: DrizzleDb,
   options: {
-    readonly teamId: string;
-    readonly teamName: string;
+    readonly organizationId: string;
+    readonly organizationName: string;
     readonly encryptionKey: string;
     readonly plugins?: TPlugins;
   },
 ): ExecutorConfig<TPlugins> => {
   const scope: Scope = {
-    id: ScopeId.make(options.teamId),
-    name: options.teamName,
+    id: ScopeId.make(options.organizationId),
+    name: options.organizationName,
     createdAt: new Date(),
   };
 
   return {
     scope,
-    tools: makePgToolRegistry(db, options.teamId),
+    tools: makePgToolRegistry(db, options.organizationId),
     sources: makeInMemorySourceRegistry(),
-    secrets: makePgSecretStore(db, options.teamId, options.encryptionKey),
-    policies: makePgPolicyEngine(db, options.teamId),
+    secrets: makePgSecretStore(db, options.organizationId, options.encryptionKey),
+    policies: makePgPolicyEngine(db, options.organizationId),
     plugins: options.plugins,
   };
 };

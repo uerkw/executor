@@ -53,10 +53,10 @@ const authorizationServerMetadata = async () => {
 // ---------------------------------------------------------------------------
 
 type VerifiedToken = {
-  sub: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
+  /** The WorkOS account ID (user ID). */
+  accountId: string;
+  /** The WorkOS organization ID, if the session has org context. */
+  organizationId: string | null;
 };
 
 const BEARER_PREFIX = "Bearer ";
@@ -72,10 +72,8 @@ const verifyBearerToken = async (request: Request): Promise<VerifiedToken | null
     });
     if (!payload.sub) return null;
     return {
-      sub: payload.sub,
-      email: payload.email as string | undefined,
-      firstName: payload.first_name as string | undefined,
-      lastName: payload.last_name as string | undefined,
+      accountId: payload.sub,
+      organizationId: (payload.org_id as string | undefined) ?? null,
     };
   } catch {
     return null;
@@ -113,6 +111,10 @@ const handleMcpRequest_POST = async (
   request: Request,
   token: VerifiedToken,
 ): Promise<Response> => {
+  if (!token.organizationId) {
+    return jsonRpcError(403, -32001, "No organization in session — log in via the web app first");
+  }
+
   try {
     const ns = env.MCP_SESSION;
     const sessionId = request.headers.get("mcp-session-id");
@@ -127,7 +129,7 @@ const handleMcpRequest_POST = async (
     const id = ns.newUniqueId();
     const stub = ns.get(id);
 
-    await stub.init({ userId: token.sub });
+    await stub.init({ organizationId: token.organizationId });
 
     return await stub.handleRequest(request);
   } catch (err) {

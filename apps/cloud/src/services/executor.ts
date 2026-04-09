@@ -25,20 +25,20 @@ import {
 import { DbService } from "./db";
 
 // ---------------------------------------------------------------------------
-// Create a fresh executor for a team (stateless, per-request)
+// Create a fresh executor for an organization (stateless, per-request)
 // ---------------------------------------------------------------------------
 
-export const createTeamExecutor = (
-  teamId: string,
-  teamName: string,
+export const createOrgExecutor = (
+  organizationId: string,
+  organizationName: string,
   encryptionKey: string,
 ) =>
   Effect.gen(function* () {
     const db = yield* DbService;
-    const kv = makePgKv(db, teamId);
+    const kv = makePgKv(db, organizationId);
     const config = makePgConfig(db, {
-      teamId,
-      teamName,
+      organizationId,
+      organizationName,
       encryptionKey,
       plugins: [
         openApiPlugin({

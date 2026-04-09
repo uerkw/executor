@@ -1,40 +1,26 @@
 // ---------------------------------------------------------------------------
 // Cloud-specific identity & multi-tenancy tables
 // ---------------------------------------------------------------------------
+//
+// AuthKit owns the canonical user/membership data. We mirror minimally:
+//
+//   - `accounts`  — login identity (foreign key anchor for created_by, etc.)
+//   - `organizations` — billing entity, scoping root for all domain data
+//
+// We do NOT mirror memberships, invitations, or user profile data.
+// Those live in WorkOS and are queried via API when needed.
 
-import { pgTable, text, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-export const users = pgTable("users", {
+/** Login identity. The `id` is the WorkOS user ID. */
+export const accounts = pgTable("accounts", {
   id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  name: text("name"),
-  avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const teams = pgTable("teams", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+/** Organization (billing entity, scoping root). The `id` is the WorkOS organization ID. */
+export const organizations = pgTable("organizations", {
+  id: text("id").primaryKey(),
   name: text("name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const teamMembers = pgTable(
-  "team_members",
-  {
-    teamId: text("team_id").notNull(),
-    userId: text("user_id").notNull(),
-    role: text("role").notNull().$default(() => "member"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.teamId, table.userId] })],
-);
-
-export const invitations = pgTable("invitations", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  teamId: text("team_id").notNull(),
-  email: text("email").notNull(),
-  invitedBy: text("invited_by").notNull(),
-  status: text("status").notNull().$default(() => "pending"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });

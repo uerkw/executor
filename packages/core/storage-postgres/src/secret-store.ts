@@ -15,7 +15,7 @@ import { encrypt, decrypt } from "./crypto";
 
 export const makePgSecretStore = (
   db: DrizzleDb,
-  teamId: string,
+  organizationId: string,
   encryptionKey: string,
 ) => {
   // Additional providers can still be registered (e.g. 1Password read-only)
@@ -25,7 +25,7 @@ export const makePgSecretStore = (
     list: (scopeId: ScopeId) =>
       Effect.gen(function* () {
         const rows = yield* Effect.tryPromise(() =>
-          db.select().from(secrets).where(eq(secrets.teamId, teamId)),
+          db.select().from(secrets).where(eq(secrets.organizationId, organizationId)),
         ).pipe(Effect.orDie);
 
         const refs: SecretRef[] = rows.map(
@@ -72,14 +72,14 @@ export const makePgSecretStore = (
           db
             .select()
             .from(secrets)
-            .where(and(eq(secrets.id, secretId), eq(secrets.teamId, teamId))),
+            .where(and(eq(secrets.id, secretId), eq(secrets.organizationId, organizationId))),
         ).pipe(Effect.orDie);
 
         const row = rows[0];
         if (!row) return yield* new SecretNotFoundError({ secretId });
         return new SecretRef({
           id: SecretId.make(row.id),
-          scopeId: ScopeId.make(teamId),
+          scopeId: ScopeId.make(organizationId),
           name: row.name,
           provider: Option.some("postgres-encrypted"),
           purpose: row.purpose ?? undefined,
@@ -94,7 +94,7 @@ export const makePgSecretStore = (
           db
             .select()
             .from(secrets)
-            .where(and(eq(secrets.id, secretId), eq(secrets.teamId, teamId))),
+            .where(and(eq(secrets.id, secretId), eq(secrets.organizationId, organizationId))),
         ).pipe(Effect.orDie);
 
         const row = rows[0];
@@ -128,7 +128,7 @@ export const makePgSecretStore = (
           db
             .select({ id: secrets.id })
             .from(secrets)
-            .where(and(eq(secrets.id, secretId), eq(secrets.teamId, teamId))),
+            .where(and(eq(secrets.id, secretId), eq(secrets.organizationId, organizationId))),
         ).pipe(Effect.orDie);
 
         if (rows.length > 0) return "resolved" as const;
@@ -151,14 +151,14 @@ export const makePgSecretStore = (
             .insert(secrets)
             .values({
               id: input.id,
-              teamId,
+              organizationId,
               name: input.name,
               purpose: input.purpose,
               encryptedValue: encrypted,
               iv,
             })
             .onConflictDoUpdate({
-              target: [secrets.id, secrets.teamId],
+              target: [secrets.id, secrets.organizationId],
               set: {
                 name: input.name,
                 purpose: input.purpose,
@@ -183,7 +183,7 @@ export const makePgSecretStore = (
         const result = yield* Effect.tryPromise(() =>
           db
             .delete(secrets)
-            .where(and(eq(secrets.id, secretId), eq(secrets.teamId, teamId)))
+            .where(and(eq(secrets.id, secretId), eq(secrets.organizationId, organizationId)))
             .returning(),
         ).pipe(Effect.orDie);
 

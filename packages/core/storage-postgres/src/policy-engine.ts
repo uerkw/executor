@@ -13,7 +13,7 @@ import { policies } from "./schema";
 
 export const makePgPolicyEngine = (
   db: DrizzleDb,
-  teamId: string,
+  organizationId: string,
 ) => {
   let counter = 0;
 
@@ -23,7 +23,7 @@ export const makePgPolicyEngine = (
         const rows = await db
           .select()
           .from(policies)
-          .where(eq(policies.teamId, teamId));
+          .where(eq(policies.organizationId, organizationId));
         return rows.map(
           (row) =>
             new Policy({
@@ -50,7 +50,7 @@ export const makePgPolicyEngine = (
         const now = new Date();
         await db.insert(policies).values({
           id,
-          teamId,
+          organizationId,
           name: policy.name,
           action: policy.action,
           matchToolPattern: policy.match.toolPattern,
@@ -65,7 +65,7 @@ export const makePgPolicyEngine = (
       Effect.tryPromise(async () => {
         const result = await db
           .delete(policies)
-          .where(and(eq(policies.id, policyId), eq(policies.teamId, teamId)))
+          .where(and(eq(policies.id, policyId), eq(policies.organizationId, organizationId)))
           .returning();
         return result.length > 0;
       }).pipe(Effect.orDie),

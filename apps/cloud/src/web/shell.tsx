@@ -104,9 +104,9 @@ function UserFooter() {
           <p className="truncate text-[12px] font-medium text-foreground">
             {auth.user.name ?? auth.user.email}
           </p>
-          {auth.team && (
+          {auth.organization && (
             <p className="truncate text-[10px] text-muted-foreground">
-              {auth.team.name}
+              {auth.organization.name}
             </p>
           )}
         </div>

@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "@effect/platform";
 import { Schema } from "effect";
 import { UserStoreError, WorkOSError } from "./errors";
+import { SessionAuth } from "./middleware";
 
 const AuthUser = Schema.Struct({
   id: Schema.String,
@@ -9,18 +10,22 @@ const AuthUser = Schema.Struct({
   avatarUrl: Schema.NullOr(Schema.String),
 });
 
-const AuthTeam = Schema.Struct({
+const AuthOrganization = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
 });
 
 const AuthMeResponse = Schema.Struct({
   user: AuthUser,
-  team: Schema.NullOr(AuthTeam),
+  organization: Schema.NullOr(AuthOrganization),
 });
 
 const AuthCallbackSearch = Schema.Struct({
   code: Schema.String,
+});
+
+const CreateOrganizationRequest = Schema.Struct({
+  name: Schema.String,
 });
 
 export const AUTH_PATHS = {
@@ -41,7 +46,7 @@ export class CloudAuthPublicApi extends HttpApiGroup.make("cloudAuthPublic")
       .addError(WorkOSError),
   ) {}
 
-/** Protected auth endpoints — require authentication */
+/** Session auth endpoints — require a logged-in user, may not have an org */
 export class CloudAuthApi extends HttpApiGroup.make("cloudAuth")
   .add(
     HttpApiEndpoint.get("me")`/auth/me`
@@ -51,4 +56,11 @@ export class CloudAuthApi extends HttpApiGroup.make("cloudAuth")
   .add(
     HttpApiEndpoint.post("logout")`/auth/logout`,
   )
+  .add(
+    HttpApiEndpoint.post("createOrganization")`/auth/organization`
+      .setPayload(CreateOrganizationRequest)
+      .addError(UserStoreError)
+      .addError(WorkOSError),
+  )
+  .middleware(SessionAuth)
 {}

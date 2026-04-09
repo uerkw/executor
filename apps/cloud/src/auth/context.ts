@@ -3,20 +3,8 @@ import { makeUserStore } from "../services/user-store";
 import { DbService } from "../services/db";
 import { UserStoreError } from "./errors";
 
-// ---------------------------------------------------------------------------
-// AuthContext — resolved per-request from sealed session
-// ---------------------------------------------------------------------------
-
-export class AuthContext extends Context.Tag("@executor/cloud/AuthContext")<
-  AuthContext,
-  {
-    readonly userId: string;
-    readonly teamId: string;
-    readonly email: string;
-    readonly name: string | null;
-    readonly avatarUrl: string | null;
-  }
->() {}
+// AuthContext is defined in ./middleware.ts to keep middleware-related types together.
+export { AuthContext } from "./middleware";
 
 // ---------------------------------------------------------------------------
 // UserStoreService — wraps the Drizzle-backed user store with Effect

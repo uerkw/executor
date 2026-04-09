@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Postgres-backed Kv — uses plugin_kv table, scoped by team_id
+// Postgres-backed Kv — uses plugin_kv table, scoped by organization_id
 // ---------------------------------------------------------------------------
 
 import { Effect } from "effect";
@@ -9,7 +9,7 @@ import type { Kv } from "@executor/sdk";
 import { pluginKv } from "./schema";
 import type { DrizzleDb } from "./types";
 
-export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
+export const makePgKv = (db: DrizzleDb, organizationId: string): Kv => ({
   get: (namespace, key) =>
     Effect.tryPromise(async () => {
       const rows = await db
@@ -17,7 +17,7 @@ export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
         .from(pluginKv)
         .where(
           and(
-            eq(pluginKv.teamId, teamId),
+            eq(pluginKv.organizationId, organizationId),
             eq(pluginKv.namespace, namespace),
             eq(pluginKv.key, key),
           ),
@@ -29,9 +29,9 @@ export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
     Effect.tryPromise(async () => {
       await db
         .insert(pluginKv)
-        .values({ teamId, namespace, key, value })
+        .values({ organizationId, namespace, key, value })
         .onConflictDoUpdate({
-          target: [pluginKv.teamId, pluginKv.namespace, pluginKv.key],
+          target: [pluginKv.organizationId, pluginKv.namespace, pluginKv.key],
           set: { value },
         });
     }).pipe(Effect.orDie),
@@ -42,7 +42,7 @@ export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
         .delete(pluginKv)
         .where(
           and(
-            eq(pluginKv.teamId, teamId),
+            eq(pluginKv.organizationId, organizationId),
             eq(pluginKv.namespace, namespace),
             eq(pluginKv.key, key),
           ),
@@ -58,7 +58,7 @@ export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
         .from(pluginKv)
         .where(
           and(
-            eq(pluginKv.teamId, teamId),
+            eq(pluginKv.organizationId, organizationId),
             eq(pluginKv.namespace, namespace),
           ),
         );
@@ -71,7 +71,7 @@ export const makePgKv = (db: DrizzleDb, teamId: string): Kv => ({
         .delete(pluginKv)
         .where(
           and(
-            eq(pluginKv.teamId, teamId),
+            eq(pluginKv.organizationId, organizationId),
             eq(pluginKv.namespace, namespace),
           ),
         )

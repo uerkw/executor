@@ -20,7 +20,7 @@ import { tools, toolDefinitions } from "./schema";
 
 export const makePgToolRegistry = (
   db: DrizzleDb,
-  teamId: string,
+  organizationId: string,
 ) => {
   const runtimeTools = new Map<string, ToolRegistration>();
   const runtimeHandlers = new Map<string, RuntimeToolHandler>();
@@ -32,7 +32,7 @@ export const makePgToolRegistry = (
       const rows = await db
         .select()
         .from(tools)
-        .where(and(eq(tools.id, id), eq(tools.teamId, teamId)));
+        .where(and(eq(tools.id, id), eq(tools.organizationId, organizationId)));
       const row = rows[0];
       if (!row) return null;
       return new ToolRegistration({
@@ -52,7 +52,7 @@ export const makePgToolRegistry = (
       const rows = await db
         .select()
         .from(tools)
-        .where(eq(tools.teamId, teamId));
+        .where(eq(tools.organizationId, organizationId));
       return rows.map(
         (row) =>
           new ToolRegistration({
@@ -73,7 +73,7 @@ export const makePgToolRegistry = (
       const rows = await db
         .select()
         .from(toolDefinitions)
-        .where(eq(toolDefinitions.teamId, teamId));
+        .where(eq(toolDefinitions.organizationId, organizationId));
       const defs = new Map<string, unknown>(
         rows.map((r) => [r.name, r.schema]),
       );
@@ -133,12 +133,12 @@ export const makePgToolRegistry = (
       Effect.tryPromise(async () => {
         const entries = Object.entries(newDefs);
         if (entries.length === 0) return;
-        const values = entries.map(([name, schema]) => ({ name, teamId, schema }));
+        const values = entries.map(([name, schema]) => ({ name, organizationId, schema }));
         await db
           .insert(toolDefinitions)
           .values(values)
           .onConflictDoUpdate({
-            target: [toolDefinitions.name, toolDefinitions.teamId],
+            target: [toolDefinitions.name, toolDefinitions.organizationId],
             set: { schema: sql`excluded.schema` },
           });
       }).pipe(Effect.orDie),
@@ -193,7 +193,7 @@ export const makePgToolRegistry = (
         if (newTools.length === 0) return;
         const values = newTools.map((t) => ({
           id: t.id,
-          teamId,
+          organizationId,
           sourceId: t.sourceId,
           pluginKey: t.pluginKey,
           name: t.name,
@@ -206,7 +206,7 @@ export const makePgToolRegistry = (
           .insert(tools)
           .values(values)
           .onConflictDoUpdate({
-            target: [tools.id, tools.teamId],
+            target: [tools.id, tools.organizationId],
             set: {
               sourceId: sql`excluded.source_id`,
               pluginKey: sql`excluded.plugin_key`,
@@ -244,14 +244,14 @@ export const makePgToolRegistry = (
         if (toolIds.length === 0) return;
         await db
           .delete(tools)
-          .where(and(inArray(tools.id, [...toolIds]), eq(tools.teamId, teamId)));
+          .where(and(inArray(tools.id, [...toolIds]), eq(tools.organizationId, organizationId)));
       }).pipe(Effect.orDie),
 
     unregisterBySource: (sourceId: string) =>
       Effect.tryPromise(async () => {
         await db
           .delete(tools)
-          .where(and(eq(tools.sourceId, sourceId), eq(tools.teamId, teamId)));
+          .where(and(eq(tools.sourceId, sourceId), eq(tools.organizationId, organizationId)));
         for (const [id, t] of runtimeTools) {
           if (t.sourceId === sourceId) {
             runtimeTools.delete(id);

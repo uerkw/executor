@@ -12,7 +12,7 @@ import { makeDynamicWorkerExecutor } from "@executor/runtime-dynamic-worker";
 
 import { UserStoreService } from "./auth/context";
 import { server } from "./env";
-import { createTeamExecutor } from "./services/executor";
+import { createOrgExecutor } from "./services/executor";
 import { DbService } from "./services/db";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ import { DbService } from "./services/db";
 // ---------------------------------------------------------------------------
 
 export type McpSessionInit = {
-  userId: string;
+  organizationId: string;
 };
 
 // Heartbeat interval — keeps the DO alive by re-scheduling an alarm before
@@ -35,29 +35,24 @@ const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 // Session initialization effect
 // ---------------------------------------------------------------------------
 
-const DbLive = DbService.Unscoped;
+const DbLive = DbService.Live;
 const UserStoreLive = UserStoreService.Live.pipe(Layer.provide(DbLive));
 const Services = Layer.mergeAll(DbLive, UserStoreLive);
 
-const initSession = (userId: string) =>
+const initSession = (organizationId: string) =>
   Effect.gen(function* () {
     const users = yield* UserStoreService;
-    const teams = yield* users.use((store) => store.getTeamsForUser(userId));
+    const org = yield* users.use((store) => store.getOrganization(organizationId));
 
-    if (teams.length === 0) {
+    if (!org) {
       return yield* Effect.fail(
-        new Error("No team found for user — account may not be set up"),
+        new Error(`Organization ${organizationId} not found`),
       );
     }
 
-    const { teamId, teamName } = {
-      teamId: teams[0]!.teamId,
-      teamName: teams[0]!.teamName ?? "Team",
-    };
-
-    const executor = yield* createTeamExecutor(
-      teamId,
-      teamName,
+    const executor = yield* createOrgExecutor(
+      org.id,
+      org.name,
       server.ENCRYPTION_KEY,
     );
 
@@ -103,7 +98,7 @@ export class McpSessionDO extends DurableObject {
   async init(token: McpSessionInit): Promise<void> {
     if (this.initialized) return;
 
-    this.mcpServer = await Effect.runPromise(initSession(token.userId));
+    this.mcpServer = await Effect.runPromise(initSession(token.organizationId));
 
     this.transport = new WorkerTransport({
       sessionIdGenerator: () => this.ctx.id.toString(),

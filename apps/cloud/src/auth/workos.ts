@@ -31,6 +31,51 @@ const make = Effect.gen(function* () {
       catch: (cause) => new WorkOSError({ cause }),
     }).pipe(Effect.withSpan("workos"));
 
+  const authenticateSealedSession = (sessionData: string) =>
+    Effect.gen(function* () {
+      if (!sessionData) return null;
+
+      const session = workos.userManagement.loadSealedSession({
+        sessionData,
+        cookiePassword,
+      });
+
+      const result = yield* use((wos) => session.authenticate());
+
+      if (result.authenticated) {
+        return {
+          userId: result.user.id,
+          email: result.user.email,
+          firstName: result.user.firstName,
+          lastName: result.user.lastName,
+          avatarUrl: result.user.profilePictureUrl,
+          organizationId: result.organizationId,
+          sessionId: result.sessionId,
+          refreshedSession: undefined as string | undefined,
+        };
+      }
+
+      if (result.reason === "no_session_cookie_provided") return null;
+
+      // Try refreshing
+      const refreshed = yield* use((wos) => session.refresh()).pipe(
+        Effect.orElseSucceed(() => ({ authenticated: false as const })),
+      );
+
+      if (!refreshed.authenticated || !("sealedSession" in refreshed) || !refreshed.sealedSession) return null;
+
+      return {
+        userId: refreshed.user.id,
+        email: refreshed.user.email,
+        firstName: refreshed.user.firstName,
+        lastName: refreshed.user.lastName,
+        avatarUrl: refreshed.user.profilePictureUrl,
+        organizationId: refreshed.organizationId,
+        sessionId: refreshed.sessionId,
+        refreshedSession: refreshed.sealedSession,
+      };
+    });
+
   return {
     getAuthorizationUrl: (redirectUri: string) =>
       workos.userManagement.getAuthorizationUrl({
@@ -48,48 +93,49 @@ const make = Effect.gen(function* () {
         }),
       ),
 
-    authenticateRequest: (request: Request) =>
-      Effect.gen(function* () {
-        const sessionData = parseCookie(request.headers.get("cookie"), COOKIE_NAME);
-        if (!sessionData) return null;
+    /** Create a new organization in WorkOS. */
+    createOrganization: (name: string) =>
+      use((wos) => wos.organizations.createOrganization({ name })),
 
+    /** Add a user to an organization as a member. */
+    createMembership: (organizationId: string, userId: string) =>
+      use((wos) =>
+        wos.userManagement.createOrganizationMembership({
+          organizationId,
+          userId,
+        }),
+      ),
+
+    /**
+     * Refresh a sealed session, optionally switching to a new organization.
+     * Returns the new sealed session string or null if refresh failed.
+     */
+    refreshSession: (sessionData: string, organizationId?: string) =>
+      Effect.gen(function* () {
         const session = workos.userManagement.loadSealedSession({
           sessionData,
           cookiePassword,
         });
-
-        const result = yield* use((wos) => session.authenticate());
-
-        if (result.authenticated) {
-          return {
-            userId: result.user.id,
-            email: result.user.email,
-            firstName: result.user.firstName,
-            lastName: result.user.lastName,
-            avatarUrl: result.user.profilePictureUrl,
-            sessionId: result.sessionId,
-            refreshedSession: undefined as string | undefined,
-          };
-        }
-
-        if (result.reason === "no_session_cookie_provided") return null;
-
-        // Try refreshing
-        const refreshed = yield* use((wos) => session.refresh()).pipe(
-          Effect.orElseSucceed(() => ({ authenticated: false as const })),
+        const refreshed = yield* use((wos) =>
+          session.refresh(organizationId ? { organizationId } : undefined),
         );
+        if (!refreshed.authenticated || !("sealedSession" in refreshed)) return null;
+        return refreshed.sealedSession ?? null;
+      }),
 
-        if (!refreshed.authenticated || !("sealedSession" in refreshed) || !refreshed.sealedSession) return null;
+    /**
+     * Authenticate a sealed session string. Returns the user info plus
+     * any refreshed session that needs to be set on the response.
+     * Returns null if the session is missing or invalid.
+     */
+    authenticateSealedSession,
 
-        return {
-          userId: refreshed.user.id,
-          email: refreshed.user.email,
-          firstName: refreshed.user.firstName,
-          lastName: refreshed.user.lastName,
-          avatarUrl: refreshed.user.profilePictureUrl,
-          sessionId: refreshed.sessionId,
-          refreshedSession: refreshed.sealedSession,
-        };
+    /** Authenticate from a Request — convenience wrapper around `authenticateSealedSession`. */
+    authenticateRequest: (request: Request) =>
+      Effect.gen(function* () {
+        const sessionData = parseCookie(request.headers.get("cookie"), COOKIE_NAME);
+        if (!sessionData) return null;
+        return yield* authenticateSealedSession(sessionData);
       }),
   };
 });

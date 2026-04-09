@@ -14,7 +14,7 @@ type AuthUser = {
   avatarUrl: string | null;
 };
 
-type AuthTeam = {
+type AuthOrganization = {
   id: string;
   name: string;
 };
@@ -35,7 +35,7 @@ export const authAtom =
 type AuthState =
   | { status: "loading" }
   | { status: "unauthenticated" }
-  | { status: "authenticated"; user: AuthUser; team: AuthTeam | null };
+  | { status: "authenticated"; user: AuthUser; organization: AuthOrganization | null };
 
 const AuthContext = createContext<AuthState>({ status: "loading" });
 
@@ -49,7 +49,7 @@ const AuthProviderClient = ({ children }: { children: React.ReactNode }) => {
     onSuccess: ({ value }) => ({
       status: "authenticated" as const,
       user: value.user,
-      team: value.team,
+      organization: value.organization,
     }),
     onFailure: () => ({ status: "unauthenticated" as const }),
   });

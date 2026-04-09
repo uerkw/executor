@@ -1,10 +1,10 @@
 import { HttpApi, HttpApiBuilder, HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { Effect } from "effect";
-import { deleteCookie, setCookie } from "@tanstack/react-start/server";
+import { setCookie, deleteCookie, getCookie } from "@tanstack/react-start/server";
 
-import { addGroup } from "@executor/api";
 import { AUTH_PATHS, CloudAuthApi, CloudAuthPublicApi } from "./api";
-import { AuthContext, UserStoreService } from "./context";
+import { SessionContext } from "./middleware";
+import { UserStoreService } from "./context";
 import { WorkOSAuth } from "./workos";
 import { server } from "../env";
 
@@ -17,14 +17,20 @@ const COOKIE_OPTIONS = {
 };
 
 // ---------------------------------------------------------------------------
+// Single non-protected API surface — public (login/callback) + session
+// (me/logout/createOrganization). The session group has SessionAuth on it.
+// ---------------------------------------------------------------------------
+
+export const NonProtectedApi = HttpApi.make("cloudWeb")
+  .add(CloudAuthPublicApi)
+  .add(CloudAuthApi);
+
+// ---------------------------------------------------------------------------
 // Public auth handlers (no authentication required)
 // ---------------------------------------------------------------------------
 
-const PublicAuthApi = HttpApi.make("cloudPublic")
-  .add(CloudAuthPublicApi);
-
 export const CloudAuthPublicHandlers = HttpApiBuilder.group(
-  PublicAuthApi,
+  NonProtectedApi,
   "cloudAuthPublic",
   (handlers) =>
     handlers
@@ -32,8 +38,12 @@ export const CloudAuthPublicHandlers = HttpApiBuilder.group(
         Effect.gen(function* () {
           const workos = yield* WorkOSAuth;
           const req = yield* HttpServerRequest.HttpServerRequest;
-          const proto = req.headers["x-forwarded-proto"] ?? "https";
-          const origin = new URL(req.url, `${proto}://${req.headers["host"]}`).origin;
+          // Prefer APP_URL (set explicitly in dev/prod config) since the
+          // request's Host header is the internal proxy target in dev, not
+          // the public URL WorkOS needs to redirect back to.
+          const origin = server.APP_URL
+            ? server.APP_URL
+            : new URL(req.url, `${req.headers["x-forwarded-proto"] ?? "https"}://${req.headers["host"]}`).origin;
           const url = workos.getAuthorizationUrl(`${origin}${AUTH_PATHS.callback}`);
           return HttpServerResponse.redirect(url, { status: 302 });
         }),
@@ -44,83 +54,110 @@ export const CloudAuthPublicHandlers = HttpApiBuilder.group(
           const users = yield* UserStoreService;
 
           const result = yield* workos.authenticateWithCode(urlParams.code);
-          const workosUser = result.user;
 
-          const user = yield* users.use((s) =>
-            s.upsertUser({
-              id: workosUser.id,
-              email: workosUser.email,
-              name: `${workosUser.firstName ?? ""} ${workosUser.lastName ?? ""}`.trim() || undefined,
-              avatarUrl: workosUser.profilePictureUrl ?? undefined,
-            }),
-          );
+          // Mirror the account locally
+          yield* users.use((s) => s.ensureAccount(result.user.id));
 
-          const resolveTeam = Effect.gen(function* () {
-            const pending = yield* users.use((s) => s.getPendingInvitations(user.email));
-            if (pending.length > 0) {
-              const invitation = pending[0]!;
-              yield* users.use((s) => s.acceptInvitation(invitation.id));
-              yield* users.use((s) => s.addMember(invitation.teamId, user.id, "member"));
-              return invitation.teamId;
-            }
+          let sealedSession = result.sealedSession;
+          let organizationId = result.organizationId;
 
-            const teams = yield* users.use((s) => s.getTeamsForUser(user.id));
-            if (teams.length > 0) return teams[0]!.teamId;
-
-            const team = yield* users.use((s) =>
-              s.createTeam(`${user.name ?? user.email}'s Team`),
+          // WorkOS doesn't host an org creation flow — if the user has no
+          // org yet, create a default one on their behalf and refresh the
+          // session so it includes the new org_id claim.
+          if (!organizationId) {
+            const name =
+              [result.user.firstName, result.user.lastName]
+                .filter(Boolean)
+                .join(" ") || result.user.email;
+            const org = yield* workos.createOrganization(`${name}'s Workspace`);
+            yield* workos.createMembership(org.id, result.user.id);
+            yield* users.use((s) =>
+              s.upsertOrganization({ id: org.id, name: org.name }),
             );
-            yield* users.use((s) => s.addMember(team.id, user.id, "owner"));
-            return team.id;
-          });
 
-          const teamId = yield* resolveTeam;
+            if (sealedSession) {
+              const refreshed = yield* workos.refreshSession(sealedSession, org.id);
+              if (refreshed) sealedSession = refreshed;
+            }
+            organizationId = org.id;
+          } else {
+            yield* users.use((s) =>
+              s.upsertOrganization({
+                id: organizationId!,
+                name: "Organization",
+              }),
+            );
+          }
 
-          const sealedSession = result.sealedSession;
           if (!sealedSession) {
             return HttpServerResponse.text("Failed to create session", { status: 500 });
           }
 
           setCookie("wos-session", sealedSession, COOKIE_OPTIONS);
-          setCookie("executor_team", teamId, COOKIE_OPTIONS);
           return HttpServerResponse.redirect("/", { status: 302 });
         }),
       ),
 );
 
 // ---------------------------------------------------------------------------
-// Protected auth handlers (require authentication via middleware)
+// Session auth handlers (require session, may or may not have an org)
 // ---------------------------------------------------------------------------
 
-const ApiWithCloudAuth = addGroup(CloudAuthApi);
-
-export const CloudAuthHandlers = HttpApiBuilder.group(
-  ApiWithCloudAuth,
+export const CloudSessionAuthHandlers = HttpApiBuilder.group(
+  NonProtectedApi,
   "cloudAuth",
   (handlers) =>
     handlers
       .handle("me", () =>
         Effect.gen(function* () {
-          const auth = yield* AuthContext;
+          const session = yield* SessionContext;
           const users = yield* UserStoreService;
-          const team = yield* users.use((s) => s.getTeam(auth.teamId));
+          const org = session.organizationId
+            ? yield* users.use((s) => s.getOrganization(session.organizationId!))
+            : null;
 
           return {
             user: {
-              id: auth.userId,
-              email: auth.email,
-              name: auth.name,
-              avatarUrl: auth.avatarUrl,
+              id: session.accountId,
+              email: session.email,
+              name: session.name,
+              avatarUrl: session.avatarUrl,
             },
-            team: team ? { id: team.id, name: team.name } : null,
+            organization: org ? { id: org.id, name: org.name } : null,
           };
         }),
       )
       .handleRaw("logout", () =>
         Effect.sync(() => {
           deleteCookie("wos-session", { path: "/" });
-          deleteCookie("executor_team", { path: "/" });
           return HttpServerResponse.redirect("/", { status: 302 });
+        }),
+      )
+      .handle("createOrganization", ({ payload }) =>
+        Effect.gen(function* () {
+          const session = yield* SessionContext;
+          const workos = yield* WorkOSAuth;
+          const users = yield* UserStoreService;
+
+          // Create the org in WorkOS
+          const org = yield* workos.createOrganization(payload.name);
+
+          // Add the current user as a member
+          yield* workos.createMembership(org.id, session.accountId);
+
+          // Mirror locally
+          yield* users.use((s) =>
+            s.upsertOrganization({ id: org.id, name: org.name }),
+          );
+
+          // Refresh the session with the new org context
+          const currentSession = getCookie("wos-session") ?? null;
+          if (currentSession) {
+            const newSession = yield* workos.refreshSession(currentSession, org.id);
+            if (newSession) {
+              setCookie("wos-session", newSession, COOKIE_OPTIONS);
+            }
+          }
         }),
       ),
 );
