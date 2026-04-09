@@ -44,13 +44,15 @@ const resolveConnectionString = resolveHyperdriveUrl.pipe(
 const acquirePostgres = (connectionString: string) =>
   Effect.tryPromise(async () => {
     const { drizzle } = await import("drizzle-orm/node-postgres");
-    const { Pool } = await import("pg");
-    const pool = new Pool({ connectionString });
-    return { db: drizzle(pool, { schema }) as DrizzleDb, pool };
+    const { Client } = await import("pg");
+    // Use Client (not Pool) — Hyperdrive manages connection pooling externally.
+    const client = new Client({ connectionString });
+    await client.connect();
+    return { db: drizzle(client, { schema }) as DrizzleDb, client };
   });
 
-const releasePostgres = ({ pool }: { pool: { end: () => Promise<void> } }) =>
-  Effect.promise(() => pool.end()).pipe(Effect.orElseSucceed(() => undefined));
+const releasePostgres = ({ client }: { client: { end: () => Promise<void> } }) =>
+  Effect.promise(() => client.end()).pipe(Effect.orElseSucceed(() => undefined));
 
 // ---------------------------------------------------------------------------
 // Service
