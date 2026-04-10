@@ -46,6 +46,8 @@ import {
 import { WorkOSAuth } from "./auth/workos";
 import { DbService } from "./services/db";
 import { createOrgExecutor } from "./services/executor";
+import { TeamOrgApi } from "./team/compose";
+import { TeamHandlers } from "./team/handlers";
 import { server } from "./env";
 
 // ---------------------------------------------------------------------------
@@ -90,6 +92,11 @@ const NonProtectedApiLive = HttpApiBuilder.api(NonProtectedApi).pipe(
   Layer.provideMerge(SessionAuthLive),
 );
 
+const TeamApiLive = HttpApiBuilder.api(TeamOrgApi).pipe(
+  Layer.provide(TeamHandlers),
+  Layer.provideMerge(OrgAuthLive),
+);
+
 // ---------------------------------------------------------------------------
 // Public auth web handler
 // ---------------------------------------------------------------------------
@@ -110,6 +117,12 @@ const RouterConfig = HttpRouter.setRouterConfig({ maxParamLength: 1000 });
 const createNonProtectedHandler = () =>
   HttpApiBuilder.toWebHandler(
     NonProtectedApiLive.pipe(Layer.provideMerge(SharedServices), Layer.provideMerge(RouterConfig)),
+    { middleware: HttpMiddleware.logger },
+  );
+
+const createTeamHandler = () =>
+  HttpApiBuilder.toWebHandler(
+    TeamApiLive.pipe(Layer.provideMerge(SharedServices), Layer.provideMerge(RouterConfig)),
     { middleware: HttpMiddleware.logger },
   );
 
@@ -158,6 +171,7 @@ const buildProtectedHandler = (
 
 const isAuthPath = (pathname: string): boolean => pathname.startsWith("/auth/");
 const isAutumnPath = (pathname: string): boolean => pathname.startsWith("/autumn/");
+const isTeamPath = (pathname: string): boolean => pathname.startsWith("/team/");
 const isExecutionPath = (pathname: string): boolean =>
   pathname === "/executions" || /^\/executions\/[^/]+\/resume$/.test(pathname);
 
@@ -241,8 +255,21 @@ const handleAutumnRequest = async (request: Request): Promise<Response> => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Widget token endpoint — returns a WorkOS widget token for the session user
+// ---------------------------------------------------------------------------
+
 export const handleApiRequest = async (request: Request): Promise<Response> => {
   const pathname = new URL(request.url).pathname;
+
+  if (isTeamPath(pathname)) {
+    const handler = createTeamHandler();
+    try {
+      return await handler.handler(request);
+    } finally {
+      await handler.dispose();
+    }
+  }
 
   if (isAutumnPath(pathname)) {
     return handleAutumnRequest(request);
