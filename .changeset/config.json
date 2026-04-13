@@ -30,6 +30,7 @@
     "@executor/plugin-keychain",
     "@executor/plugin-mcp",
     "@executor/plugin-onepassword",
-    "@executor/plugin-openapi"
+    "@executor/plugin-openapi",
+    "@executor/plugin-workos-vault"
   ]
 }
