@@ -12,7 +12,6 @@ import { GraphqlExtensionService } from "@executor/plugin-graphql/api";
 
 import { UserStoreService } from "../auth/context";
 import { WorkOSAuth } from "../auth/workos";
-import { server } from "../env";
 import { AutumnService } from "../services/autumn";
 import { createOrgExecutor } from "../services/executor";
 import { makeTrackExecutionUsage } from "./autumn";
@@ -41,11 +40,7 @@ const lookupOrgForRequest = (request: HttpServerRequest.HttpServerRequest) =>
 
 const createProtectedApp = (organizationId: string, organizationName: string) =>
   Effect.gen(function* () {
-    const executor = yield* createOrgExecutor(
-      organizationId,
-      organizationName,
-      server.ENCRYPTION_KEY,
-    );
+    const executor = yield* createOrgExecutor(organizationId, organizationName);
     const codeExecutor = makeDynamicWorkerExecutor({ loader: env.LOADER });
     const autumn = yield* AutumnService;
     const engine = withExecutionUsageTracking(
