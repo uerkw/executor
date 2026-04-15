@@ -253,8 +253,6 @@ describe("release bootstrap smoke", () => {
           new Promise((resolveClose) => setTimeout(resolveClose, 5_000)),
         ]);
         if (webProcess.exitCode === null) {
-          // SIGKILL is not available on Windows; kill() with no argument
-          // forcefully terminates the process on all platforms.
           webProcess.kill();
         }
       }
