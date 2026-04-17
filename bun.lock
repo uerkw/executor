@@ -237,7 +237,7 @@
     },
     "packages/core/cli": {
       "name": "@executor/cli",
-      "version": "0.0.1-beta.3",
+      "version": "0.0.1",
       "bin": {
         "executor": "./dist/index.js",
       },
@@ -285,7 +285,7 @@
     },
     "packages/core/execution": {
       "name": "@executor/execution",
-      "version": "0.0.1-beta.4",
+      "version": "0.0.1",
       "dependencies": {
         "@executor/codemode-core": "workspace:*",
         "@executor/sdk": "workspace:*",
@@ -318,7 +318,7 @@
     },
     "packages/core/storage-core": {
       "name": "@executor/storage-core",
-      "version": "0.0.1-beta.0",
+      "version": "0.0.1",
       "dependencies": {
         "@standard-schema/spec": "^1.0.0",
         "effect": "catalog:",
@@ -409,7 +409,7 @@
     },
     "packages/kernel/core": {
       "name": "@executor/codemode-core",
-      "version": "0.0.1-beta.0",
+      "version": "0.0.1",
       "dependencies": {
         "@babel/parser": "^7.29.2",
         "@standard-schema/spec": "^1.0.0",
@@ -469,7 +469,7 @@
     },
     "packages/kernel/runtime-quickjs": {
       "name": "@executor/runtime-quickjs",
-      "version": "0.0.1-beta.0",
+      "version": "0.0.1",
       "dependencies": {
         "@executor/codemode-core": "workspace:*",
         "effect": "catalog:",

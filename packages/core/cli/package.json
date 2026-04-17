@@ -1,6 +1,6 @@
 {
   "name": "@executor/cli",
-  "version": "0.0.1-beta.3",
+  "version": "0.0.1",
   "description": "CLI for the executor SDK — schema generation, migrations",
   "homepage": "https://github.com/RhysSullivan/executor/tree/main/packages/core/cli",
   "bugs": {
