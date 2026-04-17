@@ -2,13 +2,25 @@ import * as Sentry from "@sentry/cloudflare";
 import handler from "@tanstack/react-start/server-entry";
 import { instrument, type ResolveConfigFn } from "@microlabs/otel-cf-workers";
 
-// Export Durable Objects as named exports
+// ---------------------------------------------------------------------------
+// DO export
+// ---------------------------------------------------------------------------
+// Telemetry for the DO is handled from inside the DO via a self-contained
+// WebSdk layer (see `services/telemetry.ts#DoTelemetryLive`). We deliberately
+// do NOT wrap the DO class with `instrumentDO` from `otel-cf-workers` — it
+// breaks `this` binding on `WorkerTransport`'s streaming primitives and the
+// whole MCP session 500s with "Illegal invocation" DOMExceptions.
+//
+// Sentry's DO wrapper has the same failure mode in our setup, so DO errors
+// are captured manually via `Sentry.captureException` inside the DO's catch
+// blocks rather than by class wrapping.
+// ---------------------------------------------------------------------------
+
 export { McpSessionDO } from "./mcp-session";
 
 // ---------------------------------------------------------------------------
-// OTEL config — `otel-cf-workers` owns the global TracerProvider and flushes
-// via `ctx.waitUntil` at the end of each request. `TelemetryLive` in
-// `services/telemetry.ts` plugs Effect's tracer into that same provider.
+// OTEL config for the main fetch handler — `otel-cf-workers` owns the global
+// TracerProvider and flushes via `ctx.waitUntil` at the end of each request.
 // ---------------------------------------------------------------------------
 
 type OtelEnv = {

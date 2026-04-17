@@ -30,11 +30,21 @@ const ProtectedCloudApi = CoreExecutorApi.add(OpenApiGroup)
 const DbLive = DbService.Live;
 const UserStoreLive = UserStoreService.Live.pipe(Layer.provide(DbLive));
 
+/**
+ * Services that are independent of how the DB or tracer is provisioned —
+ * both the stateless HTTP path (per-request DB via Hyperdrive) and the MCP
+ * session DO (long-lived DB + isolate-local tracer SDK) merge this with
+ * their own `DbLive` + `UserStoreLive` + telemetry layer.
+ */
+export const CoreSharedServices = Layer.mergeAll(
+  WorkOSAuth.Default,
+  AutumnService.Default,
+);
+
 export const SharedServices = Layer.mergeAll(
   DbLive,
   UserStoreLive,
-  WorkOSAuth.Default,
-  AutumnService.Default,
+  CoreSharedServices,
   HttpServer.layerContext,
   TelemetryLive,
 );

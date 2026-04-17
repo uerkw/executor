@@ -10,19 +10,15 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { createExecutorMcpServer } from "@executor/host-mcp";
-import { createExecutionEngine } from "@executor/execution";
-import { makeDynamicWorkerExecutor } from "@executor/runtime-dynamic-worker";
 import type { DrizzleDb, DbServiceShape } from "./services/db";
 
-import { makeTrackExecutionUsage } from "./api/autumn";
-import { withExecutionUsageTracking } from "./api/execution-usage";
+import { CoreSharedServices } from "./api/layers";
 import { UserStoreService } from "./auth/context";
 import { resolveOrganization } from "./auth/resolve-organization";
-import { WorkOSAuth } from "./auth/workos";
 import { server } from "./env";
-import { AutumnService } from "./services/autumn";
-import { createScopedExecutor } from "./services/executor";
 import { DbService, combinedSchema } from "./services/db";
+import { makeExecutionStack } from "./services/execution-stack";
+import { DoTelemetryLive } from "./services/telemetry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,47 +101,46 @@ export class McpSessionDO extends DurableObject {
   async init(token: McpSessionInit): Promise<void> {
     if (this.initialized) return;
 
-    // Create a long-lived DB connection for the DO's lifetime
     this.dbHandle = makeLongLivedDb();
-
-    const { sql, db } = this.dbHandle;
-    const DbLive = Layer.succeed(DbService, { sql, db });
-    const UserStoreLive = UserStoreService.Live.pipe(Layer.provide(DbLive));
-    const Services = Layer.mergeAll(
-      DbLive,
-      UserStoreLive,
-      WorkOSAuth.Default,
-      AutumnService.Default,
-    );
-
-    const program = Effect.gen(function* () {
-      const org = yield* resolveOrganization(token.organizationId);
-      if (!org)
-        return yield* new OrganizationNotFoundError({ organizationId: token.organizationId });
-
-      const executor = yield* createScopedExecutor(org.id, org.name);
-      const codeExecutor = makeDynamicWorkerExecutor({ loader: env.LOADER });
-      const autumn = yield* AutumnService;
-      const engine = withExecutionUsageTracking(
-        org.id,
-        createExecutionEngine({ executor, codeExecutor }),
-        makeTrackExecutionUsage(autumn),
+    try {
+      const { sql, db } = this.dbHandle;
+      const DbLive = Layer.succeed(DbService, { sql, db });
+      const UserStoreLive = UserStoreService.Live.pipe(Layer.provide(DbLive));
+      const Services = Layer.mergeAll(
+        DbLive,
+        UserStoreLive,
+        CoreSharedServices,
+        DoTelemetryLive,
       );
-      return yield* Effect.promise(() => createExecutorMcpServer({ engine }));
-    }).pipe(Effect.provide(Services));
 
-    this.mcpServer = await Effect.runPromise(program);
+      const program = Effect.gen(function* () {
+        const org = yield* resolveOrganization(token.organizationId);
+        if (!org)
+          return yield* new OrganizationNotFoundError({ organizationId: token.organizationId });
 
-    this.transport = new WorkerTransport({
-      sessionIdGenerator: () => this.ctx.id.toString(),
-      storage: this.makeStorage(),
-    });
+        const { engine } = yield* makeExecutionStack(org.id, org.name);
+        return yield* Effect.promise(() => createExecutorMcpServer({ engine }));
+      }).pipe(Effect.withSpan("McpSessionDO.init"), Effect.provide(Services));
 
-    await this.mcpServer.connect(this.transport);
-    this.initialized = true;
-    this.lastActivityMs = Date.now();
+      this.mcpServer = await Effect.runPromise(program);
 
-    await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_MS);
+      this.transport = new WorkerTransport({
+        sessionIdGenerator: () => this.ctx.id.toString(),
+        storage: this.makeStorage(),
+      });
+
+      await this.mcpServer.connect(this.transport);
+      this.initialized = true;
+      this.lastActivityMs = Date.now();
+
+      await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_MS);
+    } catch (err) {
+      // Partial init leaves dangling resources (DB socket, maybe mcpServer).
+      // Clean up before rethrowing so the DO isn't stuck in a half-built state.
+      console.error("[mcp-session] init failed:", err instanceof Error ? err.stack : err);
+      await this.cleanup();
+      throw err;
+    }
   }
 
   async handleRequest(request: Request): Promise<Response> {
