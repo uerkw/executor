@@ -29,7 +29,7 @@ import {
 } from "@executor/config";
 
 import { OpenApiOAuthError } from "./errors";
-import { parse } from "./parse";
+import { parse, resolveSpecText } from "./parse";
 import { extract } from "./extract";
 import { compileToolDefinitions, type ToolDefinition } from "./definitions";
 import {
@@ -242,94 +242,103 @@ export const openApiPlugin = definePlugin(
             .pipe(Effect.map((ref) => ({ id: ref.id as string })));
 
         const addSpecInternal = (config: OpenApiSpecConfig) =>
-          ctx.transaction(
-            Effect.gen(function* () {
-              const doc = yield* parse(config.spec);
-              const result = yield* extract(doc);
+          Effect.gen(function* () {
+            // Resolve URL → text and parse BEFORE opening a transaction.
+            // Holding `BEGIN` on the pool=1 Postgres connection across a
+            // network fetch is the Hyperdrive deadlock path in production.
+            const specText = yield* resolveSpecText(config.spec).pipe(
+              Effect.provide(httpClientLayer),
+            );
+            const doc = yield* parse(specText);
+            const result = yield* extract(doc);
 
-              const namespace =
-                config.namespace ??
-                Option.getOrElse(result.title, () => "api")
-                  .toLowerCase()
-                  .replace(/[^a-z0-9]+/g, "_");
+            const namespace =
+              config.namespace ??
+              Option.getOrElse(result.title, () => "api")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_");
 
-              const hoistedDefs: Record<string, unknown> = {};
-              if (doc.components?.schemas) {
-                for (const [k, v] of Object.entries(doc.components.schemas)) {
-                  hoistedDefs[k] = normalizeOpenApiRefs(v);
-                }
+            const hoistedDefs: Record<string, unknown> = {};
+            if (doc.components?.schemas) {
+              for (const [k, v] of Object.entries(doc.components.schemas)) {
+                hoistedDefs[k] = normalizeOpenApiRefs(v);
               }
+            }
 
-              const baseUrl = config.baseUrl ?? resolveBaseUrl(result.servers);
-              const oauth2 = config.oauth2 ?? undefined;
-              const invocationConfig = new InvocationConfig({
-                baseUrl,
-                headers: config.headers ?? {},
-                oauth2: oauth2 ? Option.some(oauth2) : Option.none(),
-              });
+            const baseUrl = config.baseUrl ?? resolveBaseUrl(result.servers);
+            const oauth2 = config.oauth2 ?? undefined;
+            const invocationConfig = new InvocationConfig({
+              baseUrl,
+              headers: config.headers ?? {},
+              oauth2: oauth2 ? Option.some(oauth2) : Option.none(),
+            });
 
-              const definitions = compileToolDefinitions(result.operations);
-              const sourceName =
-                config.name ?? Option.getOrElse(result.title, () => namespace);
+            const definitions = compileToolDefinitions(result.operations);
+            const sourceName =
+              config.name ?? Option.getOrElse(result.title, () => namespace);
 
-              const sourceConfig: SourceConfig = {
-                spec: config.spec,
-                baseUrl: config.baseUrl,
-                namespace: config.namespace,
-                headers: config.headers,
-                oauth2,
-              };
+            const sourceConfig: SourceConfig = {
+              spec: config.spec,
+              baseUrl: config.baseUrl,
+              namespace: config.namespace,
+              headers: config.headers,
+              oauth2,
+            };
 
-              const storedSource: StoredSource = {
-                namespace,
-                name: sourceName,
-                config: sourceConfig,
-                invocationConfig,
-              };
+            const storedSource: StoredSource = {
+              namespace,
+              name: sourceName,
+              config: sourceConfig,
+              invocationConfig,
+            };
 
-              const storedOps: StoredOperation[] = definitions.map((def) => ({
-                toolId: `${namespace}.${def.toolPath}`,
-                sourceId: namespace,
-                binding: toBinding(def),
-              }));
+            const storedOps: StoredOperation[] = definitions.map((def) => ({
+              toolId: `${namespace}.${def.toolPath}`,
+              sourceId: namespace,
+              binding: toBinding(def),
+            }));
 
-              yield* ctx.storage.upsertSource(storedSource, storedOps);
+            yield* ctx.transaction(
+              Effect.gen(function* () {
+                yield* ctx.storage.upsertSource(storedSource, storedOps);
 
-              yield* ctx.core.sources.register({
-                id: namespace,
-                kind: "openapi",
-                name: sourceName,
-                url: baseUrl || undefined,
-                canRemove: true,
-                canRefresh: false,
-                canEdit: true,
-                tools: definitions.map((def) => ({
-                  name: def.toolPath,
-                  description: descriptionFor(def),
-                  inputSchema: normalizeOpenApiRefs(
-                    Option.getOrUndefined(def.operation.inputSchema),
-                  ),
-                  outputSchema: normalizeOpenApiRefs(
-                    Option.getOrUndefined(def.operation.outputSchema),
-                  ),
-                })),
-              });
-
-              if (Object.keys(hoistedDefs).length > 0) {
-                yield* ctx.core.definitions.register({
-                  sourceId: namespace,
-                  definitions: hoistedDefs,
+                yield* ctx.core.sources.register({
+                  id: namespace,
+                  kind: "openapi",
+                  name: sourceName,
+                  url: baseUrl || undefined,
+                  canRemove: true,
+                  canRefresh: false,
+                  canEdit: true,
+                  tools: definitions.map((def) => ({
+                    name: def.toolPath,
+                    description: descriptionFor(def),
+                    inputSchema: normalizeOpenApiRefs(
+                      Option.getOrUndefined(def.operation.inputSchema),
+                    ),
+                    outputSchema: normalizeOpenApiRefs(
+                      Option.getOrUndefined(def.operation.outputSchema),
+                    ),
+                  })),
                 });
-              }
 
-              return { sourceId: namespace, toolCount: definitions.length };
-            }),
-          );
+                if (Object.keys(hoistedDefs).length > 0) {
+                  yield* ctx.core.definitions.register({
+                    sourceId: namespace,
+                    definitions: hoistedDefs,
+                  });
+                }
+              }),
+            );
+
+            return { sourceId: namespace, toolCount: definitions.length };
+          });
 
         const configFile = options?.configFile;
 
         return {
-          previewSpec: (specText) => previewSpec(specText),
+          previewSpec: (specText) =>
+            previewSpec(specText).pipe(Effect.provide(httpClientLayer)),
 
           addSpec: (config) =>
             Effect.gen(function* () {
@@ -680,7 +689,12 @@ export const openApiPlugin = definePlugin(
             Effect.option,
           );
           if (parsed._tag === "None") return null;
-          const doc = yield* parse(trimmed).pipe(
+          const specText = yield* resolveSpecText(trimmed).pipe(
+            Effect.provide(httpClientLayer),
+            Effect.catchAll(() => Effect.succeed(null)),
+          );
+          if (specText === null) return null;
+          const doc = yield* parse(specText).pipe(
             Effect.catchAll(() => Effect.succeed(null)),
           );
           if (!doc) return null;
