@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
-import { useAtomRefresh, useAtomSet } from "@effect-atom/atom-react";
+import { useAtomSet } from "@effect-atom/atom-react";
 
-import { secretsAtom, setSecret, resolveSecret } from "../api/atoms";
+import { setSecret, resolveSecret } from "../api/atoms";
+import { secretWriteKeys } from "../api/reactivity-keys";
 import { useScope } from "../api/scope-context";
 import { Button } from "../components/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "../components/field";
@@ -73,7 +74,6 @@ function InlineCreateSecret(props: {
   const [error, setError] = useState<string | null>(null);
   const scopeId = useScope();
   const doSet = useAtomSet(setSecret, { mode: "promise" });
-  const refreshSecrets = useAtomRefresh(secretsAtom(scopeId));
   const secretIdInputId = useId();
   const secretNameInputId = useId();
   const secretValueInputId = useId();
@@ -90,8 +90,8 @@ function InlineCreateSecret(props: {
           name: `${secretName.trim() || secretId.trim()} (Auth header: ${props.headerName})`,
           value: secretValue.trim(),
         },
+        reactivityKeys: secretWriteKeys,
       });
-      refreshSecrets();
       props.onCreated(secretId.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save secret");
