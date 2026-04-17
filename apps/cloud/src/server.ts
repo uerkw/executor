@@ -35,6 +35,11 @@ export default Sentry.withSentry(
     tracesSampleRate: 0,
     enableLogs: true,
     sendDefaultPii: true,
+    // otel-cf-workers owns the global TracerProvider. Sentry's OTEL compat
+    // shim registers a ProxyTracerProvider of its own, which prevents
+    // otel-cf-workers from finding its WorkerTracer and breaks the whole
+    // request path with "global tracer is not of type WorkerTracer".
+    skipOpenTelemetrySetup: true,
   }),
   instrumentedHandler,
 );
