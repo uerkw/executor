@@ -8,6 +8,7 @@ import {
   removeSource,
   refreshSource,
 } from "../api/atoms";
+import { sourceWriteKeys } from "../api/reactivity-keys";
 import { ToolTree } from "../components/tool-tree";
 import { ToolDetail, ToolDetailEmpty } from "../components/tool-detail";
 import type { ToolSummary } from "../components/tool-tree";
@@ -81,8 +82,8 @@ export function SourceDetailPage(props: {
     try {
       await doRemove({
         path: { scopeId, sourceId: namespace },
+        reactivityKeys: sourceWriteKeys,
       });
-      refreshSources();
       void navigate({ to: "/" });
     } catch {
       setDeleting(false);
@@ -95,9 +96,8 @@ export function SourceDetailPage(props: {
     try {
       await doRefresh({
         path: { scopeId, sourceId: namespace },
+        reactivityKeys: sourceWriteKeys,
       });
-      refreshTools();
-      refreshSources();
     } finally {
       setRefreshing(false);
     }
@@ -105,8 +105,6 @@ export function SourceDetailPage(props: {
 
   const handleEditSave = () => {
     setEditing(false);
-    refreshSources();
-    refreshTools();
   };
 
   return (

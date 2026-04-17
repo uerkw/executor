@@ -6,6 +6,8 @@ import { openOAuthPopup, type OAuthPopupResult } from "@executor/plugin-oauth2/r
 
 import { SecretPicker } from "@executor/react/plugins/secret-picker";
 import { useScope } from "@executor/react/api/scope-context";
+import { sourceWriteKeys } from "@executor/react/api/reactivity-keys";
+import { usePendingSources } from "@executor/react/api/optimistic";
 import { HeadersList } from "@executor/react/plugins/headers-list";
 import {
   matchPresetKey,
@@ -171,6 +173,7 @@ export default function AddOpenApiSource(props: {
   const doPreview = useAtomSet(previewOpenApiSpec, { mode: "promise" });
   const doAdd = useAtomSet(addOpenApiSpec, { mode: "promise" });
   const doStartOAuth = useAtomSet(startOpenApiOAuth, { mode: "promise" });
+  const { beginAdd } = usePendingSources();
   const secretList = useSecretPickerSecrets();
 
   // Keep the latest handleAnalyze in a ref so the debounced effect doesn't
@@ -456,6 +459,18 @@ export default function AddOpenApiSource(props: {
   const handleAdd = async () => {
     setAdding(true);
     setAddError(null);
+    const namespace =
+      slugifyNamespace(identity.namespace) ||
+      (preview ? Option.getOrElse(preview.title, () => "openapi") : "openapi");
+    const displayName =
+      identity.name.trim() ||
+      (preview ? Option.getOrElse(preview.title, () => namespace) : namespace);
+    const placeholder = beginAdd({
+      id: namespace,
+      name: displayName,
+      kind: "openapi",
+      url: resolvedBaseUrl || undefined,
+    });
     try {
       await doAdd({
         path: { scopeId },
@@ -467,11 +482,14 @@ export default function AddOpenApiSource(props: {
           ...(hasHeaders ? { headers: allHeaders } : {}),
           ...(oauth2Auth ? { oauth2: oauth2Auth } : {}),
         },
+        reactivityKeys: sourceWriteKeys,
       });
       props.onComplete();
     } catch (e) {
       setAddError(e instanceof Error ? e.message : "Failed to add source");
       setAdding(false);
+    } finally {
+      placeholder.done();
     }
   };
 

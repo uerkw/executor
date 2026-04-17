@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useAtomValue, useAtomSet, useAtomRefresh, Result } from "@effect-atom/atom-react";
+import { useAtomValue, useAtomSet, Result } from "@effect-atom/atom-react";
 import { openApiSourceAtom, updateOpenApiSource } from "./atoms";
 import { useScope } from "@executor/react/api/scope-context";
+import { sourceWriteKeys } from "@executor/react/api/reactivity-keys";
 import { useSecretPickerSecrets } from "@executor/react/plugins/use-secret-picker-secrets";
 import {
   headerValueToState,
@@ -35,7 +36,6 @@ function EditForm(props: {
 }) {
   const scopeId = useScope();
   const doUpdate = useAtomSet(updateOpenApiSource, { mode: "promise" });
-  const refreshSource = useAtomRefresh(openApiSourceAtom(scopeId, props.sourceId));
   const secretList = useSecretPickerSecrets();
 
   const identity = useSourceIdentity({
@@ -70,8 +70,8 @@ function EditForm(props: {
           baseUrl: baseUrl.trim() || undefined,
           headers: headersFromState(headers),
         },
+        reactivityKeys: sourceWriteKeys,
       });
-      refreshSource();
       setDirty(false);
       props.onSave();
     } catch (e) {
