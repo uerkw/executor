@@ -8,5 +8,8 @@ export {
   InternalError,
   ErrorCapture,
   observabilityMiddleware,
+  captureStorage,
+  withStorageCapture,
+  type StorageCaptured,
   type ErrorCaptureShape,
 } from "./observability";

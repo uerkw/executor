@@ -7,7 +7,7 @@ import {
 } from "@effect/platform";
 import { Context, Effect, Layer, ManagedRuntime } from "effect";
 
-import { addGroup } from "@executor/api";
+import { addGroup, withStorageCapture } from "@executor/api";
 import { CoreHandlers, ExecutorService, ExecutionEngineService } from "@executor/api/server";
 import { createExecutionEngine } from "@executor/execution";
 import {
@@ -82,7 +82,7 @@ export const createServerHandlers = async (): Promise<ServerHandlers> => {
 
   const pluginExtensions = Layer.mergeAll(
     Layer.succeed(OpenApiExtensionService, executor.openapi),
-    Layer.succeed(McpExtensionService, executor.mcp),
+    Layer.succeed(McpExtensionService, withStorageCapture(executor.mcp)),
     Layer.succeed(GoogleDiscoveryExtensionService, executor.googleDiscovery),
     Layer.succeed(OnePasswordExtensionService, executor.onepassword),
     Layer.succeed(GraphqlExtensionService, executor.graphql),

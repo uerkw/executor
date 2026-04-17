@@ -1,7 +1,6 @@
-import { Cause, Effect, FiberRef, Option } from "effect";
+import { Effect, FiberRef } from "effect";
 import {
   StorageError,
-  UniqueViolationError,
   typedAdapter,
   type DBAdapter,
   type DBSchema,
@@ -9,8 +8,6 @@ import {
   type StorageFailure,
   type TypedAdapter,
 } from "@executor/storage-core";
-
-import { InternalError, ErrorCapture } from "./observability";
 
 import {
   scopeBlobStore,
@@ -97,33 +94,25 @@ const resolveElicitationHandler = (
 // pool. No ToolRegistry, no SourceRegistry, no SecretStore services.
 // ---------------------------------------------------------------------------
 
-/**
- * Host-facing error union for the Executor surface. Same shape as
- * `PluginStorageFailure`: `StorageError` from raw storage has been
- * captured to telemetry and translated to `InternalError({ traceId })`;
- * `UniqueViolationError` propagates so callers can react.
- */
-export type ExecutorFailure = InternalError | UniqueViolationError;
-
 export type Executor<TPlugins extends readonly AnyPlugin[] = []> = {
   readonly scope: Scope;
 
   readonly tools: {
     readonly list: (
       filter?: ToolListFilter,
-    ) => Effect.Effect<readonly Tool[], ExecutorFailure>;
+    ) => Effect.Effect<readonly Tool[], StorageFailure>;
     /** Fetch a tool's full schema view: JSON schemas with `$defs`
      *  attached from the core `definition` table, plus TypeScript
      *  preview strings rendered from them. Returns `null` for unknown
      *  tool ids. */
     readonly schema: (
       toolId: string,
-    ) => Effect.Effect<ToolSchema | null, ExecutorFailure>;
+    ) => Effect.Effect<ToolSchema | null, StorageFailure>;
     /** Every `$defs` entry across every source, grouped by source id.
      *  Used for bulk schema export and downstream TypeScript rendering. */
     readonly definitions: () => Effect.Effect<
       Record<string, Record<string, unknown>>,
-      ExecutorFailure
+      StorageFailure
     >;
     readonly invoke: (
       toolId: string,
@@ -136,48 +125,48 @@ export type Executor<TPlugins extends readonly AnyPlugin[] = []> = {
       | NoHandlerError
       | ToolInvocationError
       | ElicitationDeclinedError
-      | ExecutorFailure
+      | StorageFailure
     >;
   };
 
   readonly sources: {
-    readonly list: () => Effect.Effect<readonly Source[], ExecutorFailure>;
+    readonly list: () => Effect.Effect<readonly Source[], StorageFailure>;
     readonly remove: (
       sourceId: string,
-    ) => Effect.Effect<void, SourceRemovalNotAllowedError | ExecutorFailure>;
-    readonly refresh: (sourceId: string) => Effect.Effect<void, ExecutorFailure>;
+    ) => Effect.Effect<void, SourceRemovalNotAllowedError | StorageFailure>;
+    readonly refresh: (sourceId: string) => Effect.Effect<void, StorageFailure>;
     /** URL autodetection — fans out to every plugin's `detect` hook
      *  (if declared), returns every high/medium/low-confidence match.
      *  UI picks a winner from the list. */
     readonly detect: (
       url: string,
-    ) => Effect.Effect<readonly SourceDetectionResult[], ExecutorFailure>;
+    ) => Effect.Effect<readonly SourceDetectionResult[], StorageFailure>;
     /** All `$defs` registered for a single source, keyed by def name. */
     readonly definitions: (
       sourceId: string,
-    ) => Effect.Effect<Record<string, unknown>, ExecutorFailure>;
+    ) => Effect.Effect<Record<string, unknown>, StorageFailure>;
   };
 
   readonly secrets: {
     readonly get: (
       id: string,
-    ) => Effect.Effect<string | null, ExecutorFailure>;
+    ) => Effect.Effect<string | null, StorageFailure>;
     /** Fast-path existence check — hits the core `secret` routing table
      *  only, never calls the provider. Use this for UI state ("secret
      *  missing, prompt to add") to avoid keychain permission prompts
      *  or 1password IPC roundtrips on a pre-flight check. */
     readonly status: (
       id: string,
-    ) => Effect.Effect<"resolved" | "missing", ExecutorFailure>;
+    ) => Effect.Effect<"resolved" | "missing", StorageFailure>;
     readonly set: (
       input: SetSecretInput,
-    ) => Effect.Effect<SecretRef, ExecutorFailure>;
-    readonly remove: (id: string) => Effect.Effect<void, ExecutorFailure>;
-    readonly list: () => Effect.Effect<readonly SecretRef[], ExecutorFailure>;
+    ) => Effect.Effect<SecretRef, StorageFailure>;
+    readonly remove: (id: string) => Effect.Effect<void, StorageFailure>;
+    readonly list: () => Effect.Effect<readonly SecretRef[], StorageFailure>;
     readonly providers: () => Effect.Effect<readonly string[]>;
   };
 
-  readonly close: () => Effect.Effect<void, ExecutorFailure>;
+  readonly close: () => Effect.Effect<void, StorageFailure>;
 } & PluginExtensions<TPlugins>;
 
 export interface ExecutorConfig<
@@ -488,21 +477,6 @@ export const createExecutor = <
       plugins = [] as unknown as TPlugins,
     } = config;
 
-    // ErrorCapture is OPTIONAL — hosts that want unexpected failures
-    // captured to Sentry / a logger / etc. provide it via Layer
-    // (Sentry-backed `ErrorCaptureLive` in the cloud Worker). Hosts
-    // that don't provide it (CLI, tests, the Promise SDK) get a no-op:
-    // storage failures still translate to `InternalError(traceId="")`
-    // and bubble through the typed channel — they just don't get
-    // recorded anywhere external. Nothing breaks if it's not wired.
-    const errorCapture = yield* Effect.serviceOption(ErrorCapture).pipe(
-      Effect.map((opt) =>
-        Option.isSome(opt)
-          ? opt.value
-          : ({ captureException: () => Effect.succeed("") } as const),
-      ),
-    );
-
     // Scope-wrap the root adapter so every read on a tenant-scoped table
     // filters by the current scope stack and every write stamps the
     // write target. Today the stack has one element; the adapter's
@@ -517,58 +491,6 @@ export const createExecutor = <
     );
     const adapter = buildAdapterRouter(scopedRoot);
     const core = typedAdapter<CoreSchema>(adapter);
-
-    // Translates any `StorageError` in an effect's typed channel into a
-    // captured-and-traceable `InternalError`, leaving every other typed
-    // failure (UniqueViolationError, plugin-domain errors, …) intact.
-    // Used at every PluginCtx surface so plugin code never sees raw
-    // storage internals — they appear as `InternalError({ traceId })`
-    // with the cause already in Sentry.
-    const liftStorage = <A, E, R>(
-      eff: Effect.Effect<A, E | StorageError, R>,
-    ): Effect.Effect<A, Exclude<E, StorageError> | InternalError, R> =>
-      Effect.catchTag(eff, "StorageError", (err) =>
-        errorCapture
-          .captureException(Cause.fail(err))
-          .pipe(
-            Effect.flatMap((traceId) =>
-              Effect.fail(new InternalError({ traceId })),
-            ),
-          ),
-      ) as Effect.Effect<A, Exclude<E, StorageError> | InternalError, R>;
-
-    // Build a DBAdapter facade whose every method routes its
-    // `StorageError` channel through `liftStorage`. Type-wise the result
-    // is still `DBAdapter` (E = `StorageFailure` per the interface), but
-    // at runtime it never emits `StorageError` — that branch has been
-    // captured and rewritten to `InternalError`. The `typedAdapter` cast
-    // upstream makes this honest in plugin code by re-typing the view
-    // to `TypedAdapter<S, PluginStorageFailure>`.
-    const wrapAdapterForPlugin = (raw: DBAdapter): DBAdapter => ({
-      id: raw.id,
-      create: ((data) => liftStorage(raw.create(data))) as DBAdapter["create"],
-      createMany: ((data) =>
-        liftStorage(raw.createMany(data))) as DBAdapter["createMany"],
-      findOne: ((data) =>
-        liftStorage(raw.findOne(data))) as DBAdapter["findOne"],
-      findMany: ((data) =>
-        liftStorage(raw.findMany(data))) as DBAdapter["findMany"],
-      count: ((data) => liftStorage(raw.count(data))) as DBAdapter["count"],
-      update: ((data) =>
-        liftStorage(raw.update(data))) as DBAdapter["update"],
-      updateMany: ((data) =>
-        liftStorage(raw.updateMany(data))) as DBAdapter["updateMany"],
-      delete: ((data) =>
-        liftStorage(raw.delete(data))) as DBAdapter["delete"],
-      deleteMany: ((data) =>
-        liftStorage(raw.deleteMany(data))) as DBAdapter["deleteMany"],
-      transaction: ((callback) =>
-        liftStorage(
-          raw.transaction((trx) =>
-            callback(wrapAdapterForPlugin(trx as DBAdapter) as never),
-          ),
-        )) as DBAdapter["transaction"],
-    });
 
     // Populated once, never mutated after startup.
     const staticTools = new Map<string, StaticTools>();
@@ -823,16 +745,16 @@ export const createExecutor = <
         );
       }
 
-      // The plugin-facing typed adapter has its `StorageError` channel
-      // already routed through ErrorCapture — `liftStorage` translates it
-      // to the public `InternalError(traceId)`. `UniqueViolationError`
-      // passes through so plugins can catchTag it. `typedAdapter` is a
-      // type-level cast; we wrap each method so the cast remains honest.
-      const pluginAdapter = wrapAdapterForPlugin(adapter);
+      // Plugin-facing typed view. `StorageError` and `UniqueViolationError`
+      // flow through the typed channel unchanged — plugins can
+      // `catchTag("UniqueViolationError", …)` to translate to their own
+      // user-facing errors; the HTTP edge (see @executor/api
+      // `withStorageCapture`) is responsible for translating any
+      // `StorageError` that still escapes into the opaque InternalError.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const storageDeps: StorageDeps<any> = {
         scope,
-        adapter: typedAdapter(pluginAdapter) as never,
+        adapter: typedAdapter(adapter) as never,
         // Blob keys are namespaced by `<scope>/<plugin>` so two tenants
         // sharing a backing BlobStore can't collide or leak on the same
         // `(plugin, key)` pair. Mirrors the adapter's scope-stamping.
@@ -846,77 +768,68 @@ export const createExecutor = <
         core: {
           sources: {
             register: (input: SourceInput) =>
-              liftStorage(
-                Effect.gen(function* () {
-                  // Guard: reject a dynamic source whose id collides with
-                  // a static source id, or any of whose would-be tool ids
-                  // collide with a static tool id. Tool ids are
-                  // `${source_id}.${tool.name}` — static and dynamic
-                  // share the same string space. Treated as `StorageError`
-                  // so they surface as `InternalError(traceId)` to the
-                  // plugin (caller bug, not user input).
-                  if (staticSources.has(input.id)) {
+              Effect.gen(function* () {
+                // Guard: reject a dynamic source whose id collides with
+                // a static source id, or any of whose would-be tool ids
+                // collide with a static tool id. Tool ids are
+                // `${source_id}.${tool.name}` — static and dynamic
+                // share the same string space. Fails as `StorageError`
+                // so the HTTP edge surfaces it as `InternalError(traceId)`.
+                if (staticSources.has(input.id)) {
+                  return yield* Effect.fail(
+                    new StorageError({
+                      message: `Source id "${input.id}" collides with a static source`,
+                      cause: undefined,
+                    }),
+                  );
+                }
+                for (const tool of input.tools) {
+                  const fqid = `${input.id}.${tool.name}`;
+                  if (staticTools.has(fqid)) {
                     return yield* Effect.fail(
                       new StorageError({
-                        message: `Source id "${input.id}" collides with a static source`,
+                        message: `Tool id "${fqid}" collides with a static tool`,
                         cause: undefined,
                       }),
                     );
                   }
-                  for (const tool of input.tools) {
-                    const fqid = `${input.id}.${tool.name}`;
-                    if (staticTools.has(fqid)) {
-                      return yield* Effect.fail(
-                        new StorageError({
-                          message: `Tool id "${fqid}" collides with a static tool`,
-                          cause: undefined,
-                        }),
-                      );
-                    }
-                  }
-                  // Wrap in adapter.transaction so a standalone register()
-                  // call is atomic (source create + tools createMany group
-                  // together). When already inside a parent ctx.transaction,
-                  // the router short-circuits to the active tx handle
-                  // instead of opening a nested sql.begin — that nested
-                  // sql.begin is the postgres.js + pool=1 deadlock path.
-                  yield* adapter.transaction(() =>
-                    writeSourceInput(core, plugin.id, input),
-                  );
-                }),
-              ),
+                }
+                // Wrap in adapter.transaction so a standalone register()
+                // call is atomic (source create + tools createMany group
+                // together). When already inside a parent ctx.transaction,
+                // the router short-circuits to the active tx handle
+                // instead of opening a nested sql.begin — that nested
+                // sql.begin is the postgres.js + pool=1 deadlock path.
+                yield* adapter.transaction(() =>
+                  writeSourceInput(core, plugin.id, input),
+                );
+              }),
             unregister: (sourceId: string) =>
-              liftStorage(
-                adapter.transaction(() => deleteSourceById(core, sourceId)),
-              ),
+              adapter.transaction(() => deleteSourceById(core, sourceId)),
           },
           definitions: {
             register: (input: DefinitionsInput) =>
-              liftStorage(
-                adapter.transaction(() =>
-                  writeDefinitions(core, plugin.id, input),
-                ),
+              adapter.transaction(() =>
+                writeDefinitions(core, plugin.id, input),
               ),
           },
         },
         secrets: {
-          get: (id) => liftStorage(secretsGet(id)),
-          list: () => liftStorage(secretsListForCtx()),
-          set: (input) => liftStorage(secretsSet(input)),
-          remove: (id) => liftStorage(secretsRemove(id)),
+          get: (id) => secretsGet(id),
+          list: () => secretsListForCtx(),
+          set: (input) => secretsSet(input),
+          remove: (id) => secretsRemove(id),
         },
         // Open one real tx boundary and route every nested write inside
         // `effect` through that same handle via the activeAdapterRef —
-        // see buildAdapterRouter above for the dispatch logic. Caller-typed
-        // errors (`E`) propagate unchanged; storage-level failures inside
-        // the wrapper are routed through ErrorCapture to InternalError.
+        // see buildAdapterRouter above. Caller-typed errors (`E`)
+        // propagate unchanged; storage failures also stay typed
+        // (`StorageFailure`) so the HTTP edge wrapper can translate them.
         transaction: <A, E>(effect: Effect.Effect<A, E>) =>
-          liftStorage(
-            adapter.transaction(() => effect) as Effect.Effect<
-              A,
-              E | StorageError
-            >,
-          ),
+          adapter.transaction(() => effect) as Effect.Effect<
+            A,
+            E | StorageFailure
+          >,
       };
 
       // Build extension FIRST so it's available as `self` when resolving
@@ -1391,39 +1304,38 @@ export const createExecutor = <
         }
       });
 
-    // Public Executor surface — every storage-backed method is routed
-    // through `liftStorage` so the host sees `ExecutorFailure`
-    // (= InternalError | UniqueViolationError), never raw `StorageError`.
-    // ErrorCapture capture happens here, once per call, by the same path as
-    // PluginCtx.
+    // Public Executor surface — storage-backed methods surface
+    // `StorageFailure` (StorageError | UniqueViolationError) raw. The
+    // HTTP edge wraps this surface with `withStorageCapture` to
+    // translate `StorageError` → `InternalError({ traceId })`; non-HTTP
+    // consumers (CLI, Promise SDK, tests) see the raw typed channel.
     const base = {
       scope,
       tools: {
-        list: (filter?: ToolListFilter) => liftStorage(listTools(filter)),
-        schema: (toolId: string) => liftStorage(toolSchema(toolId)),
-        definitions: () => liftStorage(toolsDefinitions()),
+        list: listTools,
+        schema: toolSchema,
+        definitions: toolsDefinitions,
         invoke: invokeTool,
       },
       sources: {
-        list: () => liftStorage(listSources()),
-        remove: (sourceId: string) => liftStorage(removeSource(sourceId)),
-        refresh: (sourceId: string) => liftStorage(refreshSource(sourceId)),
-        detect: (url: string) => liftStorage(detectSource(url)),
-        definitions: (sourceId: string) =>
-          liftStorage(sourceDefinitions(sourceId)),
+        list: listSources,
+        remove: removeSource,
+        refresh: refreshSource,
+        detect: detectSource,
+        definitions: sourceDefinitions,
       },
       secrets: {
-        get: (id: string) => liftStorage(secretsGet(id)),
-        status: (id: string) => liftStorage(secretsStatus(id)),
-        set: (input: SetSecretInput) => liftStorage(secretsSet(input)),
-        remove: (id: string) => liftStorage(secretsRemove(id)),
-        list: () => liftStorage(secretsList()),
+        get: secretsGet,
+        status: secretsStatus,
+        set: secretsSet,
+        remove: secretsRemove,
+        list: secretsList,
         providers: () =>
           Effect.sync(
             () => Array.from(secretProviders.keys()) as readonly string[],
           ),
       },
-      close: () => liftStorage(close()),
+      close,
     };
 
     // Cast through `unknown` because the impl effects can include

@@ -2,8 +2,8 @@ import type { Effect } from "effect";
 import type {
   DBAdapter,
   DBSchema,
+  StorageFailure,
   TypedAdapter,
-  UniqueViolationError,
 } from "@executor/storage-core";
 
 import type { ScopedBlobStore } from "./blob";
@@ -20,18 +20,8 @@ import type {
   ElicitationRequest,
   ElicitationResponse,
 } from "./elicitation";
-import type { InternalError } from "./observability";
 import type { Scope } from "./scope";
 import type { SecretProvider, SecretRef, SetSecretInput } from "./secrets";
-
-/**
- * Plugin-facing storage failure union. `StorageError` from the raw
- * backend has already been captured to telemetry and translated to
- * `InternalError(traceId)` by the SDK boundary; `UniqueViolationError`
- * passes through so plugins can `Effect.catchTag` and translate to
- * their own user-facing errors.
- */
-export type PluginStorageFailure = InternalError | UniqueViolationError;
 
 // ---------------------------------------------------------------------------
 // StorageDeps — backing passed to a plugin's `storage` factory. The only
@@ -48,14 +38,15 @@ export type PluginStorageFailure = InternalError | UniqueViolationError;
 export interface StorageDeps<TSchema extends DBSchema | undefined = undefined> {
   readonly scope: Scope;
   /**
-   * Plugin-facing typed adapter. Failures already routed through
-   * ErrorCapture — `StorageError` has been captured + translated, so the
-   * error channel here is `InternalError | UniqueViolationError`.
-   * Plugins call methods normally and never see raw storage Errors or
-   * touch a ErrorCapture tag.
+   * Plugin-facing typed adapter. Failures surface as raw `StorageFailure`
+   * (`StorageError` | `UniqueViolationError`). Plugins can
+   * `catchTag("UniqueViolationError", …)` to translate to their own
+   * user-facing errors. `StorageError` bubbles up; the HTTP edge (see
+   * `@executor/api` `withStorageCapture`) is the one place that
+   * translates it to the opaque `InternalError({ traceId })`.
    */
   readonly adapter: TSchema extends DBSchema
-    ? TypedAdapter<TSchema, PluginStorageFailure>
+    ? TypedAdapter<TSchema, StorageFailure>
     : DBAdapter;
   readonly blobs: ScopedBlobStore;
 }
@@ -94,10 +85,10 @@ export interface PluginCtx<TStore = unknown> {
     readonly sources: {
       readonly register: (
         input: SourceInput,
-      ) => Effect.Effect<void, PluginStorageFailure>;
+      ) => Effect.Effect<void, StorageFailure>;
       readonly unregister: (
         sourceId: string,
-      ) => Effect.Effect<void, PluginStorageFailure>;
+      ) => Effect.Effect<void, StorageFailure>;
     };
     /** Register shared JSON-schema `$defs` for a source. Tool
      *  input/output schemas registered via `sources.register` can carry
@@ -108,17 +99,17 @@ export interface PluginCtx<TStore = unknown> {
     readonly definitions: {
       readonly register: (
         input: DefinitionsInput,
-      ) => Effect.Effect<void, PluginStorageFailure>;
+      ) => Effect.Effect<void, StorageFailure>;
     };
   };
 
   readonly secrets: {
     readonly get: (
       id: string,
-    ) => Effect.Effect<string | null, PluginStorageFailure>;
+    ) => Effect.Effect<string | null, StorageFailure>;
     readonly list: () => Effect.Effect<
       readonly { readonly id: string; readonly name: string; readonly provider: string }[],
-      PluginStorageFailure
+      StorageFailure
     >;
     /** Write a secret value through a provider. Used by plugins that
      *  mint secrets on behalf of the user (OAuth2 token storage,
@@ -128,9 +119,9 @@ export interface PluginCtx<TStore = unknown> {
      *  too. Same routing rules as the host-level setter. */
     readonly set: (
       input: SetSecretInput,
-    ) => Effect.Effect<SecretRef, PluginStorageFailure>;
+    ) => Effect.Effect<SecretRef, StorageFailure>;
     /** Delete a secret from its pinned provider and the core table. */
-    readonly remove: (id: string) => Effect.Effect<void, PluginStorageFailure>;
+    readonly remove: (id: string) => Effect.Effect<void, StorageFailure>;
   };
 
   /** Run `effect` inside a database transaction. Wraps the underlying
@@ -139,7 +130,7 @@ export interface PluginCtx<TStore = unknown> {
    *  registration. */
   readonly transaction: <A, E>(
     effect: Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E | PluginStorageFailure>;
+  ) => Effect.Effect<A, E | StorageFailure>;
 }
 
 // ---------------------------------------------------------------------------

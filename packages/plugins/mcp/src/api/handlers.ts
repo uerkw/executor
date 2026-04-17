@@ -1,18 +1,25 @@
 import { HttpApiBuilder, HttpServerResponse } from "@effect/platform";
 import { Cause, Context, Effect } from "effect";
 
-import { addGroup } from "@executor/api";
+import { addGroup, type StorageCaptured } from "@executor/api";
 import type { McpPluginExtension, McpSourceConfig, McpUpdateSourceInput } from "../sdk/plugin";
 import { McpOAuthError } from "../sdk/errors";
 import { McpGroup } from "./group";
 
 // ---------------------------------------------------------------------------
 // Service tag
+//
+// Holds the `StorageCaptured` shape — every method's `StorageError`
+// channel has been swapped for `InternalError({ traceId })`. The cloud
+// app provides an already-wrapped extension via
+// `Layer.succeed(McpExtensionService, withStorageCapture(executor.mcp))`.
+// Handlers see `InternalError` in the error union, which matches
+// `.addError(InternalError)` on the group — no per-handler translation.
 // ---------------------------------------------------------------------------
 
 export class McpExtensionService extends Context.Tag("McpExtensionService")<
   McpExtensionService,
-  McpPluginExtension
+  StorageCaptured<McpPluginExtension>
 >() {}
 
 // ---------------------------------------------------------------------------

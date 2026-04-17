@@ -2,11 +2,11 @@
 // Storage-layer typed errors.
 //
 // Both are `Data.TaggedError` — runtime values, not wire schemas.
-// Storage-core deliberately stays out of HTTP / serialisation / telemetry
-// concerns. Upstream layers translate these into wire shapes (the SDK
-// boundary maps `StorageError` → `InternalError(traceId)`; plugins
-// `Effect.catchTag("UniqueViolationError")` and re-fail with their own
-// schema'd error like `McpSourceAlreadyExistsError`).
+// Storage-core stays out of HTTP / serialisation / telemetry concerns;
+// the HTTP edge (`@executor/api` `withStorageCapture`) is the one place
+// that translates `StorageError` into the opaque public
+// `InternalError({ traceId })`. Plugins `Effect.catchTag("UniqueViolationError")`
+// and re-fail with their own schema'd error (e.g. `McpSourceAlreadyExistsError`).
 //
 // The `Data` choice (vs `Schema.TaggedError`) is enforcement: it's
 // physically impossible to `addError(...)` these on an HttpApi group, so
@@ -19,7 +19,7 @@ import { Data } from "effect";
 /**
  * Catch-all for non-recoverable backend failures (driver crash, network
  * gone, transaction abort the backend can't classify, etc.). The cause
- * travels as runtime data so the SDK boundary can capture it via
+ * travels as runtime data so the HTTP edge can capture it via
  * `ErrorCapture` before translating to the public `InternalError`.
  */
 export class StorageError extends Data.TaggedError("StorageError")<{

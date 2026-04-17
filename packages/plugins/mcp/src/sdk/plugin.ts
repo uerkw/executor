@@ -5,10 +5,10 @@ import type { OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 import {
   definePlugin,
-  InternalError,
   SecretId,
   SetSecretInput,
   SourceDetectionResult,
+  StorageError,
   type PluginCtx,
 } from "@executor/sdk";
 
@@ -946,22 +946,21 @@ export const mcpPlugin = definePlugin(
 // ---------------------------------------------------------------------------
 
 /**
- * Errors any MCP extension method may surface to handlers / hosts.
- * Each variant is a `Schema.TaggedError` HttpApi can encode (see
- * `api/group.ts` `.addError(...)` calls). `InternalError` covers
- * unexpected storage/telemetry failures (already captured to
- * telemetry, traceId attached). `UniqueViolationError` is not in this
- * union — plugin internals are expected to `Effect.catchTag` it and
- * translate to their own typed user-facing error before it reaches
- * here; if it escapes that's a plugin bug and the SDK boundary
- * surfaces it as a defect → InternalError.
+ * Errors any MCP extension method may surface. The first four are
+ * plugin-domain tagged errors that flow directly to clients (4xx, each
+ * carrying its own `HttpApiSchema` status). `StorageError` is the raw
+ * backend-failure tag; the HTTP edge (`@executor/api`'s
+ * `withStorageCapture`) translates it to the opaque
+ * `InternalError({ traceId })` at Layer composition so handlers never
+ * hand-wire the translation. Non-HTTP consumers see `StorageError`
+ * directly.
  */
 export type McpExtensionFailure =
   | McpOAuthError
   | McpConnectionError
   | McpToolDiscoveryError
   | McpInvocationError
-  | InternalError;
+  | StorageError;
 
 export interface McpPluginExtension {
   readonly probeEndpoint: (

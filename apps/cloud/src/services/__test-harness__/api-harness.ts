@@ -30,6 +30,7 @@ import {
   ExecutionEngineService,
   ExecutorService,
 } from "@executor/api/server";
+import { withStorageCapture } from "@executor/api";
 import { createExecutionEngine } from "@executor/execution";
 import {
   Scope,
@@ -220,7 +221,7 @@ const buildAppForScope = (scopeId: string, scopeName: string) =>
       Layer.succeed(ExecutorService, executor),
       Layer.succeed(ExecutionEngineService, engine),
       Layer.succeed(OpenApiExtensionService, executor.openapi),
-      Layer.succeed(McpExtensionService, executor.mcp),
+      Layer.succeed(McpExtensionService, withStorageCapture(executor.mcp)),
       Layer.succeed(GraphqlExtensionService, executor.graphql),
     );
     return yield* HttpApiBuilder.httpApp.pipe(
