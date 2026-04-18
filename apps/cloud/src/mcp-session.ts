@@ -11,6 +11,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { createExecutorMcpServer } from "@executor/host-mcp";
+import { buildExecuteDescription } from "@executor/execution";
 import type { DrizzleDb, DbServiceShape } from "./services/db";
 
 // Import directly from core-shared-services, NOT from ./api/layers.ts.
@@ -176,12 +177,18 @@ export class McpSessionDO extends DurableObject {
   ) {
     const self = this;
     return Effect.gen(function* () {
-      const { engine } = yield* makeExecutionStack(
+      const { executor, engine } = yield* makeExecutionStack(
         sessionMeta.organizationId,
         sessionMeta.organizationName,
       );
+      // Build the description here so the two postgres queries it runs
+      // (`executor.sources.list` + `executor.tools.list`) land as
+      // children of `McpSessionDO.createRuntime`. host-mcp would
+      // otherwise call `Effect.runPromise(engine.getDescription)` at
+      // its async MCP-SDK boundary and orphan those sub-spans.
+      const description = yield* buildExecuteDescription(executor);
       const mcpServer = yield* Effect.promise(() =>
-        createExecutorMcpServer({ engine }),
+        createExecutorMcpServer({ engine, description }),
       ).pipe(Effect.withSpan("McpSessionDO.createExecutorMcpServer"));
       const transport = new WorkerTransport({
         sessionIdGenerator: () => self.ctx.id.toString(),
