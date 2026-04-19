@@ -8,6 +8,7 @@ import {
   buildSearchToolsCode,
   extractExecutionId,
   extractExecutionResult,
+  inspectToolPath,
   parseJsonObjectInput,
 } from "../apps/cli/src/tooling";
 
@@ -70,5 +71,37 @@ describe("CLI tooling helpers", () => {
 
     expect(extractExecutionId({ executionId: "exec_123" })).toBe("exec_123");
     expect(extractExecutionId({ executionId: 123 })).toBeUndefined();
+  });
+
+  it("inspects hierarchical tool path prefixes for call help", () => {
+    const view = inspectToolPath({
+      toolPaths: [
+        "cloudflare.dns.records.list",
+        "cloudflare.dns.records.create",
+        "cloudflare.dns.analytics",
+        "cloudflare.zones.list",
+      ],
+      rawPrefixParts: ["cloudflare", "dns"],
+    });
+
+    expect(view.prefixSegments).toEqual(["cloudflare", "dns"]);
+    expect(view.exactPath).toBeUndefined();
+    expect(view.matchingToolCount).toBe(3);
+    expect(view.children).toEqual([
+      { segment: "analytics", invokable: true, hasChildren: false, toolCount: 1 },
+      { segment: "records", invokable: false, hasChildren: true, toolCount: 2 },
+    ]);
+  });
+
+  it("reports exact matches for leaf tool paths", () => {
+    const view = inspectToolPath({
+      toolPaths: ["github.issues.create", "github.issues.list"],
+      rawPrefixParts: ["github", "issues", "create"],
+    });
+
+    expect(view.prefixSegments).toEqual(["github", "issues", "create"]);
+    expect(view.exactPath).toBe("github.issues.create");
+    expect(view.matchingToolCount).toBe(1);
+    expect(view.children).toEqual([]);
   });
 });

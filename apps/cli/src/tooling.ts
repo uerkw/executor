@@ -11,6 +11,78 @@ const toToolPathSegments = (parts: ReadonlyArray<string>): ReadonlyArray<string>
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
+const isPrefixOf = (prefix: ReadonlyArray<string>, path: ReadonlyArray<string>): boolean =>
+  prefix.every((segment, index) => path[index] === segment);
+
+export interface ToolPathChildEntry {
+  readonly segment: string;
+  readonly invokable: boolean;
+  readonly hasChildren: boolean;
+  readonly toolCount: number;
+}
+
+export interface ToolPathInspection {
+  readonly prefixSegments: ReadonlyArray<string>;
+  readonly exactPath: string | undefined;
+  readonly matchingToolCount: number;
+  readonly children: ReadonlyArray<ToolPathChildEntry>;
+}
+
+export const inspectToolPath = (input: {
+  toolPaths: ReadonlyArray<string>;
+  rawPrefixParts: ReadonlyArray<string>;
+}): ToolPathInspection => {
+  const prefixSegments =
+    input.rawPrefixParts.length === 0 ? [] : buildToolPath(input.rawPrefixParts).split(".");
+  const children = new Map<string, { invokable: boolean; hasChildren: boolean; toolCount: number }>();
+  let exactPath: string | undefined = undefined;
+  let matchingToolCount = 0;
+
+  for (const path of input.toolPaths) {
+    const segments = toToolPathSegments([path]);
+    if (segments.length === 0 || !isPrefixOf(prefixSegments, segments)) {
+      continue;
+    }
+
+    matchingToolCount += 1;
+
+    if (segments.length === prefixSegments.length) {
+      exactPath = exactPath ?? segments.join(".");
+      continue;
+    }
+
+    const childSegment = segments[prefixSegments.length];
+    if (!childSegment) continue;
+
+    const existing = children.get(childSegment) ?? {
+      invokable: false,
+      hasChildren: false,
+      toolCount: 0,
+    };
+    children.set(childSegment, {
+      invokable: existing.invokable || segments.length === prefixSegments.length + 1,
+      hasChildren: existing.hasChildren || segments.length > prefixSegments.length + 1,
+      toolCount: existing.toolCount + 1,
+    });
+  }
+
+  const sortedChildren: ReadonlyArray<ToolPathChildEntry> = [...children.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([segment, value]) => ({
+      segment,
+      invokable: value.invokable,
+      hasChildren: value.hasChildren,
+      toolCount: value.toolCount,
+    }));
+
+  return {
+    prefixSegments,
+    exactPath,
+    matchingToolCount,
+    children: sortedChildren,
+  };
+};
+
 export const buildToolPath = (parts: ReadonlyArray<string>): string => {
   const segments = toToolPathSegments(parts);
   if (segments.length === 0) {

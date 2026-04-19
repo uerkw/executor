@@ -73,6 +73,7 @@ import {
   buildSearchToolsCode,
   extractExecutionId,
   extractExecutionResult,
+  inspectToolPath,
   parseJsonObjectInput,
 } from "./tooling";
 
@@ -538,6 +539,257 @@ const applyScope = (s: Option.Option<string>) => {
   if (dir) process.env.EXECUTOR_SCOPE_DIR = resolve(dir);
 };
 
+interface ParsedCallHelpArgs {
+  readonly pathParts: ReadonlyArray<string>;
+  readonly baseUrl: string;
+  readonly scopeDir: string | undefined;
+}
+
+const HELP_FLAGS = new Set(["--help", "-h"]);
+
+const isHelpFlag = (value: string): boolean => HELP_FLAGS.has(value);
+
+const parseCallHelpArgs = (args: ReadonlyArray<string>): ParsedCallHelpArgs => {
+  let baseUrl = DEFAULT_BASE_URL;
+  let scopeDir: string | undefined = undefined;
+  const pathParts: Array<string> = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (!token || isHelpFlag(token)) continue;
+
+    if (token === "--base-url") {
+      const value = args[index + 1];
+      if (!value) throw new Error("Missing value for --base-url");
+      baseUrl = value;
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--base-url=")) {
+      baseUrl = token.slice("--base-url=".length);
+      continue;
+    }
+
+    if (token === "--scope") {
+      const value = args[index + 1];
+      if (!value) throw new Error("Missing value for --scope");
+      scopeDir = value;
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--scope=")) {
+      scopeDir = token.slice("--scope=".length);
+      continue;
+    }
+
+    if (token.startsWith("-")) {
+      throw new Error(`Unknown option for call help: ${token}`);
+    }
+
+    pathParts.push(token);
+  }
+
+  const maybeJsonArg = pathParts.at(-1)?.trim();
+  if (maybeJsonArg && maybeJsonArg.startsWith("{")) {
+    pathParts.pop();
+  }
+
+  return { pathParts, baseUrl, scopeDir };
+};
+
+const printCallBrowseHelp = (input: {
+  readonly prefixSegments: ReadonlyArray<string>;
+  readonly children: ReadonlyArray<{
+    readonly segment: string;
+    readonly invokable: boolean;
+    readonly hasChildren: boolean;
+    readonly toolCount: number;
+  }>;
+  readonly exactTool:
+    | {
+        readonly id: string;
+        readonly description?: string;
+      }
+    | undefined;
+}) =>
+  Effect.sync(() => {
+    const prefixText = input.prefixSegments.join(" ");
+    const commandPrefix = `${cliPrefix} call${prefixText.length > 0 ? ` ${prefixText}` : ""}`;
+    const nextPlaceholder = input.prefixSegments.length === 0 ? "<namespace>" : "<subcommand>";
+    const usageLines = [
+      "Usage:",
+      `  ${commandPrefix} ${nextPlaceholder} [<subcommand> ...] ['{"k":"v"}']`,
+      `  ${commandPrefix} --help`,
+    ];
+
+    if (input.exactTool) {
+      usageLines.push(`  ${commandPrefix} ['{"k":"v"}']`);
+    }
+
+    console.log(usageLines.join("\n"));
+
+    if (input.exactTool) {
+      console.log(`\nCallable path: ${input.exactTool.id}`);
+      if (input.exactTool.description) {
+        console.log(input.exactTool.description);
+      }
+    }
+
+    if (input.children.length === 0) {
+      console.log("\nNo subcommands at this level.");
+      return;
+    }
+
+    const rows = input.children.map((child) => {
+      const kind =
+        child.invokable && child.hasChildren ? "tool+group" : child.invokable ? "tool" : "group";
+      return { name: child.segment, meta: `${kind}, ${child.toolCount} path${child.toolCount === 1 ? "" : "s"}` };
+    });
+
+    const width = rows.reduce((max, row) => Math.max(max, row.name.length), 0);
+    console.log("\nSubcommands:");
+    for (const row of rows) {
+      console.log(`  ${row.name.padEnd(width)}  ${row.meta}`);
+    }
+
+    console.log(`\nDrill down: ${commandPrefix} ${nextPlaceholder} --help`);
+  });
+
+const printCallLeafHelp = (input: {
+  readonly tool: {
+    readonly id: string;
+    readonly description?: string;
+  };
+  readonly schema:
+    | {
+        readonly inputTypeScript?: string;
+        readonly outputTypeScript?: string;
+      }
+    | undefined;
+}) =>
+  Effect.sync(() => {
+    const segments = input.tool.id.split(".");
+    const callPath = `${cliPrefix} call ${segments.join(" ")}`;
+
+    console.log(`Usage:\n  ${callPath}\n  ${callPath} '{"k":"v"}'`);
+    console.log(`\nTool: ${input.tool.id}`);
+    if (input.tool.description) {
+      console.log(input.tool.description);
+    }
+    if (input.schema?.inputTypeScript) {
+      console.log(`\nInput:\n${input.schema.inputTypeScript}`);
+    }
+    if (input.schema?.outputTypeScript) {
+      console.log(`\nOutput:\n${input.schema.outputTypeScript}`);
+    }
+  });
+
+const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileSystem.FileSystem | PlatformPath.Path> =>
+  Effect.gen(function* () {
+    if (args.scopeDir) process.env.EXECUTOR_SCOPE_DIR = resolve(args.scopeDir);
+
+    const daemonUrl = yield* ensureDaemon(args.baseUrl);
+    const client = yield* makeApiClient(daemonUrl);
+    const scopeInfo = yield* client.scope.info();
+    const tools = yield* client.tools.list({ path: { scopeId: scopeInfo.id } });
+    const toolPaths = tools.map((tool) => tool.id);
+
+    const inspection = yield* Effect.try({
+      try: () =>
+        inspectToolPath({
+          toolPaths,
+          rawPrefixParts: args.pathParts,
+        }),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error(`Invalid tool path: ${String(cause)}`),
+    });
+
+    if (inspection.matchingToolCount === 0) {
+      const typed = inspection.prefixSegments.join(".");
+      console.error(
+        typed.length > 0
+          ? `No tool path starts with "${typed}".`
+          : "No tools are currently registered in this scope.",
+      );
+
+      let fallback = inspectToolPath({ toolPaths, rawPrefixParts: [] });
+      let mismatchToken: string | undefined = undefined;
+
+      for (let depth = inspection.prefixSegments.length - 1; depth >= 0; depth -= 1) {
+        const candidatePrefix = inspection.prefixSegments.slice(0, depth);
+        const candidate = inspectToolPath({
+          toolPaths,
+          rawPrefixParts: candidatePrefix,
+        });
+        if (candidate.matchingToolCount > 0) {
+          fallback = candidate;
+          mismatchToken = inspection.prefixSegments[depth];
+          break;
+        }
+      }
+
+      const token = mismatchToken?.toLowerCase();
+      const filteredChildren =
+        token && token.length > 0
+          ? fallback.children.filter((child) => child.segment.toLowerCase().includes(token))
+          : fallback.children;
+      const children = filteredChildren.length > 0 ? filteredChildren : fallback.children;
+      const fallbackPrefix = fallback.prefixSegments.join(".");
+      if (mismatchToken && fallbackPrefix.length > 0 && filteredChildren.length > 0) {
+        console.error(`Showing subcommands under "${fallbackPrefix}" matching "${mismatchToken}".`);
+      }
+
+      yield* printCallBrowseHelp({
+        prefixSegments: fallback.prefixSegments,
+        children,
+        exactTool: undefined,
+      });
+      process.exitCode = 1;
+      return;
+    }
+
+    const exactTool = inspection.exactPath
+      ? tools.find((tool) => tool.id === inspection.exactPath)
+      : undefined;
+
+    if (exactTool && inspection.children.length === 0) {
+      const schema = yield* client.tools
+        .schema({
+          path: {
+            scopeId: scopeInfo.id,
+            toolId: exactTool.id,
+          },
+        })
+        .pipe(
+          Effect.map((result) => ({
+            inputTypeScript: result.inputTypeScript,
+            outputTypeScript: result.outputTypeScript,
+          })),
+          Effect.catchAll(() => Effect.succeed(undefined)),
+        );
+
+      yield* printCallLeafHelp({
+        tool: {
+          id: exactTool.id,
+          description: exactTool.description,
+        },
+        schema,
+      });
+      return;
+    }
+
+    yield* printCallBrowseHelp({
+      prefixSegments: inspection.prefixSegments,
+      children: inspection.children,
+      exactTool: exactTool
+        ? {
+            id: exactTool.id,
+            description: exactTool.description,
+          }
+        : undefined,
+    });
+  }).pipe(Effect.mapError(toError));
+
 const resolveToolInvocation = (input: {
   rawPathParts: ReadonlyArray<string>;
 }): Effect.Effect<{ path: string; args: Record<string, unknown> }, Error> =>
@@ -590,7 +842,7 @@ const callCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`)",
+    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`). Use `--help` to browse by namespace/path.",
   ),
 );
 
@@ -853,7 +1105,19 @@ if (process.argv.includes("-v")) {
   process.exit(0);
 }
 
-const program = runCli(process.argv).pipe(
+const isCallHelpInvocation =
+  process.argv[2] === "call" && process.argv.slice(3).some((arg) => isHelpFlag(arg));
+
+const program = (isCallHelpInvocation
+  ? Effect.gen(function* () {
+      const args = yield* Effect.try({
+        try: () => parseCallHelpArgs(process.argv.slice(3)),
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      });
+      yield* runCallHelp(args);
+    })
+  : runCli(process.argv)
+).pipe(
   Effect.provide(BunContext.layer),
   Effect.catchAllCause((cause) =>
     Effect.sync(() => {

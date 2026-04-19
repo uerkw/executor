@@ -82,8 +82,11 @@ Use tools via the CLI:
 
 ```bash
 executor tools search "send email"
-executor call gmail send '{"to":"alice@example.com","subject":"Hi"}'
+executor call --help
+executor call github --help
+executor call github issues --help
 executor call github issues create '{"owner":"octocat","repo":"Hello-World","title":"Hi"}'
+executor call gmail send '{"to":"alice@example.com","subject":"Hi"}'
 ```
 
 `executor call`, `executor resume`, and `executor tools ...` commands auto-start a local daemon if needed.
@@ -105,6 +108,7 @@ executor daemon stop                # stop daemon
 executor daemon restart             # restart daemon
 executor mcp                        # start MCP endpoint
 executor call <path...> '{"k":"v"}' # invoke a tool by path segments
+executor call <path...> --help      # browse namespaces/resources/methods
 executor resume --execution-id <id> # resume paused execution
 executor tools search "<query>"     # search tools by intent
 executor tools sources              # list configured sources + tool counts
