@@ -73,7 +73,6 @@ import {
   buildSearchToolsCode,
   extractExecutionId,
   extractExecutionResult,
-  isLikelyToolPathToken,
   parseJsonObjectInput,
 } from "./tooling";
 
@@ -529,46 +528,6 @@ const runStdioMcpSession = () =>
     );
   });
 
-// ---------------------------------------------------------------------------
-// Code resolution — positional arg > --file > stdin
-// ---------------------------------------------------------------------------
-
-const readCode = (input: {
-  code: Option.Option<string>;
-  file: Option.Option<string>;
-  stdin: boolean;
-}): Effect.Effect<string, Error, FileSystem.FileSystem> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const code = Option.getOrUndefined(input.code);
-    if (code && code.trim().length > 0) return code;
-
-    const file = Option.getOrUndefined(input.file);
-    if (file && file.trim().length > 0) {
-      const contents = yield* fs.readFileString(file).pipe(
-        Effect.mapError((cause) => new Error(`Failed to read file: ${String(cause)}`)),
-      );
-      if (contents.trim().length > 0) return contents;
-    }
-
-    if (input.stdin || !process.stdin.isTTY) {
-      const chunks: string[] = [];
-      process.stdin.setEncoding("utf8");
-      const contents = yield* Effect.tryPromise({
-        try: async () => {
-          for await (const chunk of process.stdin) chunks.push(chunk as string);
-          return chunks.join("");
-        },
-        catch: (e) => new Error(`Failed to read stdin: ${e}`),
-      });
-      if (contents.trim().length > 0) return contents;
-    }
-
-    return yield* Effect.fail(
-      new Error("No code provided. Pass code as an argument, --file, or pipe to stdin."),
-    );
-  });
-
 const scope = Options.text("scope").pipe(
   Options.optional,
   Options.withDescription("Path to workspace directory containing executor.jsonc"),
@@ -610,67 +569,28 @@ const resolveToolInvocation = (input: {
 const callCommand = Command.make(
   "call",
   {
-    codeOrTool: Args.text({ name: "code-or-tool" }).pipe(Args.repeated),
-    file: Options.text("file").pipe(Options.optional),
-    stdin: Options.boolean("stdin").pipe(Options.withDefault(false)),
+    pathParts: Args.text({ name: "tool-path-segment" }).pipe(Args.repeated),
     baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
-  ({ codeOrTool, file, stdin, baseUrl, scope }) =>
+  ({ pathParts, baseUrl, scope }) =>
     Effect.gen(function* () {
       applyScope(scope);
-      const singleArg = codeOrTool.length === 1 ? codeOrTool[0] : undefined;
-      const singleArgLooksLikeToolPath =
-        singleArg !== undefined && singleArg.includes(".") && isLikelyToolPathToken(singleArg);
-      const isToolInvocation =
-        !stdin &&
-        Option.isNone(file) &&
-        (codeOrTool.length > 1 || singleArgLooksLikeToolPath);
+      const { path, args } = yield* resolveToolInvocation({
+        rawPathParts: pathParts,
+      });
+      const code = yield* Effect.try({
+        try: () => buildInvokeToolCode(path, args),
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error(`Invalid tool path: ${String(cause)}`),
+      });
 
-      if (isToolInvocation) {
-        const { path, args } = yield* resolveToolInvocation({
-          rawPathParts: codeOrTool,
-        });
-        const code = yield* Effect.try({
-          try: () => buildInvokeToolCode(path, args),
-          catch: (cause) =>
-            cause instanceof Error ? cause : new Error(`Invalid tool path: ${String(cause)}`),
-        });
-
-        const outcome = yield* executeCode({ baseUrl, code });
-        yield* printExecutionOutcome({ baseUrl, outcome });
-        return;
-      }
-
-      const inlineCode = singleArg !== undefined ? Option.some(singleArg) : Option.none<string>();
-      const resolvedCode = yield* readCode({ code: inlineCode, file, stdin });
-      const daemonUrl = yield* ensureDaemon(baseUrl);
-
-      const client = yield* makeApiClient(daemonUrl);
-      const result = yield* client.executions.execute({ payload: { code: resolvedCode } });
-
-      if (result.status === "completed") {
-        if (result.isError) {
-          console.error(result.text);
-          process.exit(1);
-        } else {
-          console.log(result.text);
-          process.exit(0);
-        }
-      } else {
-        console.log(result.text);
-        const executionId = (result.structured as Record<string, unknown> | undefined)?.executionId;
-        if (executionId) {
-          console.log(
-            `\nTo resume:\n  ${cliPrefix} resume --execution-id ${executionId} --action accept`,
-          );
-        }
-        process.exit(0);
-      }
+      const outcome = yield* executeCode({ baseUrl, code });
+      yield* printExecutionOutcome({ baseUrl, outcome });
     }),
 ).pipe(
   Command.withDescription(
-    "Execute JavaScript or invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`)",
+    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`)",
   ),
 );
 

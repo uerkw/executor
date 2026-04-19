@@ -78,11 +78,9 @@ const issues = await tools.github.issues.list({
 });
 ```
 
-Run code via the CLI:
+Use tools via the CLI:
 
 ```bash
-executor call --file script.ts
-executor call 'return await tools.discover({ query: "send email" })'
 executor tools search "send email"
 executor call gmail send '{"to":"alice@example.com","subject":"Hi"}'
 executor call github issues create '{"owner":"octocat","repo":"Hello-World","title":"Hi"}'
@@ -106,14 +104,11 @@ executor daemon status              # show daemon status
 executor daemon stop                # stop daemon
 executor daemon restart             # restart daemon
 executor mcp                        # start MCP endpoint
-executor call --file script.ts      # execute a file
-executor call '<code>'              # execute inline code
-executor call --stdin               # execute from stdin
+executor call <path...> '{"k":"v"}' # invoke a tool by path segments
 executor resume --execution-id <id> # resume paused execution
 executor tools search "<query>"     # search tools by intent
 executor tools sources              # list configured sources + tool counts
 executor tools describe <path>      # show tool TypeScript/JSON schema
-executor call <path...> '{"k":"v"}' # invoke a tool by path segments
 ```
 
 ## Developing locally

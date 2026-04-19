@@ -16,12 +16,12 @@ export const buildToolPath = (parts: ReadonlyArray<string>): string => {
   if (segments.length === 0) {
     throw new Error("Tool path must include at least one segment");
   }
+  if (segments.some((segment) => !TOOL_PATH_TOKEN.test(segment))) {
+    throw new Error(
+      "Tool path segments must contain only letters, numbers, '.', '_' or '-'",
+    );
+  }
   return segments.join(".");
-};
-
-export const isLikelyToolPathToken = (raw: string): boolean => {
-  const value = raw.trim();
-  return value.length > 0 && TOOL_PATH_TOKEN.test(value);
 };
 
 const buildToolAccessExpression = (toolPath: string): string => {

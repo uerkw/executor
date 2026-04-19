@@ -8,7 +8,6 @@ import {
   buildSearchToolsCode,
   extractExecutionId,
   extractExecutionResult,
-  isLikelyToolPathToken,
   parseJsonObjectInput,
 } from "../apps/cli/src/tooling";
 
@@ -45,9 +44,8 @@ describe("CLI tooling helpers", () => {
     expect(buildToolPath(["github.issues", "create"])).toBe("github.issues.create");
   });
 
-  it("detects likely tool path tokens", () => {
-    expect(isLikelyToolPathToken("github.issues.create")).toBe(true);
-    expect(isLikelyToolPathToken("return await tools.search({})")).toBe(false);
+  it("rejects invalid tool-path segments", () => {
+    expect(() => buildToolPath(["github", "issues", "create now"])).toThrow();
   });
 
   it("builds search and sources code snippets", () => {
