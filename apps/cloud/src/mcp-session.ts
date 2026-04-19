@@ -204,17 +204,13 @@ export class McpSessionDO extends DurableObject {
     };
   }
 
-  private async loadSessionMeta(): Promise<SessionMeta | null> {
-    if (this.sessionMeta) return this.sessionMeta;
-    const stored = await this.ctx.storage.get<SessionMeta>(SESSION_META_KEY);
-    this.sessionMeta = stored ?? null;
-    return this.sessionMeta;
-  }
-
-  private loadSessionMetaEffect(): Effect.Effect<SessionMeta | null> {
-    return Effect.promise(() => this.loadSessionMeta()).pipe(
-      Effect.withSpan("mcp.session.load_meta"),
-    );
+  private loadSessionMeta(): Effect.Effect<SessionMeta | null> {
+    return Effect.promise(async () => {
+      if (this.sessionMeta) return this.sessionMeta;
+      const stored = await this.ctx.storage.get<SessionMeta>(SESSION_META_KEY);
+      this.sessionMeta = stored ?? null;
+      return this.sessionMeta;
+    }).pipe(Effect.withSpan("mcp.session.load_meta"));
   }
 
   private async saveSessionMeta(sessionMeta: SessionMeta): Promise<void> {
@@ -222,24 +218,20 @@ export class McpSessionDO extends DurableObject {
     await this.ctx.storage.put(SESSION_META_KEY, sessionMeta);
   }
 
-  private async clearSessionState(): Promise<void> {
-    this.sessionMeta = null;
-    this.initialized = false;
-    this.lastActivityMs = 0;
+  private clearSessionState(): Effect.Effect<void> {
+    return Effect.promise(async () => {
+      this.sessionMeta = null;
+      this.initialized = false;
+      this.lastActivityMs = 0;
 
-    await Promise.all([
-      this.ctx.storage.delete(TRANSPORT_STATE_KEY).catch(() => false),
-      this.ctx.storage.delete(SESSION_META_KEY).catch(() => false),
-    ]);
+      await Promise.all([
+        this.ctx.storage.delete(TRANSPORT_STATE_KEY).catch(() => false),
+        this.ctx.storage.delete(SESSION_META_KEY).catch(() => false),
+      ]);
+    }).pipe(Effect.withSpan("mcp.session.clear_state"));
   }
 
-  private clearSessionStateEffect(): Effect.Effect<void> {
-    return Effect.promise(() => this.clearSessionState()).pipe(
-      Effect.withSpan("mcp.session.clear_state"),
-    );
-  }
-
-  private createConnectedRuntimeEffect(
+  private createConnectedRuntime(
     sessionMeta: SessionMeta,
     options: { readonly dbHandle: DbHandle; readonly enableJsonResponse?: boolean },
   ) {
@@ -275,7 +267,7 @@ export class McpSessionDO extends DurableObject {
     );
   }
 
-  private resolveAndStoreSessionMetaEffect(token: McpSessionInit) {
+  private resolveAndStoreSessionMeta(token: McpSessionInit) {
     const self = this;
     return Effect.gen(function* () {
       const dbHandle = makeRequestScopedDb();
@@ -296,7 +288,7 @@ export class McpSessionDO extends DurableObject {
   async init(token: McpSessionInit, incoming?: IncomingTraceHeaders): Promise<void> {
     if (this.initialized) return;
     return Effect.runPromise(
-      this.doInitEffect(token).pipe(
+      this.doInit(token).pipe(
         Effect.withSpan("McpSessionDO.init", {
           attributes: { "mcp.auth.organization_id": token.organizationId },
         }),
@@ -306,7 +298,7 @@ export class McpSessionDO extends DurableObject {
     );
   }
 
-  private doInitEffect(token: McpSessionInit) {
+  private doInit(token: McpSessionInit) {
     const self = this;
     // Single Effect chain so every sub-span (resolveSessionMeta,
     // createRuntime, createScopedExecutor, createExecutorMcpServer,
@@ -316,7 +308,7 @@ export class McpSessionDO extends DurableObject {
     // each sub-span into its own root trace and made init opaque —
     // dashboard saw one 2.77s span with nothing under it.
     return Effect.gen(function* () {
-      const sessionMeta = yield* self.resolveAndStoreSessionMetaEffect(token);
+      const sessionMeta = yield* self.resolveAndStoreSessionMeta(token);
 
       if (!requestScopedRuntimeEnabled) {
         self.dbHandle = makeLongLivedDb();
@@ -327,7 +319,7 @@ export class McpSessionDO extends DurableObject {
         // POSTs the callback fires after `Effect.ensuring` clears the field
         // and engine spans orphan into new root traces. GET still streams
         // (the GET handler doesn't consult `enableJsonResponse`).
-        const runtime = yield* self.createConnectedRuntimeEffect(sessionMeta, {
+        const runtime = yield* self.createConnectedRuntime(sessionMeta, {
           dbHandle: self.dbHandle,
           enableJsonResponse: true,
         });
@@ -357,10 +349,10 @@ export class McpSessionDO extends DurableObject {
     );
   }
 
-  private handleRequestWithRequestScopedRuntimeEffect(request: Request) {
+  private handleRequestWithRequestScopedRuntime(request: Request) {
     const self = this;
     return Effect.gen(function* () {
-      const sessionMeta = yield* self.loadSessionMetaEffect();
+      const sessionMeta = yield* self.loadSessionMeta();
       if (!sessionMeta) {
         return jsonRpcError(404, -32001, "Session timed out due to inactivity — please reconnect");
       }
@@ -373,7 +365,7 @@ export class McpSessionDO extends DurableObject {
         Effect.withSpan("mcp.session.db.close"),
       );
       return yield* Effect.acquireUseRelease(
-        self.createConnectedRuntimeEffect(sessionMeta, {
+        self.createConnectedRuntime(sessionMeta, {
           dbHandle,
           enableJsonResponse: request.method !== "GET",
         }),
@@ -394,7 +386,7 @@ export class McpSessionDO extends DurableObject {
               "mcp.response.status_code": response.status,
             });
             if (request.method === "DELETE") {
-              yield* self.clearSessionStateEffect();
+              yield* self.clearSessionState();
             }
             return response;
           }),
@@ -442,7 +434,7 @@ export class McpSessionDO extends DurableObject {
       const span = yield* Effect.currentSpan;
       self.currentRequestSpan = span;
 
-      return yield* self.dispatchRequestEffect(request).pipe(
+      return yield* self.dispatchRequest(request).pipe(
         Effect.tap((response) =>
           Effect.annotateCurrentSpan({
             "mcp.response.status_code": response.status,
@@ -467,9 +459,9 @@ export class McpSessionDO extends DurableObject {
     return Effect.runPromise(program);
   }
 
-  private dispatchRequestEffect(request: Request): Effect.Effect<Response> {
+  private dispatchRequest(request: Request): Effect.Effect<Response> {
     if (requestScopedRuntimeEnabled) {
-      return this.handleRequestWithRequestScopedRuntimeEffect(request);
+      return this.handleRequestWithRequestScopedRuntime(request);
     }
 
     if (!this.initialized || !this.transport) {
@@ -543,6 +535,6 @@ export class McpSessionDO extends DurableObject {
       await this.dbHandle.end();
       this.dbHandle = null;
     }
-    await this.clearSessionState();
+    await Effect.runPromise(this.clearSessionState());
   }
 }
