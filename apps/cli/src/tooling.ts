@@ -141,6 +141,147 @@ export const extractExecutionId = (structured: unknown): string | undefined => {
   return structured.executionId;
 };
 
+export interface PausedInteraction {
+  readonly kind: "url" | "form";
+  readonly message: string;
+  readonly url?: string;
+  readonly requestedSchema?: Record<string, unknown>;
+}
+
+export const extractPausedInteraction = (
+  structured: unknown,
+): PausedInteraction | undefined => {
+  if (!isRecord(structured) || !isRecord(structured.interaction)) {
+    return undefined;
+  }
+
+  const interaction = structured.interaction;
+  if (
+    (interaction.kind !== "url" && interaction.kind !== "form") ||
+    typeof interaction.message !== "string"
+  ) {
+    return undefined;
+  }
+
+  const base: PausedInteraction = {
+    kind: interaction.kind,
+    message: interaction.message,
+  };
+
+  if (interaction.kind === "url" && typeof interaction.url === "string") {
+    return { ...base, url: interaction.url };
+  }
+
+  if (interaction.kind === "form" && isRecord(interaction.requestedSchema)) {
+    return { ...base, requestedSchema: interaction.requestedSchema };
+  }
+
+  return base;
+};
+
+const schemaExample = (schema: unknown, depth = 0): unknown => {
+  if (!isRecord(schema) || depth > 4) return {};
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum[0];
+  }
+
+  const candidate = Array.isArray(schema.oneOf)
+    ? schema.oneOf[0]
+    : Array.isArray(schema.anyOf)
+      ? schema.anyOf[0]
+      : Array.isArray(schema.allOf)
+        ? schema.allOf[0]
+        : undefined;
+
+  if (candidate !== undefined) {
+    return schemaExample(candidate, depth + 1);
+  }
+
+  if (schema.type === "string") return "<string>";
+  if (schema.type === "number" || schema.type === "integer") return 0;
+  if (schema.type === "boolean") return false;
+  if (schema.type === "array") return [];
+
+  const properties = isRecord(schema.properties) ? schema.properties : undefined;
+  if (schema.type === "object" || properties) {
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((key): key is string => typeof key === "string")
+      : undefined;
+    const keys = Object.keys(properties ?? {});
+    const selectedKeys = required && required.length > 0 ? required : keys;
+    const result: Record<string, unknown> = {};
+    for (const key of selectedKeys) {
+      const value = properties?.[key];
+      result[key] = schemaExample(value, depth + 1);
+    }
+    return result;
+  }
+
+  return {};
+};
+
+export const buildResumeContentTemplate = (
+  requestedSchema: Record<string, unknown> | undefined,
+): Record<string, unknown> => schemaExample(requestedSchema ?? {}) as Record<string, unknown>;
+
+const tokenizeSegment = (input: string): ReadonlyArray<string> =>
+  input
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+
+const tokenVariants = (input: string): ReadonlyArray<string> => {
+  const token = input.toLowerCase();
+  const variants = new Set<string>([token]);
+
+  if (token.endsWith("ies") && token.length > 3) {
+    variants.add(`${token.slice(0, -3)}y`);
+  } else if (token.endsWith("s") && token.length > 1) {
+    variants.add(token.slice(0, -1));
+  } else {
+    variants.add(`${token}s`);
+    if (token.endsWith("y") && token.length > 1) {
+      variants.add(`${token.slice(0, -1)}ies`);
+    }
+  }
+
+  return [...variants];
+};
+
+const segmentMatchesToken = (segment: string, queryToken: string): boolean => {
+  const normalizedSegment = segment.toLowerCase();
+  const segmentTokens = tokenizeSegment(segment);
+  const variants = tokenVariants(queryToken);
+  return variants.some((variant) => {
+    if (normalizedSegment.includes(variant)) return true;
+    return segmentTokens.some((token) => token === variant || token.startsWith(variant));
+  });
+};
+
+export const filterToolPathChildren = (
+  children: ReadonlyArray<ToolPathChildEntry>,
+  query: string | undefined,
+): ReadonlyArray<ToolPathChildEntry> => {
+  if (!query || query.trim().length === 0) {
+    return children;
+  }
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return children;
+  }
+  return children.filter((child) =>
+    tokens.every((token) => segmentMatchesToken(child.segment, token)),
+  );
+};
+
 export const buildSearchToolsCode = (input: {
   query: string;
   namespace?: string;

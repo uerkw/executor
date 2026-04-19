@@ -66,12 +66,15 @@ import {
   writeDaemonRecord,
 } from "./daemon-state";
 import {
+  buildResumeContentTemplate,
   buildToolPath,
   buildDescribeToolCode,
+  filterToolPathChildren,
   buildInvokeToolCode,
   buildListSourcesCode,
   buildSearchToolsCode,
   extractExecutionId,
+  extractPausedInteraction,
   extractExecutionResult,
   inspectToolPath,
   parseJsonObjectInput,
@@ -351,6 +354,14 @@ type ExecuteCodeOutcome =
       readonly status: "paused";
       readonly text: string;
       readonly executionId: string | undefined;
+      readonly interaction:
+        | {
+            readonly kind: "url" | "form";
+            readonly message: string;
+            readonly url?: string;
+            readonly requestedSchema?: Record<string, unknown>;
+          }
+        | undefined;
     };
 
 const executeCode = (input: {
@@ -371,6 +382,7 @@ const executeCode = (input: {
         status: "paused" as const,
         text: response.text,
         executionId: extractExecutionId(response.structured),
+        interaction: extractPausedInteraction(response.structured),
       };
     }
 
@@ -389,9 +401,23 @@ const printExecutionOutcome = (input: { baseUrl: string; outcome: ExecuteCodeOut
     if (input.outcome.status === "paused") {
       console.log(input.outcome.text);
       if (input.outcome.executionId) {
-        console.log(
-          `\nTo resume:\n  ${cliPrefix} resume --execution-id ${input.outcome.executionId} --action accept --base-url ${input.baseUrl}`,
-        );
+        const commandPrefix = `${cliPrefix} resume --execution-id ${input.outcome.executionId} --base-url ${input.baseUrl}`;
+        if (input.outcome.interaction?.kind === "form") {
+          const requestedSchema = input.outcome.interaction.requestedSchema;
+          if (requestedSchema && Object.keys(requestedSchema).length > 0) {
+            console.log(`\nRequested schema:\n${JSON.stringify(requestedSchema, null, 2)}`);
+          }
+          const template = buildResumeContentTemplate(requestedSchema);
+          console.log("\nResume commands:");
+          console.log(
+            `  ${commandPrefix} --action accept --content '${JSON.stringify(template)}'`,
+          );
+          console.log(`  ${commandPrefix} --action decline`);
+          console.log(`  ${commandPrefix} --action cancel`);
+        } else {
+          console.log("\nResume command:");
+          console.log(`  ${commandPrefix} --action accept`);
+        }
       }
       return;
     }
@@ -539,10 +565,33 @@ const applyScope = (s: Option.Option<string>) => {
   if (dir) process.env.EXECUTOR_SCOPE_DIR = resolve(dir);
 };
 
+const parseOptionalJsonObject = (raw: string | undefined): Effect.Effect<
+  Record<string, unknown> | undefined,
+  Error
+> =>
+  raw === undefined
+    ? Effect.succeed(undefined)
+    : parseJsonObjectInput(raw).pipe(
+        Effect.mapError((error) => new Error(`Invalid --content JSON: ${error.message}`)),
+      );
+
+const parsePositiveIntegerOption = (name: string, raw: string): number => {
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid --${name} value: ${raw}`);
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid --${name} value: ${raw}`);
+  }
+  return parsed;
+};
+
 interface ParsedCallHelpArgs {
   readonly pathParts: ReadonlyArray<string>;
   readonly baseUrl: string;
   readonly scopeDir: string | undefined;
+  readonly match: string | undefined;
+  readonly limit: number | undefined;
 }
 
 const HELP_FLAGS = new Set(["--help", "-h"]);
@@ -552,6 +601,8 @@ const isHelpFlag = (value: string): boolean => HELP_FLAGS.has(value);
 const parseCallHelpArgs = (args: ReadonlyArray<string>): ParsedCallHelpArgs => {
   let baseUrl = DEFAULT_BASE_URL;
   let scopeDir: string | undefined = undefined;
+  let match: string | undefined = undefined;
+  let limit: number | undefined = undefined;
   const pathParts: Array<string> = [];
 
   for (let index = 0; index < args.length; index += 1) {
@@ -582,6 +633,31 @@ const parseCallHelpArgs = (args: ReadonlyArray<string>): ParsedCallHelpArgs => {
       continue;
     }
 
+    if (token === "--match") {
+      const value = args[index + 1];
+      if (!value) throw new Error("Missing value for --match");
+      match = value;
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--match=")) {
+      match = token.slice("--match=".length);
+      continue;
+    }
+
+    if (token === "--limit") {
+      const value = args[index + 1];
+      if (!value) throw new Error("Missing value for --limit");
+      limit = parsePositiveIntegerOption("limit", value);
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--limit=")) {
+      const raw = token.slice("--limit=".length);
+      limit = parsePositiveIntegerOption("limit", raw);
+      continue;
+    }
+
     if (token.startsWith("-")) {
       throw new Error(`Unknown option for call help: ${token}`);
     }
@@ -594,7 +670,7 @@ const parseCallHelpArgs = (args: ReadonlyArray<string>): ParsedCallHelpArgs => {
     pathParts.pop();
   }
 
-  return { pathParts, baseUrl, scopeDir };
+  return { pathParts, baseUrl, scopeDir, match, limit };
 };
 
 const printCallBrowseHelp = (input: {
@@ -605,6 +681,9 @@ const printCallBrowseHelp = (input: {
     readonly hasChildren: boolean;
     readonly toolCount: number;
   }>;
+  readonly totalChildren: number;
+  readonly query: string | undefined;
+  readonly limit: number | undefined;
   readonly exactTool:
     | {
         readonly id: string;
@@ -620,6 +699,7 @@ const printCallBrowseHelp = (input: {
       "Usage:",
       `  ${commandPrefix} ${nextPlaceholder} [<subcommand> ...] ['{"k":"v"}']`,
       `  ${commandPrefix} --help`,
+      `  ${commandPrefix} --help [--match text] [--limit integer]`,
     ];
 
     if (input.exactTool) {
@@ -638,6 +718,14 @@ const printCallBrowseHelp = (input: {
     if (input.children.length === 0) {
       console.log("\nNo subcommands at this level.");
       return;
+    }
+
+    if (input.query && input.query.trim().length > 0) {
+      console.log(`\nFiltered by: ${input.query}`);
+    }
+    if (input.children.length < input.totalChildren || input.limit) {
+      const suffix = input.limit ? ` (limit ${input.limit})` : "";
+      console.log(`Showing ${input.children.length} of ${input.totalChildren} subcommands${suffix}.`);
     }
 
     const rows = input.children.map((child) => {
@@ -684,6 +772,32 @@ const printCallLeafHelp = (input: {
     }
   });
 
+const applyCallHelpChildFilters = (input: {
+  readonly children: ReadonlyArray<{
+    readonly segment: string;
+    readonly invokable: boolean;
+    readonly hasChildren: boolean;
+    readonly toolCount: number;
+  }>;
+  readonly args: ParsedCallHelpArgs;
+  readonly fallbackQuery: string | undefined;
+}) => {
+  const query = [input.fallbackQuery, input.args.match]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .trim();
+  const filtered = filterToolPathChildren(input.children, query.length > 0 ? query : undefined);
+  const children =
+    input.args.limit && input.args.limit > 0 ? filtered.slice(0, input.args.limit) : filtered;
+
+  return {
+    query: query.length > 0 ? query : undefined,
+    filteredCount: filtered.length,
+    totalCount: input.children.length,
+    children,
+  };
+};
+
 const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileSystem.FileSystem | PlatformPath.Path> =>
   Effect.gen(function* () {
     if (args.scopeDir) process.env.EXECUTOR_SCOPE_DIR = resolve(args.scopeDir);
@@ -728,20 +842,29 @@ const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileS
         }
       }
 
-      const token = mismatchToken?.toLowerCase();
-      const filteredChildren =
-        token && token.length > 0
-          ? fallback.children.filter((child) => child.segment.toLowerCase().includes(token))
-          : fallback.children;
-      const children = filteredChildren.length > 0 ? filteredChildren : fallback.children;
+      const filtered = applyCallHelpChildFilters({
+        children: fallback.children,
+        args,
+        fallbackQuery: mismatchToken,
+      });
+      const children = filtered.children.length > 0 ? filtered.children : fallback.children;
       const fallbackPrefix = fallback.prefixSegments.join(".");
-      if (mismatchToken && fallbackPrefix.length > 0 && filteredChildren.length > 0) {
+      if (
+        mismatchToken &&
+        fallbackPrefix.length > 0 &&
+        filtered.query &&
+        filtered.filteredCount > 0
+      ) {
         console.error(`Showing subcommands under "${fallbackPrefix}" matching "${mismatchToken}".`);
       }
 
       yield* printCallBrowseHelp({
         prefixSegments: fallback.prefixSegments,
         children,
+        totalChildren:
+          filtered.children.length > 0 ? filtered.totalCount : fallback.children.length,
+        query: filtered.children.length > 0 ? filtered.query : undefined,
+        limit: filtered.children.length > 0 ? args.limit : undefined,
         exactTool: undefined,
       });
       process.exitCode = 1;
@@ -778,9 +901,18 @@ const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileS
       return;
     }
 
+    const filtered = applyCallHelpChildFilters({
+      children: inspection.children,
+      args,
+      fallbackQuery: undefined,
+    });
+
     yield* printCallBrowseHelp({
       prefixSegments: inspection.prefixSegments,
-      children: inspection.children,
+      children: filtered.children,
+      totalChildren: filtered.totalCount,
+      query: filtered.query,
+      limit: args.limit,
       exactTool: exactTool
         ? {
             id: exactTool.id,
@@ -842,16 +974,24 @@ const callCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`). Use `--help` to browse by namespace/path.",
+    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`). Use `--help` to browse by namespace/path (`--match`, `--limit`).",
   ),
 );
 
 const resumeCommand = Command.make(
   "resume",
   {
-    executionId: Options.text("execution-id"),
-    action: Options.text("action").pipe(Options.withDefault("accept")),
-    content: Options.text("content").pipe(Options.optional),
+    executionId: Options.text("execution-id").pipe(
+      Options.withDescription("Execution ID returned by a paused call"),
+    ),
+    action: Options.choice("action", ["accept", "decline", "cancel"] as const).pipe(
+      Options.withDefault("accept"),
+      Options.withDescription("Interaction response action"),
+    ),
+    content: Options.text("content").pipe(
+      Options.optional,
+      Options.withDescription("JSON object to send when action=accept"),
+    ),
     baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
@@ -860,13 +1000,12 @@ const resumeCommand = Command.make(
       applyScope(scope);
       const daemonUrl = yield* ensureDaemon(baseUrl);
 
-      const parsedContent = Option.getOrUndefined(content);
-      const contentObj = parsedContent ? JSON.parse(parsedContent) : undefined;
+      const contentObj = yield* parseOptionalJsonObject(Option.getOrUndefined(content));
 
       const client = yield* makeApiClient(daemonUrl);
       const result = yield* client.executions.resume({
         path: { executionId },
-        payload: { action: action as "accept" | "decline" | "cancel", content: contentObj },
+        payload: { action, content: contentObj },
       });
 
       if (result.isError) {

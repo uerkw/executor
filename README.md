@@ -85,6 +85,7 @@ executor tools search "send email"
 executor call --help
 executor call github --help
 executor call github issues --help
+executor call cloudflare --help --match dns --limit 20
 executor call github issues create '{"owner":"octocat","repo":"Hello-World","title":"Hi"}'
 executor call gmail send '{"to":"alice@example.com","subject":"Hi"}'
 ```
@@ -109,6 +110,7 @@ executor daemon restart             # restart daemon
 executor mcp                        # start MCP endpoint
 executor call <path...> '{"k":"v"}' # invoke a tool by path segments
 executor call <path...> --help      # browse namespaces/resources/methods
+executor call <path...> --help --match "<text>" --limit <n> # narrow huge namespaces
 executor resume --execution-id <id> # resume paused execution
 executor tools search "<query>"     # search tools by intent
 executor tools sources              # list configured sources + tool counts

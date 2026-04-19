@@ -2,10 +2,13 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
 import {
+  buildResumeContentTemplate,
   buildToolPath,
+  filterToolPathChildren,
   buildInvokeToolCode,
   buildListSourcesCode,
   buildSearchToolsCode,
+  extractPausedInteraction,
   extractExecutionId,
   extractExecutionResult,
   inspectToolPath,
@@ -103,5 +106,64 @@ describe("CLI tooling helpers", () => {
     expect(view.exactPath).toBe("github.issues.create");
     expect(view.matchingToolCount).toBe(1);
     expect(view.children).toEqual([]);
+  });
+
+  it("extracts paused form interaction payload", () => {
+    const interaction = extractPausedInteraction({
+      status: "waiting_for_interaction",
+      executionId: "exec_1",
+      interaction: {
+        kind: "form",
+        message: "Need approval",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            approved: { type: "boolean" },
+          },
+          required: ["approved"],
+        },
+      },
+    });
+
+    expect(interaction).toEqual({
+      kind: "form",
+      message: "Need approval",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          approved: { type: "boolean" },
+        },
+        required: ["approved"],
+      },
+    });
+  });
+
+  it("builds resume content template from requested schema", () => {
+    const template = buildResumeContentTemplate({
+      type: "object",
+      properties: {
+        approved: { type: "boolean" },
+        note: { type: "string" },
+      },
+      required: ["approved"],
+    });
+
+    expect(template).toEqual({ approved: false });
+  });
+
+  it("filters child segments with singular/plural matching", () => {
+    const children = [
+      { segment: "zoneRulesets", invokable: false, hasChildren: true, toolCount: 10 },
+      { segment: "dnsRecordsForAZone", invokable: false, hasChildren: true, toolCount: 14 },
+      { segment: "workersAi", invokable: false, hasChildren: true, toolCount: 8 },
+    ] as const;
+
+    expect(filterToolPathChildren(children, "zones").map((entry) => entry.segment)).toEqual([
+      "zoneRulesets",
+      "dnsRecordsForAZone",
+    ]);
+    expect(filterToolPathChildren(children, "worker").map((entry) => entry.segment)).toEqual([
+      "workersAi",
+    ]);
   });
 });
