@@ -48,14 +48,14 @@ Open `http://127.0.0.1:4788`, go to **Add Source**, paste a URL, and Executor wi
 ### Via the CLI
 
 ```bash
-executor call 'return await tools.executor.sources.add({
-  kind: "openapi",
-  name: "GitHub",
-  specUrl: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
-  baseUrl: null,
-  auth: { kind: "none" }
-})'
+executor tools invoke openapi.addSource --input '{
+  "spec": "https://petstore3.swagger.io/api/v3/openapi.json",
+  "namespace": "petstore",
+  "baseUrl": "https://petstore3.swagger.io/api/v3"
+}'
 ```
+
+Use `baseUrl` when the OpenAPI document has relative `servers` entries (for example `"/api/v3"`).
 
 ## Use tools
 
