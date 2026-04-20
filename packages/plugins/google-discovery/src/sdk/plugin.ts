@@ -35,6 +35,7 @@ import type {
   GoogleDiscoveryAuth,
   GoogleDiscoveryManifest,
   GoogleDiscoveryManifestMethod,
+  GoogleDiscoveryMethodBinding,
   GoogleDiscoveryStoredSourceData,
 } from "./types";
 import { GoogleDiscoveryStoredSourceData as GoogleDiscoveryStoredSourceDataSchema } from "./types";
@@ -133,6 +134,7 @@ export interface GoogleDiscoveryPluginExtension {
   >;
   readonly removeSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<void, StorageFailure>;
   readonly startOAuth: (
     input: GoogleDiscoveryOAuthStartInput,
@@ -151,6 +153,7 @@ export interface GoogleDiscoveryPluginExtension {
   >;
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<GoogleDiscoveryStoredSource | null, StorageFailure>;
 }
 
@@ -230,8 +233,10 @@ const registerManifest = (
   sourceData: GoogleDiscoveryStoredSourceData,
 ) =>
   Effect.gen(function* () {
-    // 1. Clear any previous manifest for this namespace.
-    yield* ctx.storage.removeBindingsBySource(namespace);
+    // 1. Clear any previous manifest for this namespace at this scope.
+    //    Scope-pinned so a refresh/re-add at a user scope can't wipe
+    //    bindings from an org-level shadow of the same namespace.
+    yield* ctx.storage.removeBindingsBySource(namespace, scope);
     yield* ctx.core.sources.unregister(namespace).pipe(Effect.ignore);
 
     // 2. Register the source + tool rows in core.
@@ -381,11 +386,11 @@ export const googleDiscoveryPlugin = definePlugin(() => ({
         }),
       ),
 
-    removeSource: (namespace) =>
+    removeSource: (namespace, scope) =>
       ctx.transaction(
         Effect.gen(function* () {
-          yield* ctx.storage.removeBindingsBySource(namespace);
-          yield* ctx.storage.removeSource(namespace);
+          yield* ctx.storage.removeBindingsBySource(namespace, scope);
+          yield* ctx.storage.removeSource(namespace, scope);
           yield* ctx.core.sources.unregister(namespace).pipe(Effect.ignore);
         }),
       ),
@@ -508,24 +513,41 @@ export const googleDiscoveryPlugin = definePlugin(() => ({
         };
       }),
 
-    getSource: (namespace) => ctx.storage.getSource(namespace),
+    getSource: (namespace, scope) => ctx.storage.getSource(namespace, scope),
   } satisfies GoogleDiscoveryPluginExtension),
 
   invokeTool: ({ ctx, toolRow, args }) =>
     invokeGoogleDiscoveryTool({
       ctx: ctx as PluginCtx<GoogleDiscoveryStore>,
       toolId: toolRow.id,
+      // toolRow.scope_id is the resolved owning scope of the tool
+      // (innermost-wins from the executor's stack). The matching
+      // binding + source rows live at the same scope, so pin every
+      // store lookup to it instead of relying on the scoped adapter's
+      // stack-wide fall-through.
+      toolScope: toolRow.scope_id as string,
       args,
     }),
 
   resolveAnnotations: ({ ctx, sourceId, toolRows }) =>
     Effect.gen(function* () {
-      const bindings = yield* (ctx as PluginCtx<GoogleDiscoveryStore>).storage.getBindingsForSource(
-        sourceId,
-      );
+      // toolRows for a single (plugin_id, source_id) group can still
+      // straddle multiple scopes when the source is shadowed (e.g. an
+      // org-level source plus a per-user override that re-registers
+      // the same tool ids). Run one getBindingsForSource per distinct
+      // scope so each lookup pins {source_id, scope_id} and we don't
+      // fall through to the wrong scope's bindings.
+      const typedCtx = ctx as PluginCtx<GoogleDiscoveryStore>;
+      const scopes = new Set<string>();
+      for (const row of toolRows) scopes.add(row.scope_id as string);
+      const byScope = new Map<string, ReadonlyMap<string, GoogleDiscoveryMethodBinding>>();
+      for (const scope of scopes) {
+        const bindings = yield* typedCtx.storage.getBindingsForSource(sourceId, scope);
+        byScope.set(scope, bindings);
+      }
       const out: Record<string, ToolAnnotations> = {};
       for (const row of toolRows) {
-        const binding = bindings.get(row.id);
+        const binding = byScope.get(row.scope_id as string)?.get(row.id);
         if (binding) {
           out[row.id] = annotationsForOperation(binding.method, binding.pathTemplate);
         }
@@ -533,10 +555,11 @@ export const googleDiscoveryPlugin = definePlugin(() => ({
       return out;
     }),
 
-  removeSource: ({ ctx, sourceId }) =>
+  removeSource: ({ ctx, sourceId, scope }) =>
     Effect.gen(function* () {
-      yield* (ctx as PluginCtx<GoogleDiscoveryStore>).storage.removeBindingsBySource(sourceId);
-      yield* (ctx as PluginCtx<GoogleDiscoveryStore>).storage.removeSource(sourceId);
+      const typedCtx = ctx as PluginCtx<GoogleDiscoveryStore>;
+      yield* typedCtx.storage.removeBindingsBySource(sourceId, scope);
+      yield* typedCtx.storage.removeSource(sourceId, scope);
     }),
 
   detect: ({ url }) =>
@@ -579,12 +602,14 @@ export const googleDiscoveryPlugin = definePlugin(() => ({
       });
     }),
 
-  refreshSource: ({ ctx, sourceId }) =>
+  refreshSource: ({ ctx, sourceId, scope }) =>
     Effect.gen(function* () {
       const typedCtx = ctx as PluginCtx<GoogleDiscoveryStore>;
-      const existing = yield* typedCtx.storage.getSource(sourceId);
+      // Pin the initial read to the source's owning scope — otherwise
+      // fall-through could surface a shadowed row at another scope and
+      // we'd refresh the wrong one.
+      const existing = yield* typedCtx.storage.getSource(sourceId, scope);
       if (!existing) return;
-      const refreshScope = existing.scope ?? (typedCtx.scopes.at(-1)!.id as string);
       const text = yield* fetchDiscoveryDocument(existing.config.discoveryUrl);
       const manifest = yield* extractGoogleDiscoveryManifest(text);
       const next = new GoogleDiscoveryStoredSourceDataSchema({
@@ -594,6 +619,6 @@ export const googleDiscoveryPlugin = definePlugin(() => ({
         rootUrl: manifest.rootUrl,
         servicePath: manifest.servicePath,
       });
-      yield* registerManifest(typedCtx, sourceId, refreshScope, manifest, next);
+      yield* registerManifest(typedCtx, sourceId, scope, manifest, next);
     }).pipe(Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err))))),
 }));

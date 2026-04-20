@@ -60,9 +60,15 @@ interface MetadataRow {
 // ---------------------------------------------------------------------------
 
 export interface WorkosVaultStore {
-  readonly get: (id: string) => Effect.Effect<MetadataRow | null, StorageFailure>;
+  readonly get: (
+    id: string,
+    scope: string,
+  ) => Effect.Effect<MetadataRow | null, StorageFailure>;
   readonly upsert: (row: MetadataRow) => Effect.Effect<void, StorageFailure>;
-  readonly remove: (id: string) => Effect.Effect<boolean, StorageFailure>;
+  readonly remove: (
+    id: string,
+    scope: string,
+  ) => Effect.Effect<boolean, StorageFailure>;
   readonly list: () => Effect.Effect<readonly MetadataRow[], StorageFailure>;
 }
 
@@ -71,23 +77,36 @@ export const makeWorkosVaultStore = (
 ): WorkosVaultStore => {
   const { adapter: db } = deps;
 
-  const findOne = (id: string) =>
+  // Every read/write to a specific row pins BOTH `id` and `scope_id`.
+  // The store runs behind the SDK's scoped adapter (which auto-injects
+  // `scope_id IN (stack)`), so a bare `{id}` filter resolves to any
+  // row in the stack in adapter-iteration order. For shadowed rows
+  // (same id at multiple scopes), that landed the update/delete on the
+  // wrong scope. Callers thread the target scope in so every mutation
+  // targets a single, unambiguous row.
+  const findScoped = (id: string, scope: string) =>
     db
       .findOne({
         model: "workos_vault_metadata",
-        where: [{ field: "id", value: id }],
+        where: [
+          { field: "id", value: id },
+          { field: "scope_id", value: scope },
+        ],
       })
       .pipe(Effect.map((row): MetadataRow | null => row ?? null));
 
   return {
-    get: (id) => findOne(id),
+    get: (id, scope) => findScoped(id, scope),
     upsert: (row) =>
       Effect.gen(function* () {
-        const existing = yield* findOne(row.id);
+        const existing = yield* findScoped(row.id, row.scope_id);
         if (existing) {
           yield* db.update({
             model: "workos_vault_metadata",
-            where: [{ field: "id", value: row.id }],
+            where: [
+              { field: "id", value: row.id },
+              { field: "scope_id", value: row.scope_id },
+            ],
             update: {
               name: row.name,
               purpose: row.purpose ?? null,
@@ -108,13 +127,16 @@ export const makeWorkosVaultStore = (
           forceAllowId: true,
         });
       }),
-    remove: (id) =>
+    remove: (id, scope) =>
       Effect.gen(function* () {
-        const existing = yield* findOne(id);
+        const existing = yield* findScoped(id, scope);
         if (!existing) return false;
         yield* db.delete({
           model: "workos_vault_metadata",
-          where: [{ field: "id", value: id }],
+          where: [
+            { field: "id", value: id },
+            { field: "scope_id", value: scope },
+          ],
         });
         return true;
       }),
@@ -163,23 +185,33 @@ const isKekNotReadyError = (error: unknown): boolean => {
   return message.includes("KEK was created but is not yet ready");
 };
 
-// WorkOS's KEK provisioning hangs indefinitely when a context value
-// contains `:` (reproduced against the live vault API: colon-free
-// values provision in ~1s, any value with a colon stalls on the
-// "KEK was created but is not yet ready" response forever).
-// Our compound per-user scope ids look like
-// `user-org:<userId>:<orgId>`, so we substitute `:` with `__` when
-// stuffing scope values into vault context keys. Object names still
-// carry the original scope id verbatim (those aren't partition keys).
-const sanitizeCtxValue = (value: string): string => value.replace(/:/g, "__");
+// Default context builder. Each semantic piece of a scope id lives in
+// its own vault-context key so WorkOS's KEK matcher sees individual
+// dimensions (org, user) rather than a single opaque compound string.
+// Splitting also sidesteps the "KEK was created but is not yet ready"
+// hang we hit when a context value contained `:` — per-field values are
+// colon-free by construction.
+//
+// Cloud's scope ids are either:
+//   - `user-org:<userId>:<orgId>`  → per-user-within-org scope
+//   - `<orgId>`                    → bare org scope
+//
+// Callers with other scope shapes can override via
+// `WorkOSVaultSecretProviderOptions.contextForScope`.
+export type WorkOSVaultContextForScope = (
+  scopeId: string,
+) => Record<string, string>;
 
-const objectContext = (scopeId: string): Record<string, string> => {
-  const safe = sanitizeCtxValue(scopeId);
-  return {
+export const defaultWorkOSVaultContextForScope: WorkOSVaultContextForScope = (
+  scopeId,
+) => {
+  const m = scopeId.match(/^user-org:([^:]+):([^:]+)$/);
+  const base: Record<string, string> = {
     app: "executor",
-    organization_id: safe,
-    scope_id: safe,
+    organization_id: m ? m[2]! : scopeId,
   };
+  if (m) base.user_id = m[1]!;
+  return base;
 };
 
 const secretObjectName = (
@@ -206,6 +238,7 @@ const upsertSecretValue = (
   scopeId: string,
   secretId: string,
   value: string,
+  contextForScope: WorkOSVaultContextForScope,
 ): Effect.Effect<void, WorkOSVaultClientError, never> => {
   const attemptWrite = (
     remainingConflictAttempts: number,
@@ -226,7 +259,7 @@ const upsertSecretValue = (
       yield* client.createObject({
         name: secretObjectName(prefix, scopeId, secretId),
         value,
-        context: objectContext(scopeId),
+        context: contextForScope(scopeId),
       });
     }).pipe(
       Effect.catchAll((error) => {
@@ -287,12 +320,23 @@ export interface WorkOSVaultSecretProviderOptions {
   readonly client: WorkOSVaultClient;
   readonly store: WorkosVaultStore;
   readonly objectPrefix?: string;
+  /**
+   * Build the vault `context` map from an executor scope id. Each key
+   * in the returned map becomes an independent dimension WorkOS uses
+   * for KEK matching, so splitting compound scope ids into their
+   * constituent fields (user/org) keeps per-KEK granularity aligned
+   * with the real identities rather than an opaque compound string.
+   * Defaults to `defaultWorkOSVaultContextForScope`.
+   */
+  readonly contextForScope?: WorkOSVaultContextForScope;
 }
 
 export const makeWorkOSVaultSecretProvider = (
   options: WorkOSVaultSecretProviderOptions,
 ): SecretProvider => {
   const prefix = options.objectPrefix ?? DEFAULT_OBJECT_PREFIX;
+  const contextForScope =
+    options.contextForScope ?? defaultWorkOSVaultContextForScope;
   const { client, store } = options;
 
   return {
@@ -301,7 +345,7 @@ export const makeWorkOSVaultSecretProvider = (
 
     get: (id, scope) =>
       Effect.gen(function* () {
-        const meta = yield* store.get(id);
+        const meta = yield* store.get(id, scope);
         if (!meta) return null;
         const object = yield* loadSecretObject(client, prefix, scope, id).pipe(
           Effect.mapError(formatVaultError),
@@ -312,13 +356,13 @@ export const makeWorkOSVaultSecretProvider = (
 
     set: (id, value, scope) =>
       Effect.gen(function* () {
-        const existing = yield* store.get(id);
-        yield* upsertSecretValue(client, prefix, scope, id, value).pipe(
+        const existing = yield* store.get(id, scope);
+        yield* upsertSecretValue(client, prefix, scope, id, value, contextForScope).pipe(
           Effect.mapError(formatVaultError),
         );
         yield* store.upsert({
           id,
-          scope_id: existing?.scope_id ?? scope,
+          scope_id: scope,
           name: existing?.name ?? id,
           purpose: existing?.purpose ?? null,
           created_at: existing?.created_at ?? new Date(),
@@ -327,12 +371,12 @@ export const makeWorkOSVaultSecretProvider = (
 
     delete: (id, scope) =>
       Effect.gen(function* () {
-        const meta = yield* store.get(id);
+        const meta = yield* store.get(id, scope);
         if (!meta) return false;
         yield* deleteSecretValue(client, prefix, scope, id).pipe(
           Effect.mapError(formatVaultError),
         );
-        yield* store.remove(id);
+        yield* store.remove(id, scope);
         return true;
       }),
 

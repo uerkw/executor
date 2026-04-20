@@ -53,11 +53,25 @@ const withScopeRead = (
   where: readonly Where[] | undefined,
   ctx: ScopeContext,
 ): Where[] => {
-  // Strip any caller-provided scope filter so they can't override
-  // isolation, then AND ours in. For a single-scope stack we use `eq`
-  // so downstream query planners see a simple equality; for multiple
-  // scopes we emit `in (...)`.
   const base = (where ?? []).filter((w) => w.field !== SCOPE_FIELD);
+  const callerScope = (where ?? []).find((w) => w.field === SCOPE_FIELD);
+
+  // Honor a caller-supplied scope filter IF it names a single scope
+  // that lives in the executor's stack. This turns a stack-wide read
+  // (default) into a single-scope read — and, for delete/update, pins
+  // mutations to the named scope instead of letting the `IN (stack)`
+  // injection silently widen them. An out-of-stack value is treated
+  // as an isolation bypass attempt and discarded; the stack-wide
+  // filter applies instead, so the caller sees nothing outside their
+  // stack regardless of what they asked for.
+  if (
+    callerScope &&
+    typeof callerScope.value === "string" &&
+    ctx.scopes.includes(callerScope.value)
+  ) {
+    return [...base, { field: SCOPE_FIELD, value: callerScope.value }];
+  }
+
   const scope: Where =
     ctx.scopes.length === 1
       ? { field: SCOPE_FIELD, value: ctx.scopes[0]! }

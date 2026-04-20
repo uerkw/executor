@@ -15,6 +15,7 @@ import {
   createExecutor,
   definePlugin,
   makeTestConfig,
+  Scope,
   ScopeId,
   SecretId,
   SetSecretInput,
@@ -447,7 +448,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
 
       expect((yield* executor.tools.list()).length).toBeGreaterThan(2);
 
-      yield* executor.openapi.removeSpec("removable");
+      yield* executor.openapi.removeSpec("removable", TEST_SCOPE);
 
       const remaining = yield* executor.tools.list();
       const ids = remaining.map((t) => t.id).sort();
@@ -455,6 +456,151 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
         "openapi.addSource",
         "openapi.previewSpec",
       ]);
+    }),
+  );
+
+  // -------------------------------------------------------------------------
+  // Multi-scope shadowing — regression suite covering the bug class where
+  // store reads/writes that don't pin scope_id collapse onto whichever row
+  // the scoped adapter's `scope_id IN (stack)` filter sees first. Each
+  // scenario is reproducible against the pre-fix store.
+  // -------------------------------------------------------------------------
+
+  const ORG_SCOPE = ScopeId.make("org-scope");
+  const USER_SCOPE = ScopeId.make("user-scope");
+
+  const stackedScopes = [
+    new Scope({ id: USER_SCOPE, name: "user", createdAt: new Date() }),
+    new Scope({ id: ORG_SCOPE, name: "org", createdAt: new Date() }),
+  ] as const;
+
+  it.effect("shadowed addSpec does not wipe the outer-scope source", () =>
+    Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [
+            openApiPlugin({ httpClientLayer: clientLayer }),
+            memorySecretsPlugin(),
+          ] as const,
+        }),
+      );
+
+      // Org-level base source
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: ORG_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "",
+        name: "Org Source",
+      });
+
+      // Per-user shadow with the same namespace
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: USER_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "",
+        name: "User Source",
+      });
+
+      const userView = yield* executor.openapi.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.openapi.getSource("shared", ORG_SCOPE as string);
+
+      // Both rows must coexist — innermost-wins reads come from the
+      // executor; the store's scope-pinned getters return the exact row.
+      expect(userView?.name).toBe("User Source");
+      expect(userView?.scope).toBe(USER_SCOPE as string);
+      expect(orgView?.name).toBe("Org Source");
+      expect(orgView?.scope).toBe(ORG_SCOPE as string);
+    }),
+  );
+
+  it.effect("removeSpec on user shadow leaves the org row intact", () =>
+    Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [
+            openApiPlugin({ httpClientLayer: clientLayer }),
+            memorySecretsPlugin(),
+          ] as const,
+        }),
+      );
+
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: ORG_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "",
+        name: "Org Source",
+      });
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: USER_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "",
+        name: "User Source",
+      });
+
+      yield* executor.openapi.removeSpec("shared", USER_SCOPE as string);
+
+      const userView = yield* executor.openapi.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.openapi.getSource("shared", ORG_SCOPE as string);
+
+      expect(userView).toBeNull();
+      expect(orgView?.name).toBe("Org Source");
+    }),
+  );
+
+  it.effect("updateSource on user shadow does not mutate the org row", () =>
+    Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [
+            openApiPlugin({ httpClientLayer: clientLayer }),
+            memorySecretsPlugin(),
+          ] as const,
+        }),
+      );
+
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: ORG_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "https://org.example.com",
+        name: "Org Source",
+      });
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: USER_SCOPE as string,
+        namespace: "shared",
+        baseUrl: "https://user.example.com",
+        name: "User Source",
+      });
+
+      yield* executor.openapi.updateSource("shared", USER_SCOPE as string, {
+        name: "User Renamed",
+        baseUrl: "https://user-new.example.com",
+      });
+
+      const userView = yield* executor.openapi.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.openapi.getSource("shared", ORG_SCOPE as string);
+
+      expect(userView?.name).toBe("User Renamed");
+      expect(userView?.config.baseUrl).toBe("https://user-new.example.com");
+      expect(orgView?.name).toBe("Org Source");
+      expect(orgView?.config.baseUrl).toBe("https://org.example.com");
     }),
   );
 });

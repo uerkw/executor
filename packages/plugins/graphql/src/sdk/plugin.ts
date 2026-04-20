@@ -97,21 +97,30 @@ export interface GraphqlPluginExtension {
     config: GraphqlSourceConfig,
   ) => Effect.Effect<{ readonly toolCount: number }, GraphqlExtensionFailure>;
 
-  /** Remove all tools from a previously added GraphQL source by namespace */
+  /** Remove all tools from a previously added GraphQL source by namespace.
+   *  `scope` pins the cleanup to the exact row — without it a shadowed
+   *  outer-scope source with the same namespace could be wiped instead. */
   readonly removeSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<void, StorageFailure>;
 
-  /** Fetch the full stored source by namespace (or null if missing) */
+  /** Fetch the full stored source by namespace (or null if missing).
+   *  `scope` returns the exact row at that scope. For fall-through
+   *  reads across the executor's scope stack, use `executor.sources.*`. */
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<StoredGraphqlSource | null, StorageFailure>;
 
   /** Update config (endpoint, headers) for an existing GraphQL source.
    *  Does NOT re-introspect or re-register tools — just patches the
-   *  stored endpoint/headers used at invoke time. */
+   *  stored endpoint/headers used at invoke time. `scope` pins the
+   *  mutation to a single row so shadowed rows at other scopes are
+   *  untouched. */
   readonly updateSource: (
     namespace: string,
+    scope: string,
     input: GraphqlUpdateSourceInput,
   ) => Effect.Effect<void, StorageFailure>;
 }
@@ -405,11 +414,11 @@ export const graphqlPlugin = definePlugin(
               Effect.map(({ toolCount }) => ({ toolCount })),
             ),
 
-          removeSource: (namespace) =>
+          removeSource: (namespace, scope) =>
             Effect.gen(function* () {
               yield* ctx.transaction(
                 Effect.gen(function* () {
-                  yield* ctx.storage.removeSource(namespace);
+                  yield* ctx.storage.removeSource(namespace, scope);
                   yield* ctx.core.sources.unregister(namespace);
                 }),
               );
@@ -418,10 +427,11 @@ export const graphqlPlugin = definePlugin(
               }
             }),
 
-          getSource: (namespace) => ctx.storage.getSource(namespace),
+          getSource: (namespace, scope) =>
+            ctx.storage.getSource(namespace, scope),
 
-          updateSource: (namespace, input) =>
-            ctx.storage.updateSourceMeta(namespace, {
+          updateSource: (namespace, scope, input) =>
+            ctx.storage.updateSourceMeta(namespace, scope, {
               name: input.name?.trim() || undefined,
               endpoint: input.endpoint,
               headers: input.headers,
@@ -474,13 +484,22 @@ export const graphqlPlugin = definePlugin(
 
       invokeTool: ({ ctx, toolRow, args }) =>
         Effect.gen(function* () {
-          const op = yield* ctx.storage.getOperationByToolId(toolRow.id);
+          // toolRow.scope_id is the resolved owning scope of the tool
+          // (innermost-wins from the executor's stack). The matching
+          // graphql_operation + graphql_source rows live at the same
+          // scope, so pin every store lookup to it instead of relying
+          // on the scoped adapter's stack-wide fall-through.
+          const toolScope = toolRow.scope_id as string;
+          const op = yield* ctx.storage.getOperationByToolId(
+            toolRow.id,
+            toolScope,
+          );
           if (!op) {
             return yield* Effect.fail(
               new Error(`No GraphQL operation found for tool "${toolRow.id}"`),
             );
           }
-          const source = yield* ctx.storage.getSource(op.sourceId);
+          const source = yield* ctx.storage.getSource(op.sourceId, toolScope);
           if (!source) {
             return yield* Effect.fail(
               new Error(`No GraphQL source found for "${op.sourceId}"`),
@@ -505,19 +524,37 @@ export const graphqlPlugin = definePlugin(
 
       resolveAnnotations: ({ ctx, sourceId, toolRows }) =>
         Effect.gen(function* () {
-          const ops = yield* ctx.storage.listOperationsBySource(sourceId);
-          const byId = new Map<string, OperationBinding>();
-          for (const op of ops) byId.set(op.toolId, op.binding);
+          // toolRows for a single (plugin_id, source_id) group can still
+          // straddle multiple scopes when the source is shadowed (e.g. an
+          // org-level GraphQL source plus a per-user override that
+          // re-registers the same tool ids). Run one listOperationsBySource
+          // per distinct scope so each lookup pins {source_id, scope_id}
+          // and we don't fall through to the wrong scope's bindings.
+          const scopes = new Set<string>();
+          for (const row of toolRows as readonly ToolRow[]) {
+            scopes.add(row.scope_id as string);
+          }
+          const byScope = new Map<string, Map<string, OperationBinding>>();
+          for (const scope of scopes) {
+            const ops = yield* ctx.storage.listOperationsBySource(
+              sourceId,
+              scope,
+            );
+            const byId = new Map<string, OperationBinding>();
+            for (const op of ops) byId.set(op.toolId, op.binding);
+            byScope.set(scope, byId);
+          }
 
           const out: Record<string, ToolAnnotations> = {};
           for (const row of toolRows as readonly ToolRow[]) {
-            const binding = byId.get(row.id);
+            const binding = byScope.get(row.scope_id as string)?.get(row.id);
             if (binding) out[row.id] = annotationsFor(binding);
           }
           return out;
         }),
 
-      removeSource: ({ ctx, sourceId }) => ctx.storage.removeSource(sourceId),
+      removeSource: ({ ctx, sourceId, scope }) =>
+        ctx.storage.removeSource(sourceId, scope),
 
       detect: ({ url }) =>
         Effect.gen(function* () {

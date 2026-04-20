@@ -213,6 +213,16 @@ export interface InvokeToolInput<TStore = unknown> {
 export interface SourceLifecycleInput<TStore = unknown> {
   readonly ctx: PluginCtx<TStore>;
   readonly sourceId: string;
+  /**
+   * Scope of the source row being removed/refreshed — resolved by the
+   * SDK's `sources.remove` / `sources.refresh` via innermost-wins lookup
+   * across the executor's scope stack. Plugins that own a side table
+   * keyed by (id, scope_id) must pin their own cleanup to this scope;
+   * relying on the scoped adapter's `scope_id IN (stack)` fall-through
+   * would widen the mutation across the whole stack and wipe a
+   * shadowed outer-scope row.
+   */
+  readonly scope: string;
 }
 
 // ---------------------------------------------------------------------------

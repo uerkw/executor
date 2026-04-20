@@ -280,6 +280,11 @@ const performRequest = Effect.fn("GoogleDiscovery.invoke")(function* (input: {
 export const invokeGoogleDiscoveryTool = (input: {
   ctx: PluginCtx<GoogleDiscoveryStore>;
   toolId: string;
+  /** Resolved owning scope of the tool row (innermost-wins from the
+   *  executor's stack). The matching binding + source rows live at the
+   *  same scope, so pin every store lookup to this instead of relying
+   *  on the scoped adapter's stack-wide fall-through. */
+  toolScope: string;
   args: unknown;
   httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
 }): Effect.Effect<
@@ -289,7 +294,7 @@ export const invokeGoogleDiscoveryTool = (input: {
   | StorageFailure
 > =>
   Effect.gen(function* () {
-    const entry = yield* input.ctx.storage.getBinding(input.toolId);
+    const entry = yield* input.ctx.storage.getBinding(input.toolId, input.toolScope);
     if (!entry) {
       return yield* Effect.fail(
         new GoogleDiscoveryInvocationError({
@@ -298,7 +303,7 @@ export const invokeGoogleDiscoveryTool = (input: {
         }),
       );
     }
-    const stored = yield* input.ctx.storage.getSource(entry.namespace);
+    const stored = yield* input.ctx.storage.getSource(entry.namespace, input.toolScope);
     if (!stored) {
       return yield* Effect.fail(
         new GoogleDiscoveryInvocationError({

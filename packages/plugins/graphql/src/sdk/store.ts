@@ -89,6 +89,17 @@ const decodeHeaders = (value: unknown): Record<string, HeaderValue> => {
 // Store interface
 // ---------------------------------------------------------------------------
 
+// Every read/write that targets a single row pins BOTH the natural id
+// (namespace, toolId) AND the owning `scope_id`. The store runs behind
+// the scoped adapter (which auto-injects `scope_id IN (stack)`), so a
+// bare `{id}` filter resolves to any matching row in the stack in
+// adapter-iteration order. For shadowed rows (same id at multiple
+// scopes — e.g. an org-level GraphQL source with a per-user override),
+// that's a scope-isolation bug: updates and deletes can land on the
+// wrong scope's row. Callers thread the resolved scope in (typically
+// `path.scopeId` for HTTP, `toolRow.scope_id` / `input.scope` for
+// invokeTool/lifecycle) so every keyed mutation targets exactly one
+// row.
 export interface GraphqlStore {
   readonly upsertSource: (
     input: StoredGraphqlSource,
@@ -97,24 +108,31 @@ export interface GraphqlStore {
 
   readonly updateSourceMeta: (
     namespace: string,
+    scope: string,
     patch: { readonly name?: string; readonly endpoint?: string; readonly headers?: Record<string, HeaderValue> },
   ) => Effect.Effect<void, StorageFailure>;
 
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<StoredGraphqlSource | null, StorageFailure>;
 
   readonly listSources: () => Effect.Effect<readonly StoredGraphqlSource[], StorageFailure>;
 
   readonly getOperationByToolId: (
     toolId: string,
+    scope: string,
   ) => Effect.Effect<StoredOperation | null, StorageFailure>;
 
   readonly listOperationsBySource: (
     sourceId: string,
+    scope: string,
   ) => Effect.Effect<readonly StoredOperation[], StorageFailure>;
 
-  readonly removeSource: (namespace: string) => Effect.Effect<void, StorageFailure>;
+  readonly removeSource: (
+    namespace: string,
+    scope: string,
+  ) => Effect.Effect<void, StorageFailure>;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,22 +156,28 @@ export const makeDefaultGraphqlStore = ({
     binding: decodeBinding(row.binding),
   });
 
-  const deleteSource = (namespace: string) =>
+  const deleteSource = (namespace: string, scope: string) =>
     Effect.gen(function* () {
       yield* db.deleteMany({
         model: "graphql_operation",
-        where: [{ field: "source_id", value: namespace }],
+        where: [
+          { field: "source_id", value: namespace },
+          { field: "scope_id", value: scope },
+        ],
       });
       yield* db.delete({
         model: "graphql_source",
-        where: [{ field: "id", value: namespace }],
+        where: [
+          { field: "id", value: namespace },
+          { field: "scope_id", value: scope },
+        ],
       });
     });
 
   return {
     upsertSource: (input, operations) =>
       Effect.gen(function* () {
-        yield* deleteSource(input.namespace);
+        yield* deleteSource(input.namespace, input.scope);
         yield* db.create({
           model: "graphql_source",
           data: {
@@ -179,11 +203,14 @@ export const makeDefaultGraphqlStore = ({
         }
       }),
 
-    updateSourceMeta: (namespace, patch) =>
+    updateSourceMeta: (namespace, scope, patch) =>
       Effect.gen(function* () {
         const existing = yield* db.findOne({
           model: "graphql_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
         if (!existing) return;
         const update: Record<string, unknown> = {};
@@ -195,16 +222,22 @@ export const makeDefaultGraphqlStore = ({
         if (Object.keys(update).length === 0) return;
         yield* db.update({
           model: "graphql_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
           update,
         });
       }),
 
-    getSource: (namespace) =>
+    getSource: (namespace, scope) =>
       db
         .findOne({
           model: "graphql_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((row) => (row ? rowToSource(row) : null))),
 
@@ -213,22 +246,28 @@ export const makeDefaultGraphqlStore = ({
         .findMany({ model: "graphql_source" })
         .pipe(Effect.map((rows) => rows.map(rowToSource))),
 
-    getOperationByToolId: (toolId) =>
+    getOperationByToolId: (toolId, scope) =>
       db
         .findOne({
           model: "graphql_operation",
-          where: [{ field: "id", value: toolId }],
+          where: [
+            { field: "id", value: toolId },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((row) => (row ? rowToOperation(row) : null))),
 
-    listOperationsBySource: (sourceId) =>
+    listOperationsBySource: (sourceId, scope) =>
       db
         .findMany({
           model: "graphql_operation",
-          where: [{ field: "source_id", value: sourceId }],
+          where: [
+            { field: "source_id", value: sourceId },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((rows) => rows.map(rowToOperation))),
 
-    removeSource: (namespace) => deleteSource(namespace),
+    removeSource: (namespace, scope) => deleteSource(namespace, scope),
   };
 };

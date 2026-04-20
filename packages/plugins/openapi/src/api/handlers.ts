@@ -81,13 +81,13 @@ export const OpenApiHandlers = HttpApiBuilder.group(ExecutorApiWithOpenApi, "ope
     .handle("getSource", ({ path }) =>
       capture(Effect.gen(function* () {
         const ext = yield* OpenApiExtensionService;
-        return yield* ext.getSource(path.namespace);
+        return yield* ext.getSource(path.namespace, path.scopeId);
       })),
     )
     .handle("updateSource", ({ path, payload }) =>
       capture(Effect.gen(function* () {
         const ext = yield* OpenApiExtensionService;
-        yield* ext.updateSource(path.namespace, {
+        yield* ext.updateSource(path.namespace, path.scopeId, {
           name: payload.name,
           baseUrl: payload.baseUrl,
           headers: payload.headers as Record<string, HeaderValue> | undefined,

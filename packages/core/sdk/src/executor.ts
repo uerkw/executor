@@ -303,7 +303,7 @@ const writeSourceInput = (
   input: SourceInput,
 ): Effect.Effect<void, StorageFailure> =>
   Effect.gen(function* () {
-    yield* deleteSourceById(core, input.id);
+    yield* deleteSourceById(core, input.id, input.scope);
 
     const now = new Date();
     yield* core.create({
@@ -344,22 +344,37 @@ const writeSourceInput = (
     }
   });
 
+// Delete a source and its tools + definitions at ONE specific scope.
+// The scoped adapter already narrows reads/writes to the executor's
+// stack via `scope_id IN (...)`, but we pin `scope_id = scopeId` here
+// so this helper never widens into a stack-wide wipe — a bystander
+// scope's rows with a colliding `source_id` must survive.
 const deleteSourceById = (
   core: TypedAdapter<CoreSchema>,
   sourceId: string,
+  scopeId: string,
 ): Effect.Effect<void, StorageFailure> =>
   Effect.gen(function* () {
     yield* core.deleteMany({
       model: "tool",
-      where: [{ field: "source_id", value: sourceId }],
+      where: [
+        { field: "source_id", value: sourceId },
+        { field: "scope_id", value: scopeId },
+      ],
     });
     yield* core.deleteMany({
       model: "definition",
-      where: [{ field: "source_id", value: sourceId }],
+      where: [
+        { field: "source_id", value: sourceId },
+        { field: "scope_id", value: scopeId },
+      ],
     });
     yield* core.delete({
       model: "source",
-      where: [{ field: "id", value: sourceId }],
+      where: [
+        { field: "id", value: sourceId },
+        { field: "scope_id", value: scopeId },
+      ],
     });
   });
 
@@ -369,9 +384,16 @@ const writeDefinitions = (
   input: DefinitionsInput,
 ): Effect.Effect<void, StorageFailure> =>
   Effect.gen(function* () {
+    // Pin the delete to `input.scope` — without this, the scoped
+    // adapter's `scope_id IN (stack)` injection would nuke definitions
+    // at outer scopes whenever an inner-scope writer re-registers
+    // definitions for the same source id.
     yield* core.deleteMany({
       model: "definition",
-      where: [{ field: "source_id", value: input.sourceId }],
+      where: [
+        { field: "source_id", value: input.sourceId },
+        { field: "scope_id", value: input.scope },
+      ],
     });
     const entries = Object.entries(input.definitions);
     if (entries.length === 0) return;
@@ -551,6 +573,36 @@ export const createExecutor = <
     const scopePrecedence = new Map<string, number>();
     scopeIds.forEach((s, i) => scopePrecedence.set(s, i));
 
+    // Rank a row by how close its `scope_id` sits to the innermost scope.
+    // Rows whose scope isn't in the stack get pushed to the end (they
+    // shouldn't reach us — the adapter filters by `scope_id IN (stack)` —
+    // but guarding here means a stray row can't silently win).
+    const scopeRank = (row: { scope_id: unknown }) =>
+      scopePrecedence.get(row.scope_id as string) ?? Infinity;
+
+    // Pick the innermost-scope row on a findOne-by-id against a scoped
+    // model. The scope-wrapped adapter returns rows from every scope in
+    // the stack, so a bare `findOne({ id })` picks whichever one the
+    // storage backend iterates first — non-deterministic across backends,
+    // and wrong when a user has shadowed an outer default. Callers that
+    // need a single logical row (invoke, tool schema, source removal)
+    // must go through this path so the innermost write always wins.
+    const findInnermost = <T extends { scope_id: unknown }>(
+      rows: readonly T[],
+    ): T | null => {
+      if (rows.length === 0) return null;
+      let winner: T | undefined;
+      let best = Infinity;
+      for (const row of rows) {
+        const rank = scopeRank(row);
+        if (rank < best) {
+          best = rank;
+          winner = row;
+        }
+      }
+      return winner ?? null;
+    };
+
     const secretsGet = (
       id: string,
     ): Effect.Effect<string | null, StorageFailure> =>
@@ -657,15 +709,18 @@ export const createExecutor = <
         yield* target.set(input.id, input.value, input.scope as string);
 
         // Upsert metadata row in the core `secret` table at the
-        // caller-named scope. Delete is scoped via the adapter's
-        // IN-clause filter to the full stack, which removes any
-        // previously-registered row for this id anywhere in the stack
-        // (avoids leftover shadow rows from a different scope); then
-        // we create fresh at the target scope.
+        // caller-named scope. Pin the delete to `scope_id = input.scope`
+        // — without it, the scoped adapter's `scope_id IN (stack)`
+        // injection would wipe rows at outer scopes too, so any member
+        // writing a personal override could delete admin-written
+        // org-wide secrets with the same id.
         const now = new Date();
         yield* core.delete({
           model: "secret",
-          where: [{ field: "id", value: input.id }],
+          where: [
+            { field: "id", value: input.id },
+            { field: "scope_id", value: input.scope },
+          ],
         });
         yield* core.create({
           model: "secret",
@@ -690,24 +745,39 @@ export const createExecutor = <
 
     const secretsRemove = (id: string): Effect.Effect<void, StorageFailure> =>
       Effect.gen(function* () {
-        // Providers don't coordinate on which of them own the id — they
-        // each get asked, across every scope in the stack. Flat
-        // providers see the same delete call repeated and no-op on
-        // the second hit; scope-partitioned providers use the scope
-        // arg to pick the right partition. Fan out so one slow
-        // provider doesn't serialize the rest.
+        // Remove is shadowing-aware: drop only the innermost-scope row.
+        // Removing a user-scope override on a secret that also has an
+        // org-scope default should reveal the org default, not wipe it.
+        //
+        // Without this, a regular member calling `secrets.remove("api_key")`
+        // at their inner scope would cascade through `scope_id IN (stack)`
+        // and delete the admin-written org row too.
+        const rows = yield* core.findMany({
+          model: "secret",
+          where: [{ field: "id", value: id }],
+        });
+        const target = findInnermost(rows);
+        const targetScope = (target?.scope_id as string | undefined) ??
+          scopeIds[0]!;
+
         const deleters = [...secretProviders.values()].filter(
           (p): p is typeof p & { delete: NonNullable<typeof p.delete> } =>
             !!(p.writable && p.delete),
         );
-        const tasks = deleters.flatMap((p) =>
-          scopeIds.map((scopeId) => p.delete(id, scopeId)),
+        yield* Effect.all(
+          deleters.map((p) => p.delete(id, targetScope)),
+          { concurrency: "unbounded" },
         );
-        yield* Effect.all(tasks, { concurrency: "unbounded" });
-        yield* core.delete({
-          model: "secret",
-          where: [{ field: "id", value: id }],
-        });
+
+        if (target) {
+          yield* core.delete({
+            model: "secret",
+            where: [
+              { field: "id", value: id },
+              { field: "scope_id", value: targetScope },
+            ],
+          });
+        }
       });
 
     // List is a union of two sources of truth:
@@ -890,7 +960,28 @@ export const createExecutor = <
                 );
               }),
             unregister: (sourceId: string) =>
-              adapter.transaction(() => deleteSourceById(core, sourceId)),
+              // `unregister` is scoped to a specific source row — look up
+              // its scope before deleting so the tool/definition sweep
+              // only touches rows at that scope. Walk the full stack and
+              // pick the innermost-scope shadow so an inner-scope caller
+              // can't accidentally (via non-deterministic findOne
+              // iteration order) unregister the outer-scope source and
+              // wipe a bystander's data at the same time.
+              adapter.transaction(() =>
+                Effect.gen(function* () {
+                  const rows = yield* core.findMany({
+                    model: "source",
+                    where: [{ field: "id", value: sourceId }],
+                  });
+                  const row = findInnermost(rows);
+                  if (!row) return;
+                  yield* deleteSourceById(
+                    core,
+                    sourceId,
+                    row.scope_id as string,
+                  );
+                }),
+              ),
           },
           definitions: {
             register: (input: DefinitionsInput) =>
@@ -987,14 +1078,30 @@ export const createExecutor = <
     const listSources = () =>
       Effect.gen(function* () {
         const dynamic = yield* core.findMany({ model: "source" });
+        // Dedup by id with innermost scope winning. Without this, a user
+        // who shadowed an org-wide source at their inner scope would see
+        // two rows — their override and the outer default — which is
+        // inconsistent with how `secrets.list` and every other list
+        // surface dedup shadowed entries.
+        const byId = new Map<string, typeof dynamic[number]>();
+        const byIdRank = new Map<string, number>();
+        for (const row of dynamic) {
+          const rank = scopeRank(row);
+          const existing = byIdRank.get(row.id);
+          if (existing === undefined || rank < existing) {
+            byId.set(row.id, row);
+            byIdRank.set(row.id, rank);
+          }
+        }
+        const dynamicDeduped = [...byId.values()];
         const staticList: Source[] = [];
         for (const { source, pluginId } of staticSources.values()) {
           staticList.push(staticDeclToSource(source, pluginId));
         }
-        const merged = [...staticList, ...dynamic.map(rowToSource)];
+        const merged = [...staticList, ...dynamicDeduped.map(rowToSource)];
         yield* Effect.annotateCurrentSpan({
           "executor.sources.static_count": staticList.length,
-          "executor.sources.dynamic_count": dynamic.length,
+          "executor.sources.dynamic_count": dynamicDeduped.length,
         });
         return merged;
       }).pipe(Effect.withSpan("executor.sources.list"));
@@ -1040,7 +1147,21 @@ export const createExecutor = <
     const listTools = (filter?: ToolListFilter) =>
       Effect.gen(function* () {
         const dynamic = yield* core.findMany({ model: "tool" });
-        const annotations = yield* resolveAnnotationsFor(dynamic).pipe(
+        // Dedup by tool id, innermost scope winning — same reason as
+        // `listSources` above: a shadowed id must surface as one entry
+        // (the inner one), not two.
+        const byId = new Map<string, typeof dynamic[number]>();
+        const byIdRank = new Map<string, number>();
+        for (const row of dynamic) {
+          const rank = scopeRank(row);
+          const existing = byIdRank.get(row.id);
+          if (existing === undefined || rank < existing) {
+            byId.set(row.id, row);
+            byIdRank.set(row.id, rank);
+          }
+        }
+        const dynamicDeduped = [...byId.values()];
+        const annotations = yield* resolveAnnotationsFor(dynamicDeduped).pipe(
           Effect.withSpan("executor.tools.list.annotations"),
         );
 
@@ -1049,27 +1170,38 @@ export const createExecutor = <
         for (const entry of staticTools.values()) {
           out.push(staticDeclToTool(entry.source, entry.tool, entry.pluginId));
         }
-        for (const row of dynamic) {
+        for (const row of dynamicDeduped) {
           out.push(rowToTool(row, annotations.get(row.id)));
         }
         const result = filter ? out.filter((t) => toolMatchesFilter(t, filter)) : out;
         yield* Effect.annotateCurrentSpan({
           "executor.tools.static_count": staticTools.size,
-          "executor.tools.dynamic_count": dynamic.length,
+          "executor.tools.dynamic_count": dynamicDeduped.length,
           "executor.tools.result_count": result.length,
         });
         return result;
       }).pipe(Effect.withSpan("executor.tools.list"));
 
-    // Load all definitions for a single source as a plain map.
+    // Load all definitions for a single source as a plain map. Defs
+    // for the same name can exist at multiple scopes (an admin registers
+    // a default, a user overrides one entry with a tighter schema) —
+    // dedup by name keeping the innermost-scope row.
     const loadDefinitionsForSource = (sourceId: string) =>
       Effect.gen(function* () {
         const defRows = yield* core.findMany({
           model: "definition",
           where: [{ field: "source_id", value: sourceId }],
         });
+        const winners = new Map<string, { row: typeof defRows[number]; rank: number }>();
+        for (const row of defRows) {
+          const rank = scopeRank(row);
+          const existing = winners.get(row.name);
+          if (!existing || rank < existing.rank) {
+            winners.set(row.name, { row, rank });
+          }
+        }
         const out: Record<string, unknown> = {};
-        for (const row of defRows) out[row.name] = row.schema;
+        for (const [name, { row }] of winners) out[name] = row.schema;
         return out;
       });
 
@@ -1146,12 +1278,18 @@ export const createExecutor = <
             rawOutput: staticEntry.tool.outputSchema,
           });
         }
-        const row = yield* core
-          .findOne({
+        // Innermost-wins lookup: the scope-wrapped adapter returns rows
+        // from every scope in the stack, so a bare findOne would pick the
+        // first row the backend iterates. That's wrong when a user has
+        // shadowed an outer-scope tool — they'd get the outer schema
+        // back instead of their override.
+        const rows = yield* core
+          .findMany({
             model: "tool",
             where: [{ field: "id", value: toolId }],
           })
           .pipe(Effect.withSpan("executor.tool.resolve"));
+        const row = findInnermost(rows);
         if (!row) return null;
         yield* Effect.annotateCurrentSpan({
           "executor.tool.dispatch_path": "dynamic",
@@ -1174,12 +1312,23 @@ export const createExecutor = <
 
     // Bulk definitions accessor — every source's $defs, grouped by
     // source id. One query against the definition table, plus an
-    // in-memory group-by.
+    // in-memory group-by with innermost-scope dedup: if the same
+    // (source_id, name) pair exists at multiple scopes, the inner
+    // scope's schema wins.
     const toolsDefinitions = () =>
       Effect.gen(function* () {
         const rows = yield* core.findMany({ model: "definition" });
-        const out: Record<string, Record<string, unknown>> = {};
+        const winners = new Map<string, { row: typeof rows[number]; rank: number }>();
         for (const row of rows) {
+          const key = `${row.source_id}\u0000${row.name}`;
+          const rank = scopeRank(row);
+          const existing = winners.get(key);
+          if (!existing || rank < existing.rank) {
+            winners.set(key, { row, rank });
+          }
+        }
+        const out: Record<string, Record<string, unknown>> = {};
+        for (const { row } of winners.values()) {
           let bucket = out[row.source_id];
           if (!bucket) {
             bucket = {};
@@ -1278,13 +1427,17 @@ export const createExecutor = <
           ).pipe(Effect.withSpan("executor.tool.handler"));
         }
 
-        // Dynamic path — DB lookup + delegate to owning plugin.
-        const row = yield* core
-          .findOne({
+        // Dynamic path — DB lookup + delegate to owning plugin. Walk
+        // the whole scope stack and pick the innermost-scope row so a
+        // user's shadow of an outer tool actually wins on invoke (a bare
+        // findOne would pick whatever row the backend iterated first).
+        const toolRows = yield* core
+          .findMany({
             model: "tool",
             where: [{ field: "id", value: toolId }],
           })
           .pipe(Effect.withSpan("executor.tool.resolve"));
+        const row = findInnermost(toolRows);
         if (!row) {
           return yield* new ToolNotFoundError({
             toolId: ToolId.make(toolId),
@@ -1351,10 +1504,14 @@ export const createExecutor = <
         if (staticSources.has(sourceId)) {
           return yield* new SourceRemovalNotAllowedError({ sourceId });
         }
-        const sourceRow = yield* core.findOne({
+        // Innermost-wins lookup — same reason as ctx.sources.unregister:
+        // a caller with a stack that straddles two scopes must target
+        // their own shadow, not the outer scope's row.
+        const sourceRows = yield* core.findMany({
           model: "source",
           where: [{ field: "id", value: sourceId }],
         });
+        const sourceRow = findInnermost(sourceRows);
         if (!sourceRow) return;
         if (!sourceRow.can_remove) {
           return yield* new SourceRemovalNotAllowedError({ sourceId });
@@ -1370,9 +1527,14 @@ export const createExecutor = <
               yield* runtime.plugin.removeSource({
                 ctx: runtime.ctx,
                 sourceId,
+                scope: sourceRow.scope_id as string,
               });
             }
-            yield* deleteSourceById(core, sourceId);
+            yield* deleteSourceById(
+              core,
+              sourceId,
+              sourceRow.scope_id as string,
+            );
           }),
         );
       });
@@ -1380,16 +1542,20 @@ export const createExecutor = <
     const refreshSource = (sourceId: string) =>
       Effect.gen(function* () {
         if (staticSources.has(sourceId)) return;
-        const sourceRow = yield* core.findOne({
+        // Innermost-wins: refresh the caller's shadow, not an outer-scope
+        // source that happens to share an id.
+        const sourceRows = yield* core.findMany({
           model: "source",
           where: [{ field: "id", value: sourceId }],
         });
+        const sourceRow = findInnermost(sourceRows);
         if (!sourceRow) return;
         const runtime = runtimes.get(sourceRow.plugin_id);
         if (runtime?.plugin.refreshSource) {
           yield* runtime.plugin.refreshSource({
             ctx: runtime.ctx,
             sourceId,
+            scope: sourceRow.scope_id as string,
           });
         }
       });
