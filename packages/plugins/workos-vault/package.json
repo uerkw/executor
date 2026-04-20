@@ -50,6 +50,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@executor/storage-core": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "react": "catalog:",

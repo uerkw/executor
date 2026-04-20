@@ -12,6 +12,7 @@ import {
   makeWorkOSVaultSecretProvider,
   makeWorkosVaultStore,
   workosVaultSchema,
+  type WorkOSVaultContextForScope,
   type WorkosVaultStore,
 } from "./secret-store";
 
@@ -25,6 +26,14 @@ export interface WorkOSVaultPluginOptions {
   readonly client?: WorkOSVaultClient;
   readonly credentials?: WorkOSVaultCredentials;
   readonly objectPrefix?: string;
+  /**
+   * Override the default scope-id → vault-context mapping. Each key
+   * returned becomes an independent KEK-matching dimension, so hosts
+   * whose scope ids have a non-default shape can split them into
+   * meaningful fields (user/org/workspace/…) rather than a single
+   * opaque string.
+   */
+  readonly contextForScope?: WorkOSVaultContextForScope;
 }
 
 export interface WorkOSVaultExtension {
@@ -72,6 +81,7 @@ export const workosVaultPlugin = definePlugin(
           client,
           store: ctx.storage,
           objectPrefix: options?.objectPrefix,
+          contextForScope: options?.contextForScope,
         }),
       ];
     },

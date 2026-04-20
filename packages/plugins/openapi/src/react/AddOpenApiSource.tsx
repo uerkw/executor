@@ -59,6 +59,26 @@ import {
 const OPENAPI_OAUTH_CHANNEL = "executor:openapi-oauth-result";
 const OPENAPI_OAUTH_POPUP_NAME = "openapi-oauth";
 
+// Stable secret ids for the access/refresh tokens a given OAuth2 security
+// scheme on a given source mints. The same ids must be passed into
+// `startOAuth` AND stored on the source's `OAuth2Auth`, so at invoke time
+// the per-user scope (which actually holds the token value) resolves via
+// shadowing over the source-level reference. Keyed by source namespace +
+// scheme name so a single spec can host multiple schemes without
+// colliding, and so reconnecting OAuth overwrites the previous token
+// rather than leaking orphaned secret rows.
+const oauthTokenSecretIds = (
+  namespaceSlug: string,
+  securitySchemeName: string,
+): { readonly accessTokenSecretId: string; readonly refreshTokenSecretId: string } => {
+  const slugScheme = securitySchemeName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const prefix = `openapi_${namespaceSlug}_${slugScheme}`;
+  return {
+    accessTokenSecretId: `${prefix}_access_token`,
+    refreshTokenSecretId: `${prefix}_refresh_token`,
+  };
+};
+
 const substituteUrlVariables = (url: string, values: Record<string, string>): string => {
   let out = url;
   for (const [name, value] of Object.entries(values)) {
@@ -354,6 +374,15 @@ export default function AddOpenApiSource(props: {
       const displayName =
         identity.name.trim() || selectedOAuth2Preset.securitySchemeName;
 
+      const namespaceSlug =
+        slugifyNamespace(identity.namespace) ||
+        slugifyNamespace(Option.getOrElse(preview.title, () => "")) ||
+        "openapi";
+      const tokenIds = oauthTokenSecretIds(
+        namespaceSlug,
+        selectedOAuth2Preset.securitySchemeName,
+      );
+
       const response = await doStartOAuth({
         path: { scopeId },
         payload: {
@@ -366,6 +395,8 @@ export default function AddOpenApiSource(props: {
           clientIdSecretId: oauth2ClientIdSecretId,
           clientSecretSecretId: oauth2ClientSecretSecretId,
           scopes: [...oauth2SelectedScopes],
+          accessTokenSecretId: tokenIds.accessTokenSecretId,
+          refreshTokenSecretId: tokenIds.refreshTokenSecretId,
         },
       });
 
@@ -426,6 +457,7 @@ export default function AddOpenApiSource(props: {
     doStartOAuth,
     scopeId,
     identity.name,
+    identity.namespace,
   ]);
 
   const handleCancelOAuth2 = useCallback(() => {

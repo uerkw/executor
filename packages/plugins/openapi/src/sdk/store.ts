@@ -150,6 +150,18 @@ const decodeHeaders = (value: unknown): Record<string, HeaderValue> => {
 // so the typed error channel is `StorageFailure`. Schema-decode failures
 // inside `Effect.gen` land as defects, not typed errors, and are caught
 // by the HTTP edge's observability middleware.
+//
+// Every read/write that targets a single row pins BOTH the natural id
+// (namespace, toolId, sessionId) AND the owning `scope_id`. The store
+// runs behind the scoped adapter (which auto-injects `scope_id IN
+// (stack)`), so a bare `{id}` filter resolves to any matching row in
+// the stack in adapter-iteration order. For shadowed rows (same id at
+// multiple scopes — e.g. an org-level openapi source with a per-user
+// override), that's a scope-isolation bug: updates and deletes can
+// land on the wrong scope's row. Callers thread the resolved scope in
+// (typically `path.scopeId` for HTTP, `toolRow.scope_id` /
+// `input.scope` for invokeTool/lifecycle) so every keyed mutation
+// targets exactly one row.
 export interface OpenapiStore {
   readonly upsertSource: (
     input: StoredSource,
@@ -158,6 +170,7 @@ export interface OpenapiStore {
 
   readonly updateSourceMeta: (
     namespace: string,
+    scope: string,
     patch: {
       readonly name?: string;
       readonly baseUrl?: string;
@@ -168,19 +181,25 @@ export interface OpenapiStore {
 
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<StoredSource | null, StorageFailure>;
 
   readonly listSources: () => Effect.Effect<readonly StoredSource[], StorageFailure>;
 
   readonly getOperationByToolId: (
     toolId: string,
+    scope: string,
   ) => Effect.Effect<StoredOperation | null, StorageFailure>;
 
   readonly listOperationsBySource: (
     sourceId: string,
+    scope: string,
   ) => Effect.Effect<readonly StoredOperation[], StorageFailure>;
 
-  readonly removeSource: (namespace: string) => Effect.Effect<void, StorageFailure>;
+  readonly removeSource: (
+    namespace: string,
+    scope: string,
+  ) => Effect.Effect<void, StorageFailure>;
 
   readonly putOAuthSession: (
     sessionId: string,
@@ -233,22 +252,28 @@ export const makeDefaultOpenapiStore = ({
     ),
   });
 
-  const deleteSource = (namespace: string) =>
+  const deleteSource = (namespace: string, scope: string) =>
     Effect.gen(function* () {
       yield* adapter.deleteMany({
         model: "openapi_operation",
-        where: [{ field: "source_id", value: namespace }],
+        where: [
+          { field: "source_id", value: namespace },
+          { field: "scope_id", value: scope },
+        ],
       });
       yield* adapter.delete({
         model: "openapi_source",
-        where: [{ field: "id", value: namespace }],
+        where: [
+          { field: "id", value: namespace },
+          { field: "scope_id", value: scope },
+        ],
       });
     });
 
   return {
     upsertSource: (input, operations) =>
       Effect.gen(function* () {
-        yield* deleteSource(input.namespace);
+        yield* deleteSource(input.namespace, input.scope);
         yield* adapter.create({
           model: "openapi_source",
           data: {
@@ -281,11 +306,14 @@ export const makeDefaultOpenapiStore = ({
         }
       }),
 
-    updateSourceMeta: (namespace, patch) =>
+    updateSourceMeta: (namespace, scope, patch) =>
       Effect.gen(function* () {
         const existingRow = yield* adapter.findOne({
           model: "openapi_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
         if (!existingRow) return;
         const existing = rowToSource(existingRow);
@@ -306,7 +334,10 @@ export const makeDefaultOpenapiStore = ({
 
         yield* adapter.update({
           model: "openapi_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
           update: {
             name: nextName,
             base_url: nextBaseUrl ?? undefined,
@@ -321,11 +352,14 @@ export const makeDefaultOpenapiStore = ({
         });
       }),
 
-    getSource: (namespace) =>
+    getSource: (namespace, scope) =>
       adapter
         .findOne({
           model: "openapi_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((row) => (row ? rowToSource(row) : null))),
 
@@ -334,29 +368,42 @@ export const makeDefaultOpenapiStore = ({
         .findMany({ model: "openapi_source" })
         .pipe(Effect.map((rows) => rows.map(rowToSource))),
 
-    getOperationByToolId: (toolId) =>
+    getOperationByToolId: (toolId, scope) =>
       adapter
         .findOne({
           model: "openapi_operation",
-          where: [{ field: "id", value: toolId }],
+          where: [
+            { field: "id", value: toolId },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((row) => (row ? rowToOperation(row) : null))),
 
-    listOperationsBySource: (sourceId) =>
+    listOperationsBySource: (sourceId, scope) =>
       adapter
         .findMany({
           model: "openapi_operation",
-          where: [{ field: "source_id", value: sourceId }],
+          where: [
+            { field: "source_id", value: sourceId },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.map((rows) => rows.map(rowToOperation))),
 
-    removeSource: (namespace) => deleteSource(namespace),
+    removeSource: (namespace, scope) => deleteSource(namespace, scope),
 
     putOAuthSession: (sessionId, session) =>
       Effect.gen(function* () {
+        // Defensive overwrite — sessionIds are UUIDs so collisions are
+        // negligible, but pin to the target scope so a hypothetical
+        // collision with a session in another scope of this stack
+        // can't wipe the wrong row.
         yield* adapter.delete({
           model: "openapi_oauth_session",
-          where: [{ field: "id", value: sessionId }],
+          where: [
+            { field: "id", value: sessionId },
+            { field: "scope_id", value: session.tokenScope },
+          ],
         });
         yield* adapter.create({
           model: "openapi_oauth_session",

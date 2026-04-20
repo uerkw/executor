@@ -160,12 +160,17 @@ export interface OpenApiPluginExtension {
     { readonly sourceId: string; readonly toolCount: number },
     OpenApiParseError | OpenApiExtractionError | StorageFailure
   >;
-  readonly removeSpec: (namespace: string) => Effect.Effect<void, StorageFailure>;
+  readonly removeSpec: (
+    namespace: string,
+    scope: string,
+  ) => Effect.Effect<void, StorageFailure>;
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<StoredSource | null, StorageFailure>;
   readonly updateSource: (
     namespace: string,
+    scope: string,
     input: OpenApiUpdateSourceInput,
   ) => Effect.Effect<void, StorageFailure>;
   readonly startOAuth: (
@@ -410,11 +415,11 @@ export const openApiPlugin = definePlugin(
               return result;
             }),
 
-          removeSpec: (namespace) =>
+          removeSpec: (namespace, scope) =>
             Effect.gen(function* () {
               yield* ctx.transaction(
                 Effect.gen(function* () {
-                  yield* ctx.storage.removeSource(namespace);
+                  yield* ctx.storage.removeSource(namespace, scope);
                   yield* ctx.core.sources.unregister(namespace);
                 }),
               );
@@ -423,10 +428,10 @@ export const openApiPlugin = definePlugin(
               }
             }),
 
-          getSource: (namespace) => ctx.storage.getSource(namespace),
+          getSource: (namespace, scope) => ctx.storage.getSource(namespace, scope),
 
-          updateSource: (namespace, input) =>
-            ctx.storage.updateSourceMeta(namespace, {
+          updateSource: (namespace, scope, input) =>
+            ctx.storage.updateSourceMeta(namespace, scope, {
               name: input.name?.trim() || undefined,
               baseUrl: input.baseUrl,
               headers: input.headers,
@@ -662,13 +667,19 @@ export const openApiPlugin = definePlugin(
 
       invokeTool: ({ ctx, toolRow, args }) =>
         Effect.gen(function* () {
-          const op = yield* ctx.storage.getOperationByToolId(toolRow.id);
+          // toolRow.scope_id is the resolved owning scope of the tool
+          // (innermost-wins from the executor's stack). The matching
+          // openapi_operation + openapi_source rows live at the same
+          // scope, so pin every store lookup to it instead of relying
+          // on the scoped adapter's stack-wide fall-through.
+          const toolScope = toolRow.scope_id as string;
+          const op = yield* ctx.storage.getOperationByToolId(toolRow.id, toolScope);
           if (!op) {
             return yield* Effect.fail(
               new Error(`No OpenAPI operation found for tool "${toolRow.id}"`),
             );
           }
-          const source = yield* ctx.storage.getSource(op.sourceId);
+          const source = yield* ctx.storage.getSource(op.sourceId, toolScope);
           if (!source) {
             return yield* Effect.fail(
               new Error(`No OpenAPI source found for "${op.sourceId}"`),
@@ -732,7 +743,10 @@ export const openApiPlugin = definePlugin(
                     expiresAt: snapshot.expiresAt,
                     scope: snapshot.scope ?? auth.scope,
                   });
-                  yield* ctx.storage.updateSourceMeta(source.namespace, {
+                  // Pin the meta update to the source's own scope so a
+                  // refreshed token snapshot can't accidentally land on
+                  // a shadowed source row at another scope in the stack.
+                  yield* ctx.storage.updateSourceMeta(source.namespace, source.scope, {
                     oauth2: updatedOAuth,
                   });
                 }),
@@ -757,13 +771,27 @@ export const openApiPlugin = definePlugin(
 
       resolveAnnotations: ({ ctx, sourceId, toolRows }) =>
         Effect.gen(function* () {
-          const ops = yield* ctx.storage.listOperationsBySource(sourceId);
-          const byId = new Map<string, OperationBinding>();
-          for (const op of ops) byId.set(op.toolId, op.binding);
+          // toolRows for a single (plugin_id, source_id) group can still
+          // straddle multiple scopes when the source is shadowed (e.g. an
+          // org-level openapi source plus a per-user override that
+          // re-registers the same tool ids). Run one listOperationsBySource
+          // per distinct scope so each lookup pins {source_id, scope_id}
+          // and we don't fall through to the wrong scope's bindings.
+          const scopes = new Set<string>();
+          for (const row of toolRows as readonly ToolRow[]) {
+            scopes.add(row.scope_id as string);
+          }
+          const byScope = new Map<string, Map<string, OperationBinding>>();
+          for (const scope of scopes) {
+            const ops = yield* ctx.storage.listOperationsBySource(sourceId, scope);
+            const byId = new Map<string, OperationBinding>();
+            for (const op of ops) byId.set(op.toolId, op.binding);
+            byScope.set(scope, byId);
+          }
 
           const out: Record<string, ToolAnnotations> = {};
           for (const row of toolRows as readonly ToolRow[]) {
-            const binding = byId.get(row.id);
+            const binding = byScope.get(row.scope_id as string)?.get(row.id);
             if (binding) {
               out[row.id] = annotationsForOperation(binding.method, binding.pathTemplate);
             }
@@ -771,7 +799,8 @@ export const openApiPlugin = definePlugin(
           return out;
         }),
 
-      removeSource: ({ ctx, sourceId }) => ctx.storage.removeSource(sourceId),
+      removeSource: ({ ctx, sourceId, scope }) =>
+        ctx.storage.removeSource(sourceId, scope),
 
       detect: ({ url }) =>
         Effect.gen(function* () {

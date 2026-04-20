@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { createExecutor, makeTestConfig } from "@executor/sdk";
+import { createExecutor, makeTestConfig, Scope, ScopeId } from "@executor/sdk";
 
 import { mcpPlugin } from "./plugin";
 import {
@@ -201,6 +201,159 @@ describe("mcpPlugin", () => {
 
       const tools = yield* executor.tools.list();
       expect(tools.filter((t) => t.sourceId === "broken_source")).toHaveLength(0);
+    }),
+  );
+
+  // -------------------------------------------------------------------------
+  // Multi-scope shadowing — regression suite covering the bug class where
+  // store reads/writes that don't pin scope_id collapse onto whichever row
+  // the scoped adapter's `scope_id IN (stack)` filter sees first. Each
+  // scenario is reproducible against the pre-fix store.
+  //
+  // MCP discovery runs on addSource against an unreachable endpoint so
+  // both addSource calls fail discovery but still persist the source row
+  // (the behavior the "registers source with 0 tools" test above relies
+  // on). This gives us two rows at the same namespace across two scopes
+  // without needing an in-test MCP server.
+  // -------------------------------------------------------------------------
+
+  const ORG_SCOPE = ScopeId.make("org-scope");
+  const USER_SCOPE = ScopeId.make("user-scope");
+
+  const stackedScopes = [
+    new Scope({ id: USER_SCOPE, name: "user", createdAt: new Date() }),
+    new Scope({ id: ORG_SCOPE, name: "org", createdAt: new Date() }),
+  ] as const;
+
+  // `seedShadowed` wraps `executor.mcp.addSource` at a given scope with
+  // a broken endpoint. Discovery fails (port 1 is reserved) so the call
+  // returns Left, but the source row still lands — exactly the
+  // "registers source with 0 tools when discovery fails" behavior above.
+  // We use `Effect.either` so the outer `yield*` never fails the test.
+  const seedShadowed = (
+    addSource: (c: {
+      readonly transport: "remote";
+      readonly scope: string;
+      readonly name: string;
+      readonly endpoint: string;
+      readonly remoteTransport: "auto";
+      readonly namespace: string;
+    }) => Effect.Effect<unknown, unknown>,
+    args: { readonly scope: string; readonly name: string; readonly endpoint: string },
+  ) =>
+    addSource({
+      transport: "remote",
+      scope: args.scope,
+      name: args.name,
+      endpoint: args.endpoint,
+      remoteTransport: "auto",
+      namespace: "shared",
+    }).pipe(Effect.either);
+
+  it.effect("shadowed addSource does not wipe the outer-scope source", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [mcpPlugin()] as const,
+        }),
+      );
+
+      // Org-level base source — discovery fails but row persists.
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: ORG_SCOPE as string,
+        name: "Org Source",
+        endpoint: "http://127.0.0.1:1/org-mcp",
+      });
+
+      // Per-user shadow with the same namespace.
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: USER_SCOPE as string,
+        name: "User Source",
+        endpoint: "http://127.0.0.1:1/user-mcp",
+      });
+
+      const userView = yield* executor.mcp.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.mcp.getSource("shared", ORG_SCOPE as string);
+
+      // Both rows must coexist — the store's scope-pinned getters
+      // return the exact row regardless of the scope stack's
+      // fall-through order.
+      expect(userView?.name).toBe("User Source");
+      expect(userView?.scope).toBe(USER_SCOPE as string);
+      expect(orgView?.name).toBe("Org Source");
+      expect(orgView?.scope).toBe(ORG_SCOPE as string);
+    }),
+  );
+
+  it.effect("removeSource on user shadow leaves the org row intact", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [mcpPlugin()] as const,
+        }),
+      );
+
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: ORG_SCOPE as string,
+        name: "Org Source",
+        endpoint: "http://127.0.0.1:1/org-mcp",
+      });
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: USER_SCOPE as string,
+        name: "User Source",
+        endpoint: "http://127.0.0.1:1/user-mcp",
+      });
+
+      yield* executor.mcp.removeSource("shared", USER_SCOPE as string);
+
+      const userView = yield* executor.mcp.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.mcp.getSource("shared", ORG_SCOPE as string);
+
+      expect(userView).toBeNull();
+      expect(orgView?.name).toBe("Org Source");
+    }),
+  );
+
+  it.effect("updateSource on user shadow does not mutate the org row", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [mcpPlugin()] as const,
+        }),
+      );
+
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: ORG_SCOPE as string,
+        name: "Org Source",
+        endpoint: "http://127.0.0.1:1/org-mcp",
+      });
+      yield* seedShadowed(executor.mcp.addSource, {
+        scope: USER_SCOPE as string,
+        name: "User Source",
+        endpoint: "http://127.0.0.1:1/user-mcp",
+      });
+
+      yield* executor.mcp.updateSource("shared", USER_SCOPE as string, {
+        name: "User Renamed",
+        endpoint: "http://127.0.0.1:1/user-new-mcp",
+      });
+
+      const userView = yield* executor.mcp.getSource("shared", USER_SCOPE as string);
+      const orgView = yield* executor.mcp.getSource("shared", ORG_SCOPE as string);
+
+      expect(userView?.name).toBe("User Renamed");
+      expect(userView?.config.transport).toBe("remote");
+      if (userView?.config.transport === "remote") {
+        expect(userView.config.endpoint).toBe("http://127.0.0.1:1/user-new-mcp");
+      }
+      expect(orgView?.name).toBe("Org Source");
+      expect(orgView?.config.transport).toBe("remote");
+      if (orgView?.config.transport === "remote") {
+        expect(orgView.config.endpoint).toBe("http://127.0.0.1:1/org-mcp");
+      }
     }),
   );
 });

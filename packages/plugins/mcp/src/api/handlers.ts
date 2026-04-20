@@ -184,17 +184,17 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
         );
       })),
     )
-    .handle("removeSource", ({ payload }) =>
+    .handle("removeSource", ({ path, payload }) =>
       capture(Effect.gen(function* () {
         const ext = yield* McpExtensionService;
-        yield* ext.removeSource(payload.namespace);
+        yield* ext.removeSource(payload.namespace, path.scopeId);
         return { removed: true };
       })),
     )
-    .handle("refreshSource", ({ payload }) =>
+    .handle("refreshSource", ({ path, payload }) =>
       capture(Effect.gen(function* () {
         const ext = yield* McpExtensionService;
-        return yield* ext.refreshSource(payload.namespace);
+        return yield* ext.refreshSource(payload.namespace, path.scopeId);
       })),
     )
     .handle("startOAuth", ({ payload }) =>
@@ -220,13 +220,13 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
     .handle("getSource", ({ path }) =>
       capture(Effect.gen(function* () {
         const ext = yield* McpExtensionService;
-        return yield* ext.getSource(path.namespace);
+        return yield* ext.getSource(path.namespace, path.scopeId);
       })),
     )
     .handle("updateSource", ({ path, payload }) =>
       capture(Effect.gen(function* () {
         const ext = yield* McpExtensionService;
-        yield* ext.updateSource(path.namespace, {
+        yield* ext.updateSource(path.namespace, path.scopeId, {
           name: payload.name,
           endpoint: payload.endpoint,
           headers: payload.headers,

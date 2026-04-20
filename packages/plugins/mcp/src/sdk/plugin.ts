@@ -540,9 +540,14 @@ export const mcpPlugin = definePlugin(
             yield* ctx
               .transaction(
                 Effect.gen(function* () {
-                  // Remove stale rows for this namespace (plugin-owned)
-                  yield* ctx.storage.removeBindingsByNamespace(namespace);
-                  yield* ctx.storage.removeSource(namespace);
+                  // Remove stale rows at the target scope (plugin-owned).
+                  // Pinning scope keeps a shadowed outer-scope row intact
+                  // when a per-user addSource re-uses the same namespace.
+                  yield* ctx.storage.removeBindingsByNamespace(
+                    namespace,
+                    config.scope,
+                  );
+                  yield* ctx.storage.removeSource(namespace, config.scope);
 
                   yield* ctx.storage.putSource({
                     namespace,
@@ -606,13 +611,13 @@ export const mcpPlugin = definePlugin(
             }),
           );
 
-        const removeSource = (namespace: string) =>
+        const removeSource = (namespace: string, scope: string) =>
           Effect.gen(function* () {
             yield* ctx
               .transaction(
                 Effect.gen(function* () {
-                  yield* ctx.storage.removeBindingsByNamespace(namespace);
-                  yield* ctx.storage.removeSource(namespace);
+                  yield* ctx.storage.removeBindingsByNamespace(namespace, scope);
+                  yield* ctx.storage.removeSource(namespace, scope);
                   yield* ctx.core.sources.unregister(namespace);
                 }),
               )
@@ -628,9 +633,9 @@ export const mcpPlugin = definePlugin(
             }),
           );
 
-        const refreshSource = (namespace: string) =>
+        const refreshSource = (namespace: string, scope: string) =>
           Effect.gen(function* () {
-            const sd = yield* ctx.storage.getSourceConfig(namespace).pipe(
+            const sd = yield* ctx.storage.getSourceConfig(namespace, scope).pipe(
               Effect.withSpan("mcp.plugin.load_source_config", {
                 attributes: { "mcp.source.namespace": namespace },
               }),
@@ -660,25 +665,19 @@ export const mcpPlugin = definePlugin(
               }),
             );
 
-            const existing = yield* ctx.storage.getSource(namespace);
+            const existing = yield* ctx.storage.getSource(namespace, scope);
             const sourceName =
               manifest.server?.name ?? existing?.name ?? namespace;
-            // Refresh preserves the scope the source was originally
-            // added at. If the source row was lost (manual delete?)
-            // fall back to the outermost (org) scope so the catalog
-            // entry still lands somewhere visible.
-            const refreshScope =
-              existing?.scope ?? (ctx.scopes.at(-1)!.id as string);
 
             yield* ctx
               .transaction(
                 Effect.gen(function* () {
-                  yield* ctx.storage.removeBindingsByNamespace(namespace);
+                  yield* ctx.storage.removeBindingsByNamespace(namespace, scope);
                   yield* ctx.core.sources.unregister(namespace);
 
                   yield* ctx.storage.putBindings(
                     namespace,
-                    refreshScope,
+                    scope,
                     manifest.tools.map((e) => ({
                       toolId: `${namespace}.${e.toolId}`,
                       binding: toBinding(e),
@@ -686,7 +685,7 @@ export const mcpPlugin = definePlugin(
                   );
                   yield* ctx.core.sources.register({
                     id: namespace,
-                    scope: refreshScope,
+                    scope,
                     kind: "mcp",
                     name: sourceName,
                     url: sd.transport === "remote" ? sd.endpoint : undefined,
@@ -859,10 +858,11 @@ export const mcpPlugin = definePlugin(
 
         const updateSource = (
           namespace: string,
+          scope: string,
           input: McpUpdateSourceInput,
         ) =>
           Effect.gen(function* () {
-            const existing = yield* ctx.storage.getSource(namespace);
+            const existing = yield* ctx.storage.getSource(namespace, scope);
             if (!existing || existing.config.transport !== "remote") return;
 
             const remote = existing.config;
@@ -878,7 +878,7 @@ export const mcpPlugin = definePlugin(
 
             yield* ctx.storage.putSource({
               namespace,
-              scope: existing.scope,
+              scope,
               name: input.name?.trim() || existing.name,
               config: updatedConfig,
             });
@@ -888,8 +888,8 @@ export const mcpPlugin = definePlugin(
             }),
           );
 
-        const getSource = (namespace: string) =>
-          ctx.storage.getSource(namespace).pipe(
+        const getSource = (namespace: string, scope: string) =>
+          ctx.storage.getSource(namespace, scope).pipe(
             Effect.withSpan("mcp.plugin.get_source", {
               attributes: { "mcp.source.namespace": namespace },
             }),
@@ -911,7 +911,13 @@ export const mcpPlugin = definePlugin(
         Effect.gen(function* () {
           const runtime = yield* ensureRuntime();
 
-          const entry = yield* ctx.storage.getBinding(toolRow.id).pipe(
+          // toolRow.scope_id is the resolved owning scope of the tool
+          // (innermost-wins from the executor's stack). The matching
+          // mcp_binding + mcp_source rows live at the same scope, so
+          // pin every store lookup to it instead of relying on the
+          // scoped adapter's stack-wide fall-through.
+          const toolScope = toolRow.scope_id as string;
+          const entry = yield* ctx.storage.getBinding(toolRow.id, toolScope).pipe(
             Effect.withSpan("mcp.plugin.load_binding", {
               attributes: { "mcp.tool.name": toolRow.id },
             }),
@@ -922,7 +928,7 @@ export const mcpPlugin = definePlugin(
             );
           }
 
-          const sd = yield* ctx.storage.getSourceConfig(entry.namespace).pipe(
+          const sd = yield* ctx.storage.getSourceConfig(entry.namespace, toolScope).pipe(
             Effect.withSpan("mcp.plugin.load_source_config", {
               attributes: { "mcp.source.namespace": entry.namespace },
             }),
@@ -1046,10 +1052,10 @@ export const mcpPlugin = definePlugin(
           return out;
         }),
 
-      removeSource: ({ ctx, sourceId }) =>
+      removeSource: ({ ctx, sourceId, scope }) =>
         Effect.gen(function* () {
-          yield* ctx.storage.removeBindingsByNamespace(sourceId);
-          yield* ctx.storage.removeSource(sourceId);
+          yield* ctx.storage.removeBindingsByNamespace(sourceId, scope);
+          yield* ctx.storage.removeSource(sourceId, scope);
         }),
 
       refreshSource: () => Effect.void,
@@ -1102,9 +1108,11 @@ export interface McpPluginExtension {
   >;
   readonly removeSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<void, McpExtensionFailure>;
   readonly refreshSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<{ readonly toolCount: number }, McpExtensionFailure>;
   readonly startOAuth: (
     input: McpOAuthStartInput,
@@ -1114,9 +1122,11 @@ export interface McpPluginExtension {
   ) => Effect.Effect<McpOAuthCompleteResponse, McpExtensionFailure>;
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<McpStoredSource | null, McpExtensionFailure>;
   readonly updateSource: (
     namespace: string,
+    scope: string,
     input: McpUpdateSourceInput,
   ) => Effect.Effect<void, McpExtensionFailure>;
 }

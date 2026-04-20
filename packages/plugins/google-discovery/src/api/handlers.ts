@@ -100,7 +100,7 @@ export const GoogleDiscoveryHandlers = HttpApiBuilder.group(
       .handle("getSource", ({ path }) =>
         capture(Effect.gen(function* () {
           const ext = yield* GoogleDiscoveryExtensionService;
-          return yield* ext.getSource(path.namespace);
+          return yield* ext.getSource(path.namespace, path.scopeId);
         })),
       )
       .handle("oauthCallback", ({ urlParams }) =>

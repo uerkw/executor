@@ -103,9 +103,22 @@ export interface McpStoredSource {
 // so the typed error channel is `StorageFailure`. Schema-decode failures
 // inside `Effect.gen` land as defects, not typed errors, and are caught
 // by the HTTP edge's observability middleware.
+//
+// Every read/write that targets a single row pins BOTH the natural id
+// (namespace, toolId, sessionId) AND the owning `scope_id`. The store
+// runs behind the scoped adapter (which auto-injects `scope_id IN
+// (stack)`), so a bare `{id}` filter resolves to any matching row in
+// the stack in adapter-iteration order. For shadowed rows (same id at
+// multiple scopes — e.g. an org-level MCP source with a per-user
+// override), that's a scope-isolation bug: updates and deletes can
+// land on the wrong scope's row. Callers thread the resolved scope in
+// (typically `path.scopeId` for HTTP, `toolRow.scope_id` /
+// `input.scope` for invokeTool/lifecycle) so every keyed mutation
+// targets exactly one row.
 export interface McpBindingStore {
   readonly getBinding: (
     toolId: string,
+    scope: string,
   ) => Effect.Effect<
     { readonly binding: McpToolBinding; readonly namespace: string } | null,
     StorageFailure
@@ -119,17 +132,23 @@ export interface McpBindingStore {
 
   readonly removeBindingsByNamespace: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<void, StorageFailure>;
 
   readonly listSources: () => Effect.Effect<readonly McpStoredSource[], StorageFailure>;
   readonly getSource: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<McpStoredSource | null, StorageFailure>;
   readonly getSourceConfig: (
     namespace: string,
+    scope: string,
   ) => Effect.Effect<McpStoredSourceData | null, StorageFailure>;
   readonly putSource: (source: McpStoredSource) => Effect.Effect<void, StorageFailure>;
-  readonly removeSource: (namespace: string) => Effect.Effect<void, StorageFailure>;
+  readonly removeSource: (
+    namespace: string,
+    scope: string,
+  ) => Effect.Effect<void, StorageFailure>;
 
   readonly putOAuthSession: (
     sessionId: string,
@@ -150,11 +169,14 @@ export const makeMcpStore = ({
   adapter: db,
 }: StorageDeps<McpSchema>): McpBindingStore => {
   return {
-    getBinding: (toolId) =>
+    getBinding: (toolId, scope) =>
       Effect.gen(function* () {
         const row = yield* db.findOne({
           model: "mcp_binding",
-          where: [{ field: "id", value: toolId }],
+          where: [
+            { field: "id", value: toolId },
+            { field: "scope_id", value: scope },
+          ],
         });
         if (!row) return null;
         const binding = decodeBinding(coerceJson(row.binding));
@@ -178,11 +200,14 @@ export const makeMcpStore = ({
         });
       }),
 
-    removeBindingsByNamespace: (namespace) =>
+    removeBindingsByNamespace: (namespace, scope) =>
       db
         .deleteMany({
           model: "mcp_binding",
-          where: [{ field: "source_id", value: namespace }],
+          where: [
+            { field: "source_id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         })
         .pipe(Effect.asVoid),
 
@@ -197,11 +222,14 @@ export const makeMcpStore = ({
         }));
       }),
 
-    getSource: (namespace) =>
+    getSource: (namespace, scope) =>
       Effect.gen(function* () {
         const row = yield* db.findOne({
           model: "mcp_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
         if (!row) return null;
         return {
@@ -212,11 +240,14 @@ export const makeMcpStore = ({
         };
       }),
 
-    getSourceConfig: (namespace) =>
+    getSourceConfig: (namespace, scope) =>
       Effect.gen(function* () {
         const row = yield* db.findOne({
           model: "mcp_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
         if (!row) return null;
         return decodeSourceData(coerceJson(row.config));
@@ -227,7 +258,10 @@ export const makeMcpStore = ({
         const now = new Date();
         yield* db.delete({
           model: "mcp_source",
-          where: [{ field: "id", value: source.namespace }],
+          where: [
+            { field: "id", value: source.namespace },
+            { field: "scope_id", value: source.scope },
+          ],
         });
         yield* db.create({
           model: "mcp_source",
@@ -242,24 +276,37 @@ export const makeMcpStore = ({
         });
       }),
 
-    removeSource: (namespace) =>
+    removeSource: (namespace, scope) =>
       Effect.gen(function* () {
         yield* db.deleteMany({
           model: "mcp_binding",
-          where: [{ field: "source_id", value: namespace }],
+          where: [
+            { field: "source_id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
         yield* db.delete({
           model: "mcp_source",
-          where: [{ field: "id", value: namespace }],
+          where: [
+            { field: "id", value: namespace },
+            { field: "scope_id", value: scope },
+          ],
         });
       }),
 
     putOAuthSession: (sessionId, scope, session) =>
       Effect.gen(function* () {
         const now = new Date();
+        // Defensive overwrite — sessionIds are UUIDs so collisions are
+        // negligible, but pin to the target scope so a hypothetical
+        // collision with a session in another scope of this stack
+        // can't wipe the wrong row.
         yield* db.delete({
           model: "mcp_oauth_session",
-          where: [{ field: "id", value: sessionId }],
+          where: [
+            { field: "id", value: sessionId },
+            { field: "scope_id", value: scope },
+          ],
         });
         yield* db.create({
           model: "mcp_oauth_session",
@@ -276,6 +323,9 @@ export const makeMcpStore = ({
 
     getOAuthSession: (sessionId) =>
       Effect.gen(function* () {
+        // sessionIds are random UUIDs — unique across the stack — so a
+        // bare id lookup plus the scoped adapter's fall-through filter
+        // returns exactly the session row the caller owns.
         const row = yield* db.findOne({
           model: "mcp_oauth_session",
           where: [{ field: "id", value: sessionId }],
@@ -284,7 +334,10 @@ export const makeMcpStore = ({
         if (row.expires_at < Date.now()) {
           yield* db.delete({
             model: "mcp_oauth_session",
-            where: [{ field: "id", value: sessionId }],
+            where: [
+              { field: "id", value: sessionId },
+              { field: "scope_id", value: row.scope_id },
+            ],
           });
           return null;
         }

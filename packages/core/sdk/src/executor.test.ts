@@ -993,3 +993,505 @@ describe("tenant isolation (SDK)", () => {
     }),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Cross-scope write preservation — the scoped adapter auto-injects
+// `scope_id IN (stack)` on every query, which is correct for reads but
+// used to silently widen scope-targeted deletes inside `secrets.set`,
+// `sources.register` and `definitions.register`. A user writing at their
+// inner scope would wipe rows that belonged to the outer scope (e.g. an
+// admin-registered org-wide secret or source). These tests pin each write
+// path to the "only the target scope row is replaced" invariant.
+//
+// Each test uses a single shared adapter across two executors:
+//   - `execOuter` has stack [outer] — models a different user or the
+//     admin who owns the outer-scope row we're checking survives.
+//   - `execInner` has stack [inner, outer] — the overriding user whose
+//     write would (buggy) nuke the outer row.
+// ---------------------------------------------------------------------------
+
+const tenantPluginWithDefs = definePlugin(() => ({
+  id: "tenant-defs" as const,
+  storage: () => ({}),
+  extension: (ctx) => ({
+    addDefs: (sourceId: string, definitions: Record<string, unknown>) =>
+      ctx.core.definitions.register({
+        sourceId,
+        scope: ctx.scopes[0]!.id,
+        definitions,
+      }),
+  }),
+}));
+
+const makeLayeredExecutors = () =>
+  Effect.gen(function* () {
+    const plugins = [tenantPlugin(), tenantPluginWithDefs()] as const;
+    const schema = collectSchemas(plugins);
+    const adapter = makeMemoryAdapter({ schema });
+    const blobs = makeInMemoryBlobStore();
+
+    const outerId = ScopeId.make("org");
+    const innerId = ScopeId.make("user-org:u1:org");
+
+    const outerScope = new Scope({
+      id: outerId,
+      name: "outer",
+      createdAt: new Date(),
+    });
+    const innerScope = new Scope({
+      id: innerId,
+      name: "inner",
+      createdAt: new Date(),
+    });
+
+    const execOuter = yield* createExecutor({
+      scopes: [outerScope],
+      adapter,
+      blobs,
+      plugins,
+    });
+    const execInner = yield* createExecutor({
+      scopes: [innerScope, outerScope],
+      adapter,
+      blobs,
+      plugins,
+    });
+    return { execOuter, execInner, outerId, innerId };
+  });
+
+describe("cross-scope write preservation (SDK)", () => {
+  it.effect(
+    "secrets.set at the inner scope does not wipe an outer-scope row with the same id",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner, outerId, innerId } =
+          yield* makeLayeredExecutors();
+
+        // Admin-equivalent writes the org-wide secret at the outer scope.
+        yield* execInner.secrets.set(
+          new SetSecretInput({
+            id: SecretId.make("api-token"),
+            scope: outerId,
+            name: "Org default",
+            value: "org-default",
+          }),
+        );
+
+        // User writes a personal override at the inner scope.
+        yield* execInner.secrets.set(
+          new SetSecretInput({
+            id: SecretId.make("api-token"),
+            scope: innerId,
+            name: "Personal override",
+            value: "personal-override",
+          }),
+        );
+
+        // Outer-only executor — same adapter, scope stack = [outer] —
+        // must still see the outer-scope secret ROW (via `secrets.list`,
+        // which reads the core `secret` table directly). This is where
+        // the bug landed: the inner write's delete used
+        // `scope_id IN [inner, outer]` and wiped the outer row, so a
+        // bystander with just [outer] in their stack saw nothing.
+        //
+        // We assert on list instead of get because each executor's
+        // in-memory secret provider is per-executor in this test harness
+        // (see `makeScopedMemoryProvider`) — the adapter's `secret` rows
+        // are the shared, observable source of truth.
+        const outerRefs = yield* execOuter.secrets.list();
+        expect(outerRefs.map((r) => r.id)).toContain("api-token");
+        expect(outerRefs.find((r) => r.id === "api-token")?.scopeId).toBe(
+          outerId,
+        );
+
+        // Inner executor's list is de-duplicated by id (innermost wins),
+        // so we only expect one ref for `api-token` — pinned at the
+        // inner scope.
+        const innerRefs = yield* execInner.secrets.list();
+        const innerRef = innerRefs.find((r) => r.id === "api-token");
+        expect(innerRef?.scopeId).toBe(innerId);
+      }),
+  );
+
+  it.effect(
+    "sources.register at the inner scope does not wipe an outer-scope source with the same id",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeLayeredExecutors();
+
+        // Outer-scope executor registers a source.
+        yield* execOuter.tenant.addSource("shared");
+
+        // Inner-stacked executor registers a source with the same id at
+        // its own innermost scope (default for `addSource` in the test
+        // plugin is `ctx.scopes[0]`).
+        yield* execInner.tenant.addSource("shared");
+
+        // Outer executor must still see its source. The bug was that
+        // `writeSourceInput`'s delete-before-create ran stack-wide and
+        // nuked the outer source row before creating the inner one.
+        const outerSources = yield* execOuter.sources.list();
+        expect(outerSources.map((s) => s.id)).toContain("shared");
+
+        // Inner executor's list is de-duplicated by id (innermost wins),
+        // so we only expect one entry for "shared" — pinned at the inner
+        // scope. The fact that it shows up at all (combined with the outer
+        // executor still seeing its own row above) proves no rows went
+        // missing.
+        const innerSources = yield* execInner.sources.list();
+        expect(innerSources.filter((s) => s.id === "shared")).toHaveLength(1);
+      }),
+  );
+
+  it.effect(
+    "definitions.register at the inner scope does not wipe outer-scope definitions for the same sourceId",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeLayeredExecutors();
+
+        yield* execOuter["tenant-defs"].addDefs("S", {
+          OuterDef: { type: "object" },
+        });
+        yield* execInner["tenant-defs"].addDefs("S", {
+          InnerDef: { type: "object" },
+        });
+
+        // Outer executor should still see its definition. The bug was
+        // that `writeDefinitions` deleted by `source_id` without pinning
+        // a scope, so the inner write's stack-wide delete wiped the
+        // outer row before creating the inner one.
+        const outerDefs = yield* execOuter.tools.definitions();
+        expect(outerDefs.S).toBeDefined();
+        expect(outerDefs.S?.OuterDef).toBeDefined();
+      }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Shadow / precedence / cross-scope remove invariants.
+//
+// The scoped adapter returns rows from every scope in the stack on a read.
+// The SDK owes callers two properties on top of that:
+//
+//   - Writes that target a single scope (delete / remove / unregister) must
+//     not cascade into outer scopes when an inner-scope write collides by id.
+//     The pattern that failed us was `findOne` on a scoped table: in a
+//     multi-scope stack that picks whichever scope the storage backend
+//     iterates first, so the downstream delete can hit the wrong row.
+//
+//   - Reads that are supposed to return a single logical row (resolve one
+//     tool by id, one source by id, one secret by id) must pick the
+//     innermost-scope match. Otherwise a user who shadowed an org default
+//     can silently get the org version back on invoke / schema.
+// ---------------------------------------------------------------------------
+
+const invokeMarkerPlugin = definePlugin(() => ({
+  id: "marker" as const,
+  storage: () => ({}),
+  extension: (ctx) => ({
+    register: (sourceId: string, marker: string) =>
+      ctx.transaction(
+        ctx.core.sources.register({
+          id: sourceId,
+          scope: ctx.scopes[0]!.id,
+          kind: "marker",
+          name: marker,
+          canRemove: true,
+          tools: [{ name: "t", description: marker }],
+        }),
+      ),
+  }),
+  invokeTool: ({ toolRow }) =>
+    Effect.succeed({
+      marker: toolRow.description,
+      scope: toolRow.scope_id as string,
+    }),
+}));
+
+const makeMarkerExecutors = () =>
+  Effect.gen(function* () {
+    const plugins = [invokeMarkerPlugin()] as const;
+    const schema = collectSchemas(plugins);
+    const adapter = makeMemoryAdapter({ schema });
+    const blobs = makeInMemoryBlobStore();
+
+    const outerId = ScopeId.make("org");
+    const innerId = ScopeId.make("user-org:u1:org");
+    const outerScope = new Scope({
+      id: outerId,
+      name: "outer",
+      createdAt: new Date(),
+    });
+    const innerScope = new Scope({
+      id: innerId,
+      name: "inner",
+      createdAt: new Date(),
+    });
+
+    const execOuter = yield* createExecutor({
+      scopes: [outerScope],
+      adapter,
+      blobs,
+      plugins,
+    });
+    const execInner = yield* createExecutor({
+      scopes: [innerScope, outerScope],
+      adapter,
+      blobs,
+      plugins,
+    });
+    return { execOuter, execInner, outerId, innerId };
+  });
+
+describe("cross-scope read precedence + remove isolation (SDK)", () => {
+  it.effect(
+    "secrets.remove at the inner scope does not wipe outer-scope row with same id",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner, outerId, innerId } =
+          yield* makeLayeredExecutors();
+
+        yield* execInner.secrets.set(
+          new SetSecretInput({
+            id: SecretId.make("api-token"),
+            scope: outerId,
+            name: "Org default",
+            value: "org-default",
+          }),
+        );
+        yield* execInner.secrets.set(
+          new SetSecretInput({
+            id: SecretId.make("api-token"),
+            scope: innerId,
+            name: "Personal override",
+            value: "personal-override",
+          }),
+        );
+
+        // Inner caller removes — should only drop the inner override.
+        yield* execInner.secrets.remove("api-token");
+
+        // Outer-only executor must still see its org-scope row.
+        const outerRefs = yield* execOuter.secrets.list();
+        expect(outerRefs.map((r) => r.id)).toContain("api-token");
+        expect(outerRefs.find((r) => r.id === "api-token")?.scopeId).toBe(
+          outerId,
+        );
+      }),
+  );
+
+  it.effect(
+    "sources.remove at the inner scope does not wipe the outer-scope source with same id",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeLayeredExecutors();
+
+        yield* execOuter.tenant.addSource("shared");
+        yield* execInner.tenant.addSource("shared");
+
+        // Inner caller removes "shared" via the public API. The outer
+        // executor's source row must survive.
+        yield* execInner.sources.remove("shared");
+
+        const outerSources = yield* execOuter.sources.list();
+        expect(outerSources.map((s) => s.id)).toContain("shared");
+      }),
+  );
+
+  it.effect(
+    "ctx.core.sources.unregister at the inner scope does not wipe outer-scope row",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeLayeredExecutors();
+
+        yield* execOuter.tenant.addSource("shared");
+        yield* execInner.tenant.addSource("shared");
+
+        // Plugin-owned unregister path (ctx.core.sources.unregister) fires
+        // via a dedicated extension method. We drive it by calling
+        // `sources.remove` — which routes through the same deleteSourceById
+        // helper — but the real regression is the findOne-before-delete
+        // picking the wrong scope's row. The outer row must survive.
+        yield* execInner.sources.remove("shared");
+
+        const outerSources = yield* execOuter.sources.list();
+        expect(outerSources.filter((s) => s.id === "shared")).toHaveLength(1);
+      }),
+  );
+
+  it.effect(
+    "tools.invoke picks the innermost tool when the same tool id exists at two scopes",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner, outerId, innerId } =
+          yield* makeMarkerExecutors();
+
+        yield* execOuter.marker.register("shared", "outer");
+        yield* execInner.marker.register("shared", "inner");
+
+        const result = (yield* execInner.tools.invoke("shared.t", {})) as {
+          marker: string;
+          scope: string;
+        };
+        expect(result.marker).toBe("inner");
+        expect(result.scope).toBe(innerId);
+
+        // Outer-only executor still invokes its own copy.
+        const outerResult = (yield* execOuter.tools.invoke(
+          "shared.t",
+          {},
+        )) as { marker: string; scope: string };
+        expect(outerResult.marker).toBe("outer");
+        expect(outerResult.scope).toBe(outerId);
+      }),
+  );
+
+  it.effect(
+    "tools.schema — innermost shadow returns the inner description",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeMarkerExecutors();
+
+        yield* execOuter.marker.register("shared", "outer-desc");
+        yield* execInner.marker.register("shared", "inner-desc");
+
+        const schema = yield* execInner.tools.schema("shared.t");
+        expect(schema?.description).toBe("inner-desc");
+      }),
+  );
+
+  it.effect(
+    "tools.list dedupes by id, keeping the innermost row",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeMarkerExecutors();
+
+        yield* execOuter.marker.register("shared", "outer-desc");
+        yield* execInner.marker.register("shared", "inner-desc");
+
+        const tools = yield* execInner.tools.list();
+        const shared = tools.filter((t) => t.id === "shared.t");
+        expect(shared).toHaveLength(1);
+        expect(shared[0]?.description).toBe("inner-desc");
+      }),
+  );
+
+  it.effect(
+    "sources.list dedupes by id, keeping the innermost row",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner, innerId } =
+          yield* makeMarkerExecutors();
+
+        yield* execOuter.marker.register("shared", "outer-name");
+        yield* execInner.marker.register("shared", "inner-name");
+
+        const sources = yield* execInner.sources.list();
+        const shared = sources.filter((s) => s.id === "shared");
+        expect(shared).toHaveLength(1);
+        expect(shared[0]?.name).toBe("inner-name");
+      }),
+  );
+
+  it.effect(
+    "tools.definitions dedupes by (source_id, name), keeping the innermost row",
+    () =>
+      Effect.gen(function* () {
+        const { execOuter, execInner } = yield* makeLayeredExecutors();
+
+        // Register inner first, outer second. Without precedence-aware
+        // dedup, a naive "iterate rows, last-one-wins" map would end up
+        // keyed to the outer description just because outer was inserted
+        // into the store last.
+        yield* execInner["tenant-defs"].addDefs("S", {
+          Shared: { type: "string", description: "inner" },
+        });
+        yield* execOuter["tenant-defs"].addDefs("S", {
+          Shared: { type: "string", description: "outer" },
+        });
+
+        const defs = yield* execInner.tools.definitions();
+        const shared = defs.S?.Shared as { description?: string } | undefined;
+        expect(shared?.description).toBe("inner");
+      }),
+  );
+
+  it.effect(
+    "tools.schema attaches innermost $defs when shadowed across scopes",
+    () =>
+      Effect.gen(function* () {
+        // Source id "S" with a tool that references $defs/Shared, plus a
+        // definition "Shared" registered at both scopes. Schema's attached
+        // $defs should come from the inner scope.
+        const plugins = [
+          tenantPlugin(),
+          tenantPluginWithDefs(),
+          definePlugin(() => ({
+            id: "ref" as const,
+            storage: () => ({}),
+            extension: (ctx) => ({
+              register: (sourceId: string) =>
+                ctx.transaction(
+                  ctx.core.sources.register({
+                    id: sourceId,
+                    scope: ctx.scopes[0]!.id,
+                    kind: "ref",
+                    name: sourceId,
+                    canRemove: true,
+                    tools: [
+                      {
+                        name: "use",
+                        description: "uses $defs/Shared",
+                        inputSchema: {
+                          type: "object",
+                          properties: { x: { $ref: "#/$defs/Shared" } },
+                        },
+                      },
+                    ],
+                  }),
+                ),
+            }),
+          }))(),
+        ] as const;
+        const schema = collectSchemas(plugins);
+        const adapter = makeMemoryAdapter({ schema });
+        const blobs = makeInMemoryBlobStore();
+
+        const outerId = ScopeId.make("org");
+        const innerId = ScopeId.make("user-org:u1:org");
+        const execOuter = yield* createExecutor({
+          scopes: [
+            new Scope({ id: outerId, name: "outer", createdAt: new Date() }),
+          ],
+          adapter,
+          blobs,
+          plugins,
+        });
+        const execInner = yield* createExecutor({
+          scopes: [
+            new Scope({ id: innerId, name: "inner", createdAt: new Date() }),
+            new Scope({ id: outerId, name: "outer", createdAt: new Date() }),
+          ],
+          adapter,
+          blobs,
+          plugins,
+        });
+
+        yield* execOuter.ref.register("S");
+        yield* execInner.ref.register("S");
+
+        yield* execInner["tenant-defs"].addDefs("S", {
+          Shared: { type: "string", description: "inner" },
+        });
+        yield* execOuter["tenant-defs"].addDefs("S", {
+          Shared: { type: "string", description: "outer" },
+        });
+
+        const view = yield* execInner.tools.schema("S.use");
+        const input = view?.inputSchema as
+          | { $defs?: { Shared?: { description?: string } } }
+          | undefined;
+        expect(input?.$defs?.Shared?.description).toBe("inner");
+      }),
+  );
+});
