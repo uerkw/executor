@@ -21,6 +21,7 @@ import postgres from "postgres";
 import { McpConnectionAuth } from "@executor/plugin-mcp";
 
 const APPLY = process.argv.includes("--apply");
+const DUMP_BLOCKED = process.argv.includes("--dump-blocked");
 
 // ---------------------------------------------------------------------------
 // Legacy MCP oauth2 auth shape (pre-refactor). Inlined — this script is the
@@ -182,6 +183,9 @@ const main = async () => {
       } else if (b.kind === "unknown") {
         console.log(`[UNKNOWN] ${ref}`);
         console.log(`  shape: ${b.shape}`);
+      }
+      if (DUMP_BLOCKED && isRecord(b.row.config)) {
+        console.log(`  auth: ${JSON.stringify(b.row.config.auth, null, 2)}`);
       }
       console.log();
     }
