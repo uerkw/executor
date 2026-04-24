@@ -36,6 +36,10 @@ class FakeConflictError extends Error {
   readonly status = 409;
 }
 
+class FakeInvalidRequestError extends Error {
+  readonly status = 400;
+}
+
 const makeMetadata = (
   id: string,
   context: Record<string, string>,
@@ -59,6 +63,7 @@ const makeMetadata = (
 
 const makeFakeClient = (options?: {
   readonly conflictOnNextSecretUpdate?: boolean;
+  readonly rejectNamesWithColon?: boolean;
 }): WorkOSVaultClient => {
   const objects = new Map<string, WorkOSVaultObject>();
   let sequence = 0;
@@ -85,6 +90,9 @@ const makeFakeClient = (options?: {
       readonly value: string;
       readonly context: Record<string, string>;
     }) => {
+      if (options?.rejectNamesWithColon && name.includes(":")) {
+        throw new FakeInvalidRequestError(`Invalid object name "${name}"`);
+      }
       if (objects.has(name)) {
         throw new FakeConflictError(`Object "${name}" already exists`);
       }
@@ -95,6 +103,9 @@ const makeFakeClient = (options?: {
     },
 
     readObjectByName: async (name: string) => {
+      if (options?.rejectNamesWithColon && name.includes(":")) {
+        throw new FakeInvalidRequestError(`Invalid object name "${name}"`);
+      }
       const object = objects.get(name);
       if (!object) throw new FakeNotFoundError(`Object "${name}" not found`);
       return object;
@@ -334,6 +345,26 @@ const makeLayeredExecutors = (client: WorkOSVaultClient) =>
   });
 
 describe("WorkOS Vault secret provider — multi-scope isolation", () => {
+  it.effect(
+    "encodes personal scope ids before using them in Vault object names",
+    () =>
+      Effect.gen(function* () {
+        const client = makeFakeClient({ rejectNamesWithColon: true });
+        const { execInner, innerId } = yield* makeLayeredExecutors(client);
+
+        yield* execInner.secrets.set(
+          new SetSecretInput({
+            id: SecretId.make("api-token"),
+            scope: innerId,
+            name: "Personal token",
+            value: "personal",
+          }),
+        );
+
+        expect(yield* execInner.secrets.get("api-token")).toBe("personal");
+      }),
+  );
+
   it.effect(
     "secrets.remove at the inner scope does not wipe outer-scope metadata",
     () =>

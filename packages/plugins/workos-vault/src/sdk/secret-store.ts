@@ -214,7 +214,17 @@ export const defaultWorkOSVaultContextForScope: WorkOSVaultContextForScope = (
   return base;
 };
 
+const encodeObjectNameSegment = (segment: string): string =>
+  encodeURIComponent(segment);
+
 const secretObjectName = (
+  prefix: string,
+  scopeId: string,
+  secretId: string,
+): string =>
+  `${prefix}/${encodeObjectNameSegment(scopeId)}/secrets/${encodeObjectNameSegment(secretId)}`;
+
+const legacySecretObjectName = (
   prefix: string,
   scopeId: string,
   secretId: string,
@@ -227,9 +237,21 @@ const loadSecretObject = (
   secretId: string,
 ): Effect.Effect<WorkOSVaultObject | null, WorkOSVaultClientError, never> =>
   client.readObjectByName(secretObjectName(prefix, scopeId, secretId)).pipe(
-    Effect.catchAll((error) =>
-      isStatusError(error, 404) ? Effect.succeed(null) : Effect.fail(error),
-    ),
+    Effect.catchAll((error) => {
+      if (!isStatusError(error, 404)) return Effect.fail(error);
+
+      const encodedName = secretObjectName(prefix, scopeId, secretId);
+      const legacyName = legacySecretObjectName(prefix, scopeId, secretId);
+      if (legacyName === encodedName) return Effect.succeed(null);
+
+      return client.readObjectByName(legacyName).pipe(
+        Effect.catchAll((legacyError) =>
+          isStatusError(legacyError, 404) || isStatusError(legacyError, 400)
+            ? Effect.succeed(null)
+            : Effect.fail(legacyError),
+        ),
+      );
+    }),
   );
 
 const upsertSecretValue = (
