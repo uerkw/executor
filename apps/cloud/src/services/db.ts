@@ -33,11 +33,14 @@ export type DbServiceShape = {
   readonly db: DrizzleDb;
 };
 
-const resolveConnectionString = () => {
-  // In local dev prefer an explicit DATABASE_URL (direct connection to
-  // the PGlite socket server) so we bypass Miniflare's Hyperdrive proxy.
-  // In production fall back to the Hyperdrive binding.
-  return env.DATABASE_URL || env.HYPERDRIVE?.connectionString || "";
+export const resolveConnectionString = () => {
+  // Production should always use Hyperdrive when the binding exists. Keeping
+  // DATABASE_URL as a higher-priority fallback made it too easy for a deployed
+  // secret to silently bypass Hyperdrive.
+  if (env.EXECUTOR_DIRECT_DATABASE_URL === "true" && env.DATABASE_URL) {
+    return env.DATABASE_URL;
+  }
+  return env.HYPERDRIVE?.connectionString || env.DATABASE_URL || "";
 };
 
 const makeSql = (): Sql =>

@@ -25,7 +25,7 @@ import type { DrizzleDb, DbServiceShape } from "./services/db";
 import { CoreSharedServices } from "./api/core-shared-services";
 import { UserStoreService } from "./auth/context";
 import { resolveOrganization } from "./auth/resolve-organization";
-import { DbService, combinedSchema } from "./services/db";
+import { DbService, combinedSchema, resolveConnectionString } from "./services/db";
 import { makeExecutionStack } from "./services/execution-stack";
 import { DoTelemetryLive } from "./services/telemetry";
 
@@ -46,6 +46,8 @@ export type IncomingTraceHeaders = {
 
 const HEARTBEAT_MS = 30 * 1000;
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+const LONG_LIVED_DB_IDLE_TIMEOUT_SECONDS = 5;
+const LONG_LIVED_DB_MAX_LIFETIME_SECONDS = 120;
 const TRANSPORT_STATE_KEY = "transport";
 const SESSION_META_KEY = "session-meta";
 
@@ -115,22 +117,15 @@ type SessionMeta = {
 /**
  * Base DB handle factory for MCP session runtimes.
  *
- * The production DO keeps one postgres.js socket for the session lifetime.
- * The workerd test pool rejects that socket on the next request because the
- * underlying I/O object is request-bound. Tests therefore opt into a
- * request-scoped runtime and rebuild the server + DB handle per POST/DELETE
- * while keeping only the MCP transport state in DO storage.
+ * The DO keeps one postgres.js client for the MCP session runtime. postgres.js
+ * closes idle sockets quickly, while the runtime object stays alive so the MCP
+ * server can preserve session-local protocol state across requests.
  */
 const makeDbHandle = (options: {
   readonly idleTimeout: number;
   readonly maxLifetime: number;
 }): DbHandle => {
-  // Prefer DATABASE_URL so local dev connects directly to PGlite and
-  // bypasses Miniflare's Hyperdrive proxy, which resolves to
-  // `*.hyperdrive.local:5432` and times out — the resulting ECONNRESET
-  // surfaces as an unhandled socket error that kills the vite dev server.
-  // Matches the priority in `services/db.ts`.
-  const connectionString = env.DATABASE_URL || env.HYPERDRIVE?.connectionString || "";
+  const connectionString = resolveConnectionString();
   const sql = postgres(connectionString, {
     max: 1,
     idle_timeout: options.idleTimeout,
@@ -145,9 +140,13 @@ const makeDbHandle = (options: {
   };
 };
 
-const makeLongLivedDb = (): DbHandle => makeDbHandle({ idleTimeout: 20, maxLifetime: 300 });
+const makeLongLivedDb = (): DbHandle =>
+  makeDbHandle({
+    idleTimeout: LONG_LIVED_DB_IDLE_TIMEOUT_SECONDS,
+    maxLifetime: LONG_LIVED_DB_MAX_LIFETIME_SECONDS,
+  });
 
-const makeRequestScopedDb = (): DbHandle => makeDbHandle({ idleTimeout: 0, maxLifetime: 60 });
+const makeEphemeralDb = (): DbHandle => makeDbHandle({ idleTimeout: 0, maxLifetime: 60 });
 
 const makeResolveOrganizationServices = (dbHandle: DbHandle) => {
   const DbLive = Layer.succeed(DbService, { sql: dbHandle.sql, db: dbHandle.db });
@@ -177,8 +176,6 @@ const resolveSessionMeta = Effect.fn("McpSessionDO.resolveSessionMeta")(function
       userId,
     } satisfies SessionMeta;
   });
-
-const requestScopedRuntimeEnabled = env.MCP_SESSION_REQUEST_SCOPED_RUNTIME === "true";
 
 // ---------------------------------------------------------------------------
 // Durable Object
@@ -280,7 +277,7 @@ export class McpSessionDO extends DurableObject {
   private resolveAndStoreSessionMeta(token: McpSessionInit) {
     const self = this;
     return Effect.gen(function* () {
-      const dbHandle = makeRequestScopedDb();
+      const dbHandle = makeEphemeralDb();
       try {
         const sessionMeta = yield* resolveSessionMeta(
           token.organizationId,
@@ -321,22 +318,20 @@ export class McpSessionDO extends DurableObject {
     return Effect.gen(function* () {
       const sessionMeta = yield* self.resolveAndStoreSessionMeta(token);
 
-      if (!requestScopedRuntimeEnabled) {
-        self.dbHandle = makeLongLivedDb();
-        // POST responses go out as JSON so `transport.handleRequest()` awaits
-        // every MCP tool callback before resolving — keeps engine spans inside
-        // the outer `handleRequest` Effect's fiber so `currentRequestSpan` is
-        // still set when the host-mcp `parentSpan` getter reads it. With SSE
-        // POSTs the callback fires after `Effect.ensuring` clears the field
-        // and engine spans orphan into new root traces. GET still streams
-        // (the GET handler doesn't consult `enableJsonResponse`).
-        const runtime = yield* self.createConnectedRuntime(sessionMeta, {
-          dbHandle: self.dbHandle,
-          enableJsonResponse: true,
-        });
-        self.mcpServer = runtime.mcpServer;
-        self.transport = runtime.transport;
-      }
+      self.dbHandle = makeLongLivedDb();
+      // POST responses go out as JSON so `transport.handleRequest()` awaits
+      // every MCP tool callback before resolving — keeps engine spans inside
+      // the outer `handleRequest` Effect's fiber so `currentRequestSpan` is
+      // still set when the host-mcp `parentSpan` getter reads it. With SSE
+      // POSTs the callback fires after `Effect.ensuring` clears the field
+      // and engine spans orphan into new root traces. GET still streams
+      // (the GET handler doesn't consult `enableJsonResponse`).
+      const runtime = yield* self.createConnectedRuntime(sessionMeta, {
+        dbHandle: self.dbHandle,
+        enableJsonResponse: true,
+      });
+      self.mcpServer = runtime.mcpServer;
+      self.transport = runtime.transport;
 
       self.initialized = true;
       self.lastActivityMs = Date.now();
@@ -357,70 +352,6 @@ export class McpSessionDO extends DurableObject {
         }),
       ),
       Effect.orDie,
-    );
-  }
-
-  private handleRequestWithRequestScopedRuntime(request: Request) {
-    const self = this;
-    return Effect.gen(function* () {
-      const sessionMeta = yield* self.loadSessionMeta();
-      if (!sessionMeta) {
-        return jsonRpcError(404, -32001, "Session timed out due to inactivity — please reconnect");
-      }
-
-      self.initialized = true;
-      self.lastActivityMs = Date.now();
-
-      const dbHandle = makeRequestScopedDb();
-      const cleanupDb = Effect.promise(() => dbHandle.end()).pipe(
-        Effect.withSpan("mcp.session.db.close"),
-      );
-      return yield* Effect.acquireUseRelease(
-        self.createConnectedRuntime(sessionMeta, {
-          dbHandle,
-          enableJsonResponse: request.method !== "GET",
-        }),
-        ({ transport }) =>
-          Effect.gen(function* () {
-            const response = yield* Effect.promise(() => transport.handleRequest(request)).pipe(
-              Effect.withSpan("McpSessionDO.transport.handleRequest", {
-                attributes: {
-                  "mcp.request.method": request.method,
-                  "mcp.request.content_type":
-                    request.headers.get("content-type") ?? "",
-                  "mcp.request.content_length":
-                    request.headers.get("content-length") ?? "",
-                },
-              }),
-            );
-            yield* Effect.annotateCurrentSpan({
-              "mcp.response.status_code": response.status,
-            });
-            if (request.method === "DELETE") {
-              yield* self.clearSessionState();
-            }
-            return response;
-          }),
-        ({ mcpServer, transport }) =>
-          Effect.gen(function* () {
-            yield* Effect.promise(() => transport.close().catch(() => undefined)).pipe(
-              Effect.withSpan("mcp.session.transport.close"),
-            );
-            yield* Effect.promise(() => mcpServer.close().catch(() => undefined)).pipe(
-              Effect.withSpan("mcp.session.server.close"),
-            );
-            yield* cleanupDb;
-          }).pipe(Effect.withSpan("mcp.session.runtime.release")),
-      );
-    }).pipe(
-      Effect.withSpan("mcp.session.request_scoped_runtime"),
-      Effect.catchAllCause((cause) =>
-        Effect.sync(() => {
-          console.error("[mcp-session] request-scoped handleRequest error:", cause);
-          Sentry.captureException(cause);
-          return jsonRpcError(500, -32603, "Internal error");
-        }),
-      ),
     );
   }
 
@@ -471,10 +402,6 @@ export class McpSessionDO extends DurableObject {
   }
 
   private dispatchRequest(request: Request): Effect.Effect<Response> {
-    if (requestScopedRuntimeEnabled) {
-      return this.handleRequestWithRequestScopedRuntime(request);
-    }
-
     if (!this.initialized || !this.transport) {
       return Effect.succeed(
         jsonRpcError(404, -32001, "Session timed out due to inactivity — please reconnect"),
