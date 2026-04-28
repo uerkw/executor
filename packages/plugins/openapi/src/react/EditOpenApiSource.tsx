@@ -98,11 +98,17 @@ const effectiveBindingForScope = (
   targetScope: ScopeId,
   ranks: ReadonlyMap<string, number>,
 ) =>
-  rows.find(
-    (row) =>
-      row.slot === slot &&
-      scopeRank(ranks, row.scopeId) >= scopeRank(ranks, targetScope),
-  ) ?? null;
+  rows
+    .filter(
+      (row) =>
+        row.slot === slot &&
+        scopeRank(ranks, row.scopeId) >= scopeRank(ranks, targetScope),
+    )
+    .sort(
+      (a, b) =>
+        scopeRank(ranks, a.scopeId) -
+        scopeRank(ranks, b.scopeId),
+    )[0] ?? null;
 
 const isSecretBindingValue = (
   value: unknown,
@@ -434,6 +440,7 @@ export default function EditOpenApiSource(props: {
           },
           reactivityKeys: [...sourceWriteKeys, ...connectionWriteKeys],
         });
+        setBusyKey(null);
         return;
       }
 
