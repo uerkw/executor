@@ -17,10 +17,15 @@
 import { env } from "cloudflare:workers";
 import { HttpApp, HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import * as Sentry from "@sentry/cloudflare";
-import { Context, Data, Effect, Layer, Option, Schema } from "effect";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { Context, Effect, Layer, Option, Schema } from "effect";
+import { createRemoteJWKSet } from "jose";
 
 import { TelemetryLive } from "./services/telemetry";
+import {
+  McpJwtVerificationError,
+  verifyMcpAccessToken,
+  type VerifiedToken,
+} from "./mcp-auth";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,7 +55,11 @@ const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource/
 const PROTECTED_RESOURCE_METADATA_URL = `${RESOURCE_ORIGIN}${PROTECTED_RESOURCE_METADATA_PATH}`;
 const RESOURCE_URL = `${RESOURCE_ORIGIN}${MCP_PATH}`;
 
-const WWW_AUTHENTICATE = `Bearer resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`;
+const WWW_AUTHENTICATE = [
+  'Bearer error="unauthorized"',
+  'error_description="Authorization needed"',
+  `resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`,
+].join(", ");
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -79,13 +88,6 @@ const corsPreflight = HttpServerResponse.empty({
 // Auth
 // ---------------------------------------------------------------------------
 
-export type VerifiedToken = {
-  /** The WorkOS account ID (user ID). */
-  accountId: string;
-  /** The WorkOS organization ID, if the session has org context. */
-  organizationId: string | null;
-};
-
 export class McpAuth extends Context.Tag("@executor/cloud/McpAuth")<
   McpAuth,
   {
@@ -93,22 +95,14 @@ export class McpAuth extends Context.Tag("@executor/cloud/McpAuth")<
   }
 >() {}
 
-export class McpJwtVerificationError extends Data.TaggedError("McpJwtVerificationError")<{
-  readonly cause: unknown;
-}> {}
-
 const verifyJwt = (token: string) =>
-  Effect.tryPromise({
-    try: () =>
-      jwtVerify(token, jwks, {
-        issuer: AUTHKIT_DOMAIN,
-      }),
-    catch: (cause) => new McpJwtVerificationError({ cause }),
-  }).pipe(Effect.withSpan("mcp.auth.jwt_verify"));
+  verifyMcpAccessToken(token, jwks, {
+    issuer: AUTHKIT_DOMAIN,
+    audience: RESOURCE_URL,
+  });
 
 export const McpAuthLive = Layer.succeed(McpAuth, {
-  verifyBearer: (request) =>
-    Effect.gen(function* () {
+  verifyBearer: Effect.fn("mcp.auth.verify_bearer")(function* (request) {
       const authHeader = request.headers.get("authorization");
       if (!authHeader?.startsWith(BEARER_PREFIX)) {
         yield* Effect.annotateCurrentSpan({ "mcp.auth.outcome": "missing_bearer" });
@@ -123,21 +117,16 @@ export const McpAuthLive = Layer.succeed(McpAuth, {
         ),
       );
       if (!verified) return null;
-      const { payload } = verified;
-      if (!payload.sub) {
+      if (!verified.accountId) {
         yield* Effect.annotateCurrentSpan({ "mcp.auth.outcome": "missing_subject" });
         return null;
       }
-      const token = {
-        accountId: payload.sub,
-        organizationId: (payload.org_id as string | undefined) ?? null,
-      };
       yield* Effect.annotateCurrentSpan({
         "mcp.auth.outcome": "verified",
-        "mcp.auth.has_organization": !!token.organizationId,
+        "mcp.auth.has_organization": !!verified.organizationId,
       });
-      return token;
-    }).pipe(Effect.withSpan("mcp.auth.verify_bearer")),
+      return verified;
+    }),
 });
 
 // ---------------------------------------------------------------------------
