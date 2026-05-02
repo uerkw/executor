@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Result, useAtomSet, useAtomValue } from "@effect-atom/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 
 import { connectionsAtom, sourceAtom, startOAuth } from "@executor-js/react/api/atoms";
 import { useScope, useScopeStack, useUserScope } from "@executor-js/react/api/scope-context";
@@ -143,7 +144,7 @@ export default function EditOpenApiSource(props: {
   const userScope = useUserScope();
   const sourceSummaryResult = useAtomValue(sourceAtom(props.sourceId, displayScope));
   const sourceSummary =
-    Result.isSuccess(sourceSummaryResult) && sourceSummaryResult.value
+    AsyncResult.isSuccess(sourceSummaryResult) && sourceSummaryResult.value
       ? sourceSummaryResult.value
       : null;
   const sourceScopeId = sourceSummary?.scopeId ?? displayScope;
@@ -170,9 +171,10 @@ export default function EditOpenApiSource(props: {
     startErrorMessage: "Failed to connect OAuth",
   });
 
-  const source = Result.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
-  const bindingRows = Result.isSuccess(bindingsResult) ? bindingsResult.value : [];
-  const connections = Result.isSuccess(connectionsResult) ? connectionsResult.value : [];
+  const source =
+    AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
+  const bindingRows = AsyncResult.isSuccess(bindingsResult) ? bindingsResult.value : [];
+  const connections = AsyncResult.isSuccess(connectionsResult) ? connectionsResult.value : [];
   const oauth2RedirectUrl = oauthCallbackUrl(OPENAPI_OAUTH_CALLBACK_PATH);
 
   const [name, setName] = useState(source?.name ?? "");
@@ -223,7 +225,7 @@ export default function EditOpenApiSource(props: {
       setSourceSaveState("saving");
       setError(null);
       void doUpdate({
-        path: { scopeId: ScopeId.make(sourceScopeId), namespace: props.sourceId },
+        params: { scopeId: ScopeId.make(sourceScopeId), namespace: props.sourceId },
         payload: {
           name: nextName || undefined,
           baseUrl: nextBaseUrl || undefined,
@@ -321,7 +323,7 @@ export default function EditOpenApiSource(props: {
     setError(null);
     try {
       await doSetBinding({
-        path: { scopeId: displayScope },
+        params: { scopeId: displayScope },
         payload: {
           sourceId: props.sourceId,
           sourceScope,
@@ -343,7 +345,7 @@ export default function EditOpenApiSource(props: {
     setError(null);
     try {
       await doRemoveBinding({
-        path: { scopeId: displayScope },
+        params: { scopeId: displayScope },
         payload: {
           sourceId: props.sourceId,
           sourceScope,
@@ -416,7 +418,7 @@ export default function EditOpenApiSource(props: {
       const tokenUrl = resolveOAuthUrl(oauth2.tokenUrl, source.config.baseUrl ?? "");
       if (oauth2.flow === "clientCredentials") {
         const response = await doStartOAuth({
-          path: { scopeId: displayScope },
+          params: { scopeId: displayScope },
           payload: {
             endpoint: tokenUrl,
             redirectUrl: tokenUrl,
@@ -437,7 +439,7 @@ export default function EditOpenApiSource(props: {
           throw new Error("Unexpected OAuth response");
         }
         await doSetBinding({
-          path: { scopeId: displayScope },
+          params: { scopeId: displayScope },
           payload: {
             sourceId: props.sourceId,
             sourceScope,
@@ -463,7 +465,7 @@ export default function EditOpenApiSource(props: {
       await oauth.openAuthorization({
         run: async () => {
           const response = await doStartOAuth({
-            path: { scopeId: displayScope },
+            params: { scopeId: displayScope },
             payload: {
               endpoint: authorizationUrl,
               connectionId: connectionId as string,
@@ -495,7 +497,7 @@ export default function EditOpenApiSource(props: {
         },
         onSuccess: async (result) => {
           await doSetBinding({
-            path: { scopeId: displayScope },
+            params: { scopeId: displayScope },
             payload: {
               sourceId: props.sourceId,
               sourceScope,

@@ -2,9 +2,8 @@ import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { Effect } from "effect";
-import { vi } from "vitest";
 
 import {
   ConnectionId,
@@ -285,6 +284,7 @@ describe("Google Discovery plugin", () => {
         );
 
         const originalFetch = globalThis.fetch;
+        let tokenRequestInit: RequestInit | undefined;
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(((
           input: RequestInfo | URL,
           init?: RequestInit,
@@ -296,7 +296,7 @@ describe("Google Discovery plugin", () => {
                 ? input.toString()
                 : input.url;
           if (url === "https://oauth2.googleapis.com/token") {
-            expect(init?.method).toBe("POST");
+            tokenRequestInit = init;
             return Promise.resolve(
               new Response(
                 JSON.stringify({
@@ -342,6 +342,7 @@ describe("Google Discovery plugin", () => {
           });
 
           expect(completed.connectionId).toBe(connectionId);
+          expect(tokenRequestInit?.method).toBe("POST");
 
           // Tokens live on the SDK connection — resolving via
           // ctx.connections.accessToken returns the minted value.
@@ -353,7 +354,7 @@ describe("Google Discovery plugin", () => {
           // Backing access-token secret is owned by the connection, so
           // it's filtered out of the user-facing secret list.
           const secretIds = new Set(
-            (yield* executor.secrets.list()).map((s) => s.id as unknown as string),
+            (yield* executor.secrets.list()).map((s) => String(s.id)),
           );
           expect(secretIds).not.toContain(`${completed.connectionId}.access_token`);
           expect(secretIds).not.toContain(`${completed.connectionId}.refresh_token`);

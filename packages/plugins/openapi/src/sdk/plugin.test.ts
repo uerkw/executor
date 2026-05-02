@@ -1,15 +1,8 @@
 import { expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import {
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpClient,
-  HttpServerRequest,
-  OpenApi,
-} from "@effect/platform";
-import { NodeHttpServer } from "@effect/platform-node";
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { HttpClient, HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
 import {
   createExecutor,
@@ -105,7 +98,7 @@ class EchoHeaders extends Schema.Class<EchoHeaders>("EchoHeaders")({
   "x-static": Schema.optional(Schema.String),
 }) {}
 
-class QueryValidationError extends Schema.TaggedError<QueryValidationError>()(
+class QueryValidationError extends Schema.TaggedErrorClass<QueryValidationError>()(
   "QueryValidationError",
   {
     message: Schema.String,
@@ -113,18 +106,20 @@ class QueryValidationError extends Schema.TaggedError<QueryValidationError>()(
 ) {}
 
 const ItemsGroup = HttpApiGroup.make("items")
-  .add(HttpApiEndpoint.get("listItems", "/items").addSuccess(Schema.Array(Item)))
+  .add(HttpApiEndpoint.get("listItems", "/items", { success: Schema.Array(Item) }))
   .add(
-    HttpApiEndpoint.get("getItem", "/items/:itemId")
-      .setPath(Schema.Struct({ itemId: Schema.NumberFromString }))
-      .addSuccess(Item),
+    HttpApiEndpoint.get("getItem", "/items/:itemId", {
+      params: Schema.Struct({ itemId: Schema.NumberFromString }),
+      success: Item,
+    }),
   )
-  .add(HttpApiEndpoint.get("echoHeaders", "/echo-headers").addSuccess(EchoHeaders))
+  .add(HttpApiEndpoint.get("echoHeaders", "/echo-headers", { success: EchoHeaders }))
   .add(
-    HttpApiEndpoint.get("queryRows", "/records/rows/:entryTypeId")
-      .setPath(Schema.Struct({ entryTypeId: Schema.String }))
-      .addSuccess(Schema.Unknown)
-      .addError(QueryValidationError, { status: 400 }),
+    HttpApiEndpoint.get("queryRows", "/records/rows/:entryTypeId", {
+      params: Schema.Struct({ entryTypeId: Schema.String }),
+      success: Schema.Unknown,
+      error: QueryValidationError,
+    }),
   );
 
 const TestApi = HttpApi.make("testApi").add(ItemsGroup);
@@ -144,13 +139,15 @@ const ITEMS = [
 
 const ItemsGroupLive = HttpApiBuilder.group(TestApi, "items", (handlers) =>
   handlers
-    .handle("listItems", () => Effect.succeed(ITEMS))
+    .handle("listItems", () => Effect.succeed(ITEMS.map((item) => new Item(item))))
     .handle("getItem", (req) =>
       Effect.succeed(
-        ITEMS.find((i) => i.id === req.path.itemId) ?? {
-          id: 0,
-          name: "Unknown",
-        },
+        new Item(
+          ITEMS.find((i) => i.id === req.params.itemId) ?? {
+            id: 0,
+            name: "Unknown",
+          },
+        ),
       ),
     )
     .handle("echoHeaders", () =>
@@ -175,10 +172,9 @@ const ItemsGroupLive = HttpApiBuilder.group(TestApi, "items", (handlers) =>
 // Test layer: real server on port 0 + HttpClient pointing at it
 // ---------------------------------------------------------------------------
 
-const ApiLive = HttpApiBuilder.api(TestApi).pipe(Layer.provide(ItemsGroupLive));
+const ApiLive = HttpApiBuilder.layer(TestApi).pipe(Layer.provide(ItemsGroupLive));
 
-const TestLayer = HttpApiBuilder.serve().pipe(
-  Layer.provide(ApiLive),
+const TestLayer = HttpRouter.serve(ApiLive, { disableListenLog: true, disableLogger: true }).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
 );
 
@@ -386,7 +382,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
-
       const executor = yield* createExecutor(
         makeTestConfig({
           plugins: [
@@ -416,7 +411,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
-
       const executor = yield* createExecutor(
         makeTestConfig({
           plugins: [
@@ -447,7 +441,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
-
       const executor = yield* createExecutor(
         makeTestConfig({
           plugins: [
@@ -478,7 +471,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
-
       const executor = yield* createExecutor(
         makeTestConfig({
           plugins: [
@@ -519,7 +511,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
-
       const executor = yield* createExecutor(
         makeTestConfig({
           plugins: [
@@ -593,7 +584,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
         spec: specJson,
         scope: USER_SCOPE as string,
         namespace: "shared",
-        baseUrl: "",
         name: "User Source",
       });
 
@@ -638,7 +628,6 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
         spec: specJson,
         scope: USER_SCOPE as string,
         namespace: "shared",
-        baseUrl: "",
         name: "User Source",
       });
 

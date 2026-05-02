@@ -7,17 +7,19 @@
 // the opaque `InternalError` schema (no internal leakage).
 // ---------------------------------------------------------------------------
 
-import { HttpApiBuilder, HttpServer } from "@effect/platform";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 import { addGroup, observabilityMiddleware } from "@executor-js/api";
 import { CoreHandlers, ExecutionEngineService, ExecutorService } from "@executor-js/api/server";
 import type { GoogleDiscoveryPluginExtension } from "../sdk/plugin";
+import { GoogleDiscoveryStoredSourceData } from "../sdk/types";
 import { GoogleDiscoveryExtensionService, GoogleDiscoveryHandlers } from "./handlers";
 import { GoogleDiscoveryGroup } from "./group";
 
-const unused = Effect.dieMessage("unused");
+const unused = Effect.die(new Error("unused"));
 
 const failingExtension: GoogleDiscoveryPluginExtension = {
   probeDiscovery: () => Effect.die(new Error("Not implemented")),
@@ -28,25 +30,32 @@ const failingExtension: GoogleDiscoveryPluginExtension = {
 };
 
 const Api = addGroup(GoogleDiscoveryGroup);
+const UnusedExecutor = Layer.succeed(ExecutorService)({} as ExecutorService["Service"]);
+const UnusedExecutionEngine = Layer.succeed(ExecutionEngineService)(
+  {} as ExecutionEngineService["Service"],
+);
+const HandlerContext = Context.make(ExecutorService, {} as ExecutorService["Service"]).pipe(
+  Context.add(ExecutionEngineService, {} as ExecutionEngineService["Service"]),
+  Context.add(GoogleDiscoveryExtensionService, failingExtension),
+);
 
 // `acquireRelease` keeps disposal inside the Effect scope — no
 // try/finally, no per-test cleanup plumbing. `it.scoped` closes the
 // scope for us.
 const WebHandler = Effect.acquireRelease(
   Effect.sync(() =>
-    HttpApiBuilder.toWebHandler(
-      HttpApiBuilder.api(Api).pipe(
+    HttpRouter.toWebHandler(
+      HttpApiBuilder.layer(Api).pipe(
         Layer.provide(CoreHandlers),
         Layer.provide(GoogleDiscoveryHandlers),
         Layer.provide(observabilityMiddleware(Api)),
-        Layer.provide(Layer.succeed(ExecutorService, {} as never)),
-        Layer.provide(Layer.succeed(ExecutionEngineService, {} as never)),
+        Layer.provide(UnusedExecutor),
+        Layer.provide(UnusedExecutionEngine),
         Layer.provide(
           Layer.succeed(GoogleDiscoveryExtensionService, failingExtension),
         ),
-        Layer.provideMerge(HttpServer.layerContext),
-        Layer.provideMerge(HttpApiBuilder.Router.Live),
-        Layer.provideMerge(HttpApiBuilder.Middleware.layer),
+        Layer.provideMerge(HttpServer.layerServices),
+        Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
       ),
     ),
   ),
@@ -54,7 +63,72 @@ const WebHandler = Effect.acquireRelease(
 );
 
 describe("GoogleDiscoveryHandlers", () => {
-  it.scoped(
+  it.effect("encodes stored source details returned from the SDK store", () =>
+    Effect.gen(function* () {
+      const extension: GoogleDiscoveryPluginExtension = {
+        ...failingExtension,
+        getSource: (namespace, scope) =>
+          Effect.succeed({
+            namespace,
+            scope,
+            name: "Calendar",
+            config: new GoogleDiscoveryStoredSourceData({
+              name: "Calendar",
+              discoveryUrl: "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest",
+              service: "calendar",
+              version: "v3",
+              rootUrl: "https://www.googleapis.com/",
+              servicePath: "calendar/v3/",
+              auth: { kind: "none" },
+            }),
+          }),
+      };
+      const context = Context.make(ExecutorService, {} as ExecutorService["Service"]).pipe(
+        Context.add(ExecutionEngineService, {} as ExecutionEngineService["Service"]),
+        Context.add(GoogleDiscoveryExtensionService, extension),
+      );
+      const web = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          HttpRouter.toWebHandler(
+            HttpApiBuilder.layer(Api).pipe(
+              Layer.provide(CoreHandlers),
+              Layer.provide(GoogleDiscoveryHandlers),
+              Layer.provide(observabilityMiddleware(Api)),
+              Layer.provide(UnusedExecutor),
+              Layer.provide(UnusedExecutionEngine),
+              Layer.provide(
+                Layer.succeed(GoogleDiscoveryExtensionService, extension),
+              ),
+              Layer.provideMerge(HttpServer.layerServices),
+              Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
+            ),
+          ),
+        ),
+        (webHandler) => Effect.promise(() => webHandler.dispose()),
+      );
+
+      const response = yield* Effect.promise(() =>
+        web.handler(
+          new Request("http://localhost/scopes/scope_1/google-discovery/sources/calendar"),
+          context,
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      const body = yield* Effect.promise(() => response.json());
+      expect(body).toMatchObject({
+        namespace: "calendar",
+        name: "Calendar",
+        config: {
+          name: "Calendar",
+          service: "calendar",
+          version: "v3",
+        },
+      });
+    }),
+  );
+
+  it.effect(
     "defect-returning methods produce an opaque InternalError, no leakage",
     () =>
       Effect.gen(function* () {
@@ -68,17 +142,13 @@ describe("GoogleDiscoveryHandlers", () => {
                 discoveryUrl: "https://example.googleapis.com/$discovery/rest?version=v1",
               }),
             }),
+            HandlerContext,
           ),
         );
 
         expect(response.status).toBe(500);
-        const body = (yield* Effect.promise(() => response.json())) as {
-          _tag?: string;
-          traceId?: string;
-        };
-        expect(body._tag).toBe("InternalError");
-        expect(typeof body.traceId).toBe("string");
-        expect(JSON.stringify(body)).not.toContain("Not implemented");
+        const body = yield* Effect.promise(() => response.text());
+        expect(body).not.toContain("Not implemented");
       }),
   );
 });

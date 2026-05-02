@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "@effect/platform";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Context, Effect } from "effect";
 
 import { addGroup, capture } from "@executor-js/api";
@@ -6,6 +6,7 @@ import type {
   GoogleDiscoveryAddSourceInput,
   GoogleDiscoveryPluginExtension,
 } from "../sdk/plugin";
+import { GoogleDiscoveryStoredSourceSchema } from "../sdk/stored-source";
 import { GoogleDiscoveryGroup } from "./group";
 
 // ---------------------------------------------------------------------------
@@ -19,10 +20,8 @@ import { GoogleDiscoveryGroup } from "./group";
 // `.addError(InternalError)` on the group — no per-handler translation.
 // ---------------------------------------------------------------------------
 
-export class GoogleDiscoveryExtensionService extends Context.Tag("GoogleDiscoveryExtensionService")<
-  GoogleDiscoveryExtensionService,
-  GoogleDiscoveryPluginExtension
->() {}
+export class GoogleDiscoveryExtensionService extends Context.Service<GoogleDiscoveryExtensionService, GoogleDiscoveryPluginExtension
+>()("GoogleDiscoveryExtensionService") {}
 
 // ---------------------------------------------------------------------------
 // Composed API
@@ -61,7 +60,7 @@ export const GoogleDiscoveryHandlers = HttpApiBuilder.group(
           }),
         ),
       )
-      .handle("addSource", ({ path, payload }) =>
+      .handle("addSource", ({ params: path, payload }) =>
         capture(
           Effect.gen(function* () {
             const ext = yield* GoogleDiscoveryExtensionService;
@@ -72,15 +71,22 @@ export const GoogleDiscoveryHandlers = HttpApiBuilder.group(
           }),
         ),
       )
-      .handle("getSource", ({ path }) =>
+      .handle("getSource", ({ params: path }) =>
         capture(
           Effect.gen(function* () {
             const ext = yield* GoogleDiscoveryExtensionService;
-            return yield* ext.getSource(path.namespace, path.scopeId);
+            const source = yield* ext.getSource(path.namespace, path.scopeId);
+            return source
+              ? new GoogleDiscoveryStoredSourceSchema({
+                  namespace: source.namespace,
+                  name: source.name,
+                  config: source.config,
+                })
+              : null;
           }),
         ),
       )
-      .handle("updateSource", ({ path, payload }) =>
+      .handle("updateSource", ({ params: path, payload }) =>
         capture(
           Effect.gen(function* () {
             const ext = yield* GoogleDiscoveryExtensionService;

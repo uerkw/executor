@@ -1,5 +1,5 @@
-import { AtomHttpApi } from "@effect-atom/atom-react";
-import { FetchHttpClient } from "@effect/platform";
+import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
+import { FetchHttpClient } from "effect/unstable/http";
 import { addGroup } from "@executor-js/api";
 import { getBaseUrl } from "@executor-js/react/api/base-url";
 import { McpGroup } from "../api/group";
@@ -10,7 +10,7 @@ import { McpGroup } from "../api/group";
 
 const McpApi = addGroup(McpGroup);
 
-export const McpClient = AtomHttpApi.Tag<"McpClient">()("McpClient", {
+export const McpClient = AtomHttpApi.Service<"McpClient">()("McpClient", {
   api: McpApi,
   httpClient: FetchHttpClient.layer,
   baseUrl: getBaseUrl(),

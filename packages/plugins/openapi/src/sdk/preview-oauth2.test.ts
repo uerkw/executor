@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Option } from "effect";
-import { FetchHttpClient } from "@effect/platform";
+import { FetchHttpClient } from "effect/unstable/http";
 
 import { previewSpec as previewSpecRaw } from "./preview";
 

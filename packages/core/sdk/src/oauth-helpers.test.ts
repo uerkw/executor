@@ -129,7 +129,7 @@ const captureFetch = (response: Response): { calls: FetchArgs[] } => {
     .mockImplementation(async (url: string, init: RequestInit) => {
       calls.push({ url, init });
       return response;
-    }) as unknown as typeof fetch;
+    }) as typeof fetch;
   return { calls };
 };
 
@@ -328,7 +328,7 @@ describe("exchangeAuthorizationCode", () => {
   });
 
   it("returns a typed OAuth2Error on transport failure", async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("boom")) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("boom")) as typeof fetch;
     const exit = await Effect.runPromiseExit(
       exchangeAuthorizationCode({
         tokenUrl: "https://example.com/token",
@@ -339,12 +339,11 @@ describe("exchangeAuthorizationCode", () => {
       }),
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      const err = exit.cause;
-      const failure = JSON.stringify(err);
-      expect(failure).toContain("OAuth2Error");
-      expect(failure).toContain("boom");
-    }
+    if (!Exit.isFailure(exit)) return;
+    const err = exit.cause;
+    const failure = JSON.stringify(err);
+    expect(failure).toContain("OAuth2Error");
+    expect(failure).toContain("boom");
   });
 
   it("propagates RFC 6749 error_description text in the OAuth2Error", async () => {
@@ -364,9 +363,8 @@ describe("exchangeAuthorizationCode", () => {
       }),
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      expect(JSON.stringify(exit.cause)).toContain("Code expired");
-    }
+    if (!Exit.isFailure(exit)) return;
+    expect(JSON.stringify(exit.cause)).toContain("Code expired");
   });
 });
 
@@ -545,7 +543,7 @@ describe("shouldRefreshToken", () => {
 
 describe("OAuth2Error tagging", () => {
   beforeEach(() => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network down")) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network down")) as typeof fetch;
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -560,11 +558,9 @@ describe("OAuth2Error tagging", () => {
       }),
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) {
-      // Walk the cause to find the failure
-      const failures = JSON.stringify(exit.cause);
-      expect(failures).toContain("OAuth2Error");
-    }
+    if (!Exit.isFailure(exit)) return;
+    const failures = JSON.stringify(exit.cause);
+    expect(failures).toContain("OAuth2Error");
   });
 
   it("OAuth2Error is constructable directly with message and cause", () => {

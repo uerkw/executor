@@ -21,10 +21,7 @@ import {
   type StorageFailure,
 } from "@executor-js/sdk/core";
 
-import {
-  GoogleDiscoveryMethodBinding,
-  GoogleDiscoveryStoredSourceData,
-} from "./types";
+import { GoogleDiscoveryMethodBinding, GoogleDiscoveryStoredSourceData } from "./types";
 
 // ---------------------------------------------------------------------------
 // OAuth session TTL
@@ -84,6 +81,8 @@ const decodeStoredSourceData = Schema.decodeUnknownSync(GoogleDiscoveryStoredSou
 const encodeBinding = Schema.encodeSync(GoogleDiscoveryMethodBinding);
 const decodeBinding = Schema.decodeUnknownSync(GoogleDiscoveryMethodBinding);
 
+const toJsonRecord = (value: unknown): Record<string, unknown> => value as Record<string, unknown>;
+
 const decodeJson = (value: unknown): unknown => {
   if (value === null || value === undefined) return value;
   if (typeof value !== "string") return value;
@@ -135,14 +134,9 @@ export interface GoogleDiscoveryStore {
   readonly getBindingsForSource: (
     sourceId: string,
     scope: string,
-  ) => Effect.Effect<
-    ReadonlyMap<string, GoogleDiscoveryMethodBinding>,
-    StorageFailure
-  >;
+  ) => Effect.Effect<ReadonlyMap<string, GoogleDiscoveryMethodBinding>, StorageFailure>;
 
-  readonly putSource: (
-    source: GoogleDiscoveryStoredSource,
-  ) => Effect.Effect<void, StorageFailure>;
+  readonly putSource: (source: GoogleDiscoveryStoredSource) => Effect.Effect<void, StorageFailure>;
   readonly updateSourceMeta: (
     sourceId: string,
     scope: string,
@@ -151,10 +145,7 @@ export interface GoogleDiscoveryStore {
       readonly auth?: import("./types").GoogleDiscoveryAuth;
     },
   ) => Effect.Effect<void, StorageFailure>;
-  readonly removeSource: (
-    sourceId: string,
-    scope: string,
-  ) => Effect.Effect<void, StorageFailure>;
+  readonly removeSource: (sourceId: string, scope: string) => Effect.Effect<void, StorageFailure>;
   readonly getSource: (
     sourceId: string,
     scope: string,
@@ -208,7 +199,7 @@ export const makeGoogleDiscoveryStore = (
             id: toolId,
             scope_id: scope,
             source_id: sourceId,
-            binding: encodeBinding(binding) as unknown as Record<string, unknown>,
+            binding: toJsonRecord(encodeBinding(binding)),
             created_at: new Date(),
           },
           forceAllowId: true,
@@ -267,7 +258,7 @@ export const makeGoogleDiscoveryStore = (
             id: source.namespace,
             scope_id: source.scope,
             name: source.name,
-            config: encodeStoredSourceData(source.config) as unknown as Record<string, unknown>,
+            config: toJsonRecord(encodeStoredSourceData(source.config)),
             created_at: now,
             updated_at: now,
           },
@@ -299,7 +290,7 @@ export const makeGoogleDiscoveryStore = (
           ],
           update: {
             name: update.name ?? (row.name as string),
-            config: encodeStoredSourceData(nextConfig) as unknown as Record<string, unknown>,
+            config: toJsonRecord(encodeStoredSourceData(nextConfig)),
             updated_at: new Date(),
           },
         });
@@ -346,6 +337,5 @@ export const makeGoogleDiscoveryStore = (
         if (!row) return null;
         return decodeStoredSourceData(decodeJson(row.config));
       }),
-
   };
 };

@@ -1,5 +1,7 @@
 import * as React from "react";
-import { Atom, Result, useAtomSet, useAtomValue } from "@effect-atom/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import type { ScopeId } from "@executor-js/sdk";
 
 import { connectionsAtom, sourcesAtom } from "./atoms";
@@ -46,9 +48,7 @@ export const usePendingResource = <T,>(resource: string) => {
   const add = React.useCallback(
     (entry: PendingEntry<T>) =>
       setPending((prev) => [
-        ...(prev as ReadonlyArray<PendingEntry<T>>).filter(
-          (p) => p.id !== entry.id,
-        ),
+        ...(prev as ReadonlyArray<PendingEntry<T>>).filter((p) => p.id !== entry.id),
         entry,
       ]),
     [setPending],
@@ -56,9 +56,7 @@ export const usePendingResource = <T,>(resource: string) => {
 
   const remove = React.useCallback(
     (id: string) =>
-      setPending((prev) =>
-        (prev as ReadonlyArray<PendingEntry<T>>).filter((p) => p.id !== id),
-      ),
+      setPending((prev) => (prev as ReadonlyArray<PendingEntry<T>>).filter((p) => p.id !== id)),
     [setPending],
   );
 
@@ -108,25 +106,35 @@ export const useSourcesWithPending = (scopeId: ScopeId) => {
   const { pending } = usePendingResource<PendingSource>(PendingResource.sources);
   return React.useMemo(
     () =>
-      Result.map(result, (sources) => {
-        const merged = mergePending(
-          pending,
-          sources,
-          (s) => s.id,
-          (p) => ({
-            id: p.id,
-            name: p.value.name,
-            kind: p.value.kind,
-            url: p.value.url,
-            // The placeholder cannot be removed/refreshed/edited until the
-            // server confirms it, so disable those affordances.
-            canRemove: false,
-            canRefresh: false,
-            canEdit: false,
-          }),
-        );
-        return [...merged].sort((a, b) => a.name.localeCompare(b.name));
-      }),
+      AsyncResult.map(
+        result,
+        (
+          sources: ReadonlyArray<{
+            readonly id: string;
+            readonly name: string;
+            readonly kind: string;
+            readonly url?: string;
+          }>,
+        ) => {
+          const merged = mergePending(
+            pending,
+            sources,
+            (s: { readonly id: string }) => s.id,
+            (p) => ({
+              id: p.id,
+              name: p.value.name,
+              kind: p.value.kind,
+              url: p.value.url,
+              // The placeholder cannot be removed/refreshed/edited until the
+              // server confirms it, so disable those affordances.
+              canRemove: false,
+              canRefresh: false,
+              canEdit: false,
+            }),
+          );
+          return [...merged].sort((a, b) => a.name.localeCompare(b.name));
+        },
+      ),
     [result, pending],
   );
 };
@@ -165,10 +173,10 @@ export const useConnectionsWithPendingRemovals = (scopeId: ScopeId) => {
   );
 
   React.useEffect(() => {
-    if (!Result.isSuccess(result) || pending.length === 0) return;
+    if (!AsyncResult.isSuccess(result) || pending.length === 0) return;
 
     const serverIds = new Set(
-      result.value.map((connection) => connection.id as string),
+      result.value.map((connection: { readonly id: string }) => connection.id as string),
     );
     for (const entry of pending) {
       if (!serverIds.has(entry.id)) remove(entry.id);
@@ -177,11 +185,11 @@ export const useConnectionsWithPendingRemovals = (scopeId: ScopeId) => {
 
   return React.useMemo(
     () =>
-      Result.map(result, (connections) => {
+      AsyncResult.map(result, (connections) => {
         if (pending.length === 0) return connections;
         const hiddenIds = new Set(pending.map((entry) => entry.id));
         return connections.filter(
-          (connection) => !hiddenIds.has(connection.id as string),
+          (connection: { readonly id: string }) => !hiddenIds.has(connection.id as string),
         );
       }),
     [result, pending],
@@ -203,4 +211,3 @@ export const usePendingConnectionRemovals = () => {
     [add, remove],
   );
 };
-

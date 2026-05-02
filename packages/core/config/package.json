@@ -36,7 +36,6 @@
     "typecheck:slow": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform": "catalog:",
     "@executor-js/sdk": "workspace:*",
     "effect": "catalog:",
     "jsonc-parser": "^3.3.1"
@@ -44,6 +43,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

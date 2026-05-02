@@ -15,16 +15,8 @@
 // collide across tests.
 
 import { Effect, Layer } from "effect";
-import {
-  FetchHttpClient,
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiClient,
-  HttpApiSwagger,
-  HttpApp,
-  HttpServer,
-  HttpServerRequest,
-} from "@effect/platform";
+import { HttpApiBuilder, HttpApiClient, HttpApiSwagger } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpEffect, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import {
   ExecutionEngineService,
@@ -141,8 +133,9 @@ export const makeFakeVaultClient = (): WorkOSVaultClient => {
             updateObject: async (opts) => update(opts),
             deleteObject: async (opts) => remove(opts),
           }),
-        catch: (cause) => new Error(String(cause)) as never,
-      }) as never,
+        catch: (cause) =>
+          new WorkOSVaultClientError({ cause, operation: _op }),
+      }),
     // The real client wraps SDK rejections in WorkOSVaultClientError so
     // provider-side `isStatusError` checks can introspect `cause.status`.
     // Mirror that here so our 404s flow through the same unwrap path.
@@ -218,8 +211,8 @@ const createTestScopedExecutor = (
 
 const FakeOrgAuthLive = Layer.succeed(
   OrgAuth,
-  OrgAuth.of({
-    cookie: () =>
+  {
+    cookie: (httpApp) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         const orgId = request.headers[TEST_ORG_HEADER];
@@ -231,49 +224,51 @@ const FakeOrgAuthLive = Layer.succeed(
           typeof userHeader === "string" && userHeader.length > 0
             ? userHeader
             : defaultUserFor(orgId);
-        return AuthContext.of({
-          accountId: userId,
-          organizationId: orgId,
-          email: "test@example.com",
-          name: "Test User",
-          avatarUrl: null,
-        });
+        return yield* httpApp.pipe(
+          Effect.provideService(
+            AuthContext,
+            AuthContext.of({
+              accountId: userId,
+              organizationId: orgId,
+              email: "test@example.com",
+              name: "Test User",
+              avatarUrl: null,
+            }),
+          ),
+        );
       }),
-  }),
+  },
 );
 
-const TestApiLive = HttpApiBuilder.api(ProtectedCloudApi).pipe(
+const TestApiLive = HttpApiBuilder.layer(ProtectedCloudApi).pipe(
   Layer.provide(Layer.merge(ProtectedCloudApiHandlers, FakeOrgAuthLive)),
 );
 
-const buildAppForScope = (userId: string, orgId: string, orgName: string) =>
+const buildWebHandlerForScope = (userId: string, orgId: string, orgName: string) =>
   Effect.gen(function* () {
     const executor = yield* createTestScopedExecutor(userId, orgId, orgName);
     const engine = createExecutionEngine({ executor, codeExecutor: makeQuickJsExecutor() });
     const services = Layer.mergeAll(
-      Layer.succeed(ExecutorService, executor),
-      Layer.succeed(ExecutionEngineService, engine),
-      Layer.succeed(OpenApiExtensionService, executor.openapi),
-      Layer.succeed(McpExtensionService, executor.mcp),
-      Layer.succeed(GraphqlExtensionService, executor.graphql),
+      Layer.succeed(ExecutorService)(executor),
+      Layer.succeed(ExecutionEngineService)(engine),
+      Layer.succeed(OpenApiExtensionService)(executor.openapi),
+      Layer.succeed(McpExtensionService)(executor.mcp),
+      Layer.succeed(GraphqlExtensionService)(executor.graphql),
     );
-    return yield* HttpApiBuilder.httpApp.pipe(
-      Effect.provide(
-        HttpApiSwagger.layer({ path: "/docs" }).pipe(
-          Layer.provideMerge(HttpApiBuilder.middlewareOpenApi()),
-          Layer.provideMerge(TestApiLive),
-          Layer.provideMerge(services),
-          Layer.provideMerge(RouterConfig),
-          Layer.provideMerge(HttpServer.layerContext),
-          Layer.provideMerge(HttpApiBuilder.Router.Live),
-          Layer.provideMerge(HttpApiBuilder.Middleware.layer),
-        ),
+    return HttpRouter.toWebHandler(
+      TestApiLive.pipe(
+        Layer.provideMerge(HttpApiSwagger.layer(ProtectedCloudApi, { path: "/docs" })),
+        Layer.provideMerge(services),
+        Layer.provideMerge(RouterConfig),
+        Layer.provideMerge(HttpServer.layerServices),
       ),
+      { disableLogger: true },
     );
   });
 
 const RouterApp = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
+  const webRequest = yield* HttpServerRequest.toWeb(request);
   const orgId = request.headers[TEST_ORG_HEADER];
   if (!orgId || typeof orgId !== "string") {
     return yield* Effect.die(new Error("missing x-test-org-id"));
@@ -283,13 +278,21 @@ const RouterApp = Effect.gen(function* () {
     typeof userHeader === "string" && userHeader.length > 0
       ? userHeader
       : defaultUserFor(orgId);
-  return yield* yield* buildAppForScope(userId, orgId, `Org ${orgId}`);
+  const web = yield* buildWebHandlerForScope(userId, orgId, `Org ${orgId}`);
+  const response = yield* Effect.promise(async () => {
+    try {
+      return await web.handler(webRequest);
+    } finally {
+      await web.dispose();
+    }
+  });
+  return HttpServerResponse.raw(response, { status: response.status, headers: response.headers });
 });
 
-const handler = HttpApp.toWebHandler(
+const handler = HttpEffect.toWebHandler(
   RouterApp.pipe(
     Effect.provide(DbService.Live),
-    Effect.provide(HttpServer.layerContext),
+    Effect.provide(HttpServer.layerServices),
   ),
 );
 
@@ -320,27 +323,20 @@ export const fetchForUser = (
 
 export const clientLayerForOrg = (orgId: string) =>
   FetchHttpClient.layer.pipe(
-    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchForOrg(orgId))),
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fetchForOrg(orgId))),
   );
 
 export const clientLayerForUser = (userId: string, orgId: string) =>
   FetchHttpClient.layer.pipe(
     Layer.provide(
-      Layer.succeed(FetchHttpClient.Fetch, fetchForUser(userId, orgId)),
+      Layer.succeed(FetchHttpClient.Fetch)(fetchForUser(userId, orgId)),
     ),
   );
 
 // Constructs an HttpApiClient bound to the given org, hands it to `body`,
 // and provides the org-scoped fetch layer in one step. Keeps per-test
 // Effect blocks focused on the actual assertions.
-type ApiShape = typeof ProtectedCloudApi extends HttpApi.HttpApi<
-  infer _Id,
-  infer Groups,
-  infer ApiError,
-  infer _ApiR
->
-  ? HttpApiClient.Client<Groups, ApiError, never>
-  : never;
+type ApiShape = HttpApiClient.ForApi<typeof ProtectedCloudApi>;
 
 export const asOrg = <A, E>(
   orgId: string,

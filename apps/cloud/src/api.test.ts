@@ -1,14 +1,5 @@
-import {
-  FetchHttpClient,
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiClient,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpClient,
-  HttpServer,
-  HttpServerResponse,
-} from "@effect/platform";
+import { HttpApi, HttpApiBuilder, HttpApiClient, HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpClient, HttpEffect, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
 
@@ -23,7 +14,7 @@ import {
 const SourceResponse = Schema.Struct({ source: Schema.String });
 
 const OrgGroup = HttpApiGroup.make("org").add(
-  HttpApiEndpoint.get("ping", "/org/ping").addSuccess(SourceResponse),
+  HttpApiEndpoint.get("ping", "/org/ping", { success: SourceResponse }),
 );
 const OrgTestApi = HttpApi.make("orgApi").add(OrgGroup);
 const OrgTestHandlers = HttpApiBuilder.group(OrgTestApi, "org", (handlers) =>
@@ -31,7 +22,7 @@ const OrgTestHandlers = HttpApiBuilder.group(OrgTestApi, "org", (handlers) =>
 );
 
 const AuthGroup = HttpApiGroup.make("auth").add(
-  HttpApiEndpoint.get("me", "/auth/me").addSuccess(SourceResponse),
+  HttpApiEndpoint.get("me", "/auth/me", { success: SourceResponse }),
 );
 const AuthApi = HttpApi.make("authApi").add(AuthGroup);
 const AuthHandlers = HttpApiBuilder.group(AuthApi, "auth", (handlers) =>
@@ -39,60 +30,61 @@ const AuthHandlers = HttpApiBuilder.group(AuthApi, "auth", (handlers) =>
 );
 
 const ProtectedGroup = HttpApiGroup.make("protected")
-  .add(HttpApiEndpoint.get("scope", "/scope").addSuccess(SourceResponse))
+  .add(HttpApiEndpoint.get("scope", "/scope", { success: SourceResponse }))
   .add(
-    HttpApiEndpoint.post("resume", "/executions/:executionId/resume")
-      .setPath(Schema.Struct({ executionId: Schema.String }))
-      .addSuccess(SourceResponse),
+    HttpApiEndpoint.get("sources", "/scopes/:scopeId/sources", {
+      params: { scopeId: Schema.String },
+      success: SourceResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("resume", "/executions/:executionId/resume", {
+      params: { executionId: Schema.String },
+      success: SourceResponse,
+    }),
   );
 const ProtectedApi = HttpApi.make("protectedApi").add(ProtectedGroup);
 const ProtectedHandlers = HttpApiBuilder.group(ProtectedApi, "protected", (handlers) =>
   handlers
     .handle("scope", () => Effect.succeed({ source: "protected" }))
+    .handle("sources", ({ params }) => Effect.succeed({ source: params.scopeId }))
     .handle("resume", () => Effect.succeed({ source: "protected" })),
 );
 
-const OrgTestApp = Effect.flatMap(
-  HttpApiBuilder.httpApp.pipe(
-    Effect.provide(
-      HttpApiBuilder.api(OrgTestApi).pipe(
-        Layer.provide(OrgTestHandlers),
-        Layer.provideMerge(HttpServer.layerContext),
-        Layer.provideMerge(HttpApiBuilder.Router.Live),
-        Layer.provideMerge(HttpApiBuilder.Middleware.layer),
-      ),
-    ),
-  ),
-  (app) => app,
-).pipe(Effect.provide(HttpServer.layerContext));
+const toHttpApp = (
+  apiLayer: Parameters<typeof HttpRouter.toWebHandler>[0],
+) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const webRequest = yield* HttpServerRequest.toWeb(request);
+    const web = HttpRouter.toWebHandler(apiLayer, { disableLogger: true });
+    const response = yield* Effect.promise(() => web.handler(webRequest, undefined));
+    return HttpServerResponse.raw(response, { status: response.status, headers: response.headers });
+  });
 
-const AuthTestApp = Effect.flatMap(
-  HttpApiBuilder.httpApp.pipe(
-    Effect.provide(
-      HttpApiBuilder.api(AuthApi).pipe(
-        Layer.provide(AuthHandlers),
-        Layer.provideMerge(HttpServer.layerContext),
-        Layer.provideMerge(HttpApiBuilder.Router.Live),
-        Layer.provideMerge(HttpApiBuilder.Middleware.layer),
-      ),
-    ),
-  ),
-  (app) => app,
-).pipe(Effect.provide(HttpServer.layerContext));
+const OrgTestApp = toHttpApp(
+  HttpApiBuilder.layer(OrgTestApi).pipe(
+    Layer.provide(OrgTestHandlers),
+    Layer.provideMerge(HttpServer.layerServices),
+    Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
+  ) as Parameters<typeof HttpRouter.toWebHandler>[0],
+);
 
-const ProtectedBaseTestApp = Effect.flatMap(
-  HttpApiBuilder.httpApp.pipe(
-    Effect.provide(
-      HttpApiBuilder.api(ProtectedApi).pipe(
-        Layer.provide(ProtectedHandlers),
-        Layer.provideMerge(HttpServer.layerContext),
-        Layer.provideMerge(HttpApiBuilder.Router.Live),
-        Layer.provideMerge(HttpApiBuilder.Middleware.layer),
-      ),
-    ),
-  ),
-  (app) => app,
-).pipe(Effect.provide(HttpServer.layerContext));
+const AuthTestApp = toHttpApp(
+  HttpApiBuilder.layer(AuthApi).pipe(
+    Layer.provide(AuthHandlers),
+    Layer.provideMerge(HttpServer.layerServices),
+    Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
+  ) as Parameters<typeof HttpRouter.toWebHandler>[0],
+);
+
+const ProtectedBaseTestApp = toHttpApp(
+  HttpApiBuilder.layer(ProtectedApi).pipe(
+    Layer.provide(ProtectedHandlers),
+    Layer.provideMerge(HttpServer.layerServices),
+    Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
+  ) as Parameters<typeof HttpRouter.toWebHandler>[0],
+);
 
 type ProtectedMode = "ok" | "none" | "error" | "bad-status";
 
@@ -108,37 +100,42 @@ const resetState = () => {
 
 const ProtectedTestApp = Effect.gen(function* () {
   if (testState.mode === "none") {
-    return HttpServerResponse.unsafeJson(
+    return HttpServerResponse.jsonUnsafe(
       { error: "No organization in session", code: "no_organization" },
       { status: 403 },
     );
   }
   if (testState.mode === "error") {
-    return HttpServerResponse.unsafeJson({ error: "boom" }, { status: 500 });
+    return HttpServerResponse.jsonUnsafe({ error: "boom" }, { status: 500 });
   }
   if (testState.mode === "bad-status") {
-    return HttpServerResponse.unsafeJson({ source: "protected" }, { status: 400 });
+    return HttpServerResponse.jsonUnsafe({ source: "protected" }, { status: 400 });
   }
   return yield* ProtectedBaseTestApp;
 });
 
 const TestRequestHandlersLive = Layer.mergeAll(
-  Layer.succeed(OrgRequestHandlerService, { app: OrgTestApp }),
-  Layer.succeed(NonProtectedRequestHandlerService, { app: AuthTestApp }),
-  Layer.succeed(AutumnRequestHandlerService, {
-    app: Effect.succeed(HttpServerResponse.unsafeJson({ source: "autumn" })),
+  Layer.succeed(OrgRequestHandlerService)({ app: OrgTestApp }),
+  Layer.succeed(NonProtectedRequestHandlerService)({ app: AuthTestApp }),
+  Layer.succeed(AutumnRequestHandlerService)({
+    app: Effect.succeed(HttpServerResponse.jsonUnsafe({ source: "autumn" })),
   }),
-  Layer.succeed(ProtectedRequestHandlerService, { app: ProtectedTestApp }),
+  Layer.succeed(ProtectedRequestHandlerService)({ app: ProtectedTestApp }),
 );
 
-const requestHandler = Effect.runSync(Effect.provide(ApiRequestHandler, TestRequestHandlersLive));
+const requestHandler = Effect.runSync(
+  Effect.map(
+    Effect.provide(ApiRequestHandler, TestRequestHandlersLive),
+    (app) => HttpEffect.toWebHandler(app),
+  ),
+);
 
 const TestApi = HttpApi.make("testApi")
   .add(OrgGroup)
   .add(AuthGroup)
   .add(
     HttpApiGroup.make("autumn").add(
-      HttpApiEndpoint.get("plans", "/autumn/plans").addSuccess(SourceResponse),
+      HttpApiEndpoint.get("plans", "/autumn/plans", { success: SourceResponse }),
     ),
   )
   .add(ProtectedGroup);
@@ -151,7 +148,7 @@ const fetchViaHandler: typeof globalThis.fetch = (input, init) =>
   requestHandler(input instanceof Request ? input : new Request(input, init));
 
 const TestClientLayer = FetchHttpClient.layer.pipe(
-  Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchViaHandler)),
+  Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fetchViaHandler)),
 );
 
 const getClient = () => HttpApiClient.make(TestApi, { baseUrl: TEST_BASE_URL });
@@ -212,8 +209,17 @@ layer(TestClientLayer)("handleApiRequest", (it) => {
     Effect.gen(function* () {
       resetState();
       const client = yield* getClient();
-      const result = yield* client.protected.resume({ path: { executionId: "exec_1" } });
+      const result = yield* client.protected.resume({ params: { executionId: "exec_1" } });
       expect(result).toEqual({ source: "protected" });
+    }),
+  );
+
+  it.effect("preserves protected path params through the outer router", () =>
+    Effect.gen(function* () {
+      resetState();
+      const client = yield* getClient();
+      const result = yield* client.protected.sources({ params: { scopeId: "org_1" } });
+      expect(result).toEqual({ source: "org_1" });
     }),
   );
 

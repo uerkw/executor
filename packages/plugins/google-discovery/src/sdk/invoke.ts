@@ -1,12 +1,9 @@
 import { Effect, Layer, Option } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "@effect/platform";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import type { PluginCtx, StorageFailure } from "@executor-js/sdk/core";
 
-import {
-  GoogleDiscoveryInvocationError,
-  GoogleDiscoveryOAuthError,
-} from "./errors";
+import { GoogleDiscoveryInvocationError, GoogleDiscoveryOAuthError } from "./errors";
 import type { GoogleDiscoveryStore } from "./binding-store";
 import {
   GoogleDiscoveryInvocationResult,
@@ -134,7 +131,7 @@ const performRequest = Effect.fn("GoogleDiscovery.invoke")(function* (input: {
   }
 
   if (input.hasBody && input.args.body !== undefined) {
-    request = HttpClientRequest.bodyUnsafeJson(request, input.args.body);
+    request = HttpClientRequest.bodyJsonUnsafe(request, input.args.body);
   }
 
   const response = yield* client.execute(request).pipe(
@@ -162,7 +159,7 @@ const performRequest = Effect.fn("GoogleDiscovery.invoke")(function* (input: {
       ? null
       : isJsonContentType(contentType)
         ? yield* response.json.pipe(
-            Effect.catchAll(() => response.text),
+            Effect.catch(() => response.text),
             mapBodyError,
           )
         : yield* response.text.pipe(mapBodyError);
@@ -189,9 +186,7 @@ export const invokeGoogleDiscoveryTool = (input: {
   httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
 }): Effect.Effect<
   GoogleDiscoveryInvocationResult,
-  | GoogleDiscoveryInvocationError
-  | GoogleDiscoveryOAuthError
-  | StorageFailure
+  GoogleDiscoveryInvocationError | GoogleDiscoveryOAuthError | StorageFailure
 > =>
   Effect.gen(function* () {
     const entry = yield* input.ctx.storage.getBinding(input.toolId, input.toolScope);
@@ -216,19 +211,14 @@ export const invokeGoogleDiscoveryTool = (input: {
 
     const authHeader =
       source.auth.kind === "oauth2"
-        ? `Bearer ${yield* input.ctx.connections
-            .accessToken(source.auth.connectionId)
-            .pipe(
-              Effect.mapError(
-                (err) =>
-                  new GoogleDiscoveryOAuthError({
-                    message:
-                      "message" in err
-                        ? (err as { message: string }).message
-                        : String(err),
-                  }),
-              ),
-            )}`
+        ? `Bearer ${yield* input.ctx.connections.accessToken(source.auth.connectionId).pipe(
+            Effect.mapError(
+              (err) =>
+                new GoogleDiscoveryOAuthError({
+                  message: "message" in err ? (err as { message: string }).message : String(err),
+                }),
+            ),
+          )}`
         : undefined;
 
     const layer = input.httpClientLayer ?? FetchHttpClient.layer;
@@ -241,5 +231,9 @@ export const invokeGoogleDiscoveryTool = (input: {
       source,
       args: (input.args ?? {}) as Record<string, unknown>,
       authorizationHeader: authHeader,
-    }).pipe(Effect.provide(layer));
+    }).pipe(Effect.provide(layer)) as Effect.Effect<
+      GoogleDiscoveryInvocationResult,
+      GoogleDiscoveryInvocationError,
+      never
+    >;
   });

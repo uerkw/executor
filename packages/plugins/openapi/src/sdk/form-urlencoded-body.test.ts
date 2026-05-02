@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { FetchHttpClient } from "@effect/platform";
+import { FetchHttpClient } from "effect/unstable/http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -61,7 +61,7 @@ type Captured = {
 
 const startEchoServer = () =>
   Effect.acquireRelease(
-    Effect.async<{ baseUrl: string; captured: Captured; close: () => void }>(
+    Effect.callback<{ baseUrl: string; captured: Captured; close: () => void }>(
       (resume) => {
         const captured: Captured = { contentType: "", body: "" };
         const server = createServer((req, res) => {
@@ -130,7 +130,7 @@ const formSpec = JSON.stringify({
 });
 
 describe("OpenAPI non-JSON request body serialization", () => {
-  it.scoped(
+  it.effect(
     "form-urlencoded object body is properly encoded (no '[object Object]')",
     () =>
       Effect.gen(function* () {

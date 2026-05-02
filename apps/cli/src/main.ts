@@ -29,30 +29,32 @@ const wasmOnDisk = join(execDir, "emscripten-module.wasm");
 if (typeof Bun !== "undefined" && (await Bun.file(wasmOnDisk).exists())) {
   const { setQuickJSModule } = await import("@executor-js/runtime-quickjs");
   const { newQuickJSWASMModule } = await import("quickjs-emscripten");
+  type QuickJSSyncVariant = import("quickjs-emscripten").QuickJSSyncVariant;
   const wasmBinary = await Bun.file(wasmOnDisk).arrayBuffer();
-  const variant = {
-    type: "sync" as const,
-    importFFI: () =>
-      import("@jitl/quickjs-wasmfile-release-sync/ffi").then(
-        (m: Record<string, unknown>) => m.QuickJSFFI,
-      ),
-    importModuleLoader: () =>
-      import("@jitl/quickjs-wasmfile-release-sync/emscripten-module").then(
-        (m: Record<string, unknown>) => {
-          const original = m.default as (...args: unknown[]) => unknown;
-          return (moduleArg: Record<string, unknown> = {}) =>
-            original({ ...moduleArg, wasmBinary });
-        },
-      ),
+  const importFFI: QuickJSSyncVariant["importFFI"] = () =>
+    import("@jitl/quickjs-wasmfile-release-sync/ffi").then(
+      (m) => m.QuickJSFFI,
+    );
+  const importModuleLoader: QuickJSSyncVariant["importModuleLoader"] = async () => {
+    const { default: original } = await import(
+      "@jitl/quickjs-wasmfile-release-sync/emscripten-module"
+    );
+    return (moduleArg = {}) => original({ ...moduleArg, wasmBinary });
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- quickjs-emscripten variant type is not publicly exported
-  const mod = await newQuickJSWASMModule(variant as any);
+  const variant: QuickJSSyncVariant = {
+    type: "sync" as const,
+    importFFI,
+    importModuleLoader,
+  };
+  const mod = await newQuickJSWASMModule(variant);
   setQuickJSModule(mod);
 }
 
-import { Command, Options, Args } from "@effect/cli";
-import { BunContext, BunRuntime } from "@effect/platform-bun";
-import { FetchHttpClient, FileSystem, HttpApiClient, Path as PlatformPath } from "@effect/platform";
+import { Argument as Args, Command, Flag as Options } from "effect/unstable/cli";
+import { BunRuntime, BunServices } from "@effect/platform-bun";
+import { HttpApiClient } from "effect/unstable/httpapi";
+import { FetchHttpClient } from "effect/unstable/http";
+import { FileSystem, Path as PlatformPath } from "effect";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
@@ -106,7 +108,6 @@ import embeddedWebUI from "./embedded-web-ui.gen";
 // Constants
 // ---------------------------------------------------------------------------
 
-const CLI_NAME = "executor";
 const { version: CLI_VERSION } = await import("../package.json");
 const DEFAULT_PORT = 4788;
 const DEFAULT_BASE_URL = `http://localhost:${DEFAULT_PORT}`;
@@ -119,7 +120,7 @@ const DAEMON_STOP_TIMEOUT_MS = 10_000;
 // ---------------------------------------------------------------------------
 
 const waitForShutdownSignal = () =>
-  Effect.async<void, never>((resume) => {
+  Effect.callback<void, never>((resume) => {
     const shutdown = () => resume(Effect.void);
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
@@ -137,7 +138,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isServerReachable = (baseUrl: string): Effect.Effect<boolean> =>
-  Effect.tryPromise(() => fetch(`${baseUrl}/api/scope`, { signal: AbortSignal.timeout(2000) })).pipe(
+  Effect.tryPromise(() =>
+    fetch(`${baseUrl}/api/scope`, { signal: AbortSignal.timeout(2000) }),
+  ).pipe(
     Effect.flatMap((res) => {
       if (!res.ok) return Effect.succeed(false);
       return Effect.tryPromise(() => res.json()).pipe(
@@ -149,10 +152,10 @@ const isServerReachable = (baseUrl: string): Effect.Effect<boolean> =>
             typeof payload.dir === "string"
           );
         }),
-        Effect.catchAll(() => Effect.succeed(false)),
+        Effect.catchCause(() => Effect.succeed(false)),
       );
     }),
-    Effect.catchAll(() => Effect.succeed(false)),
+    Effect.catchCause(() => Effect.succeed(false)),
   );
 
 const script = process.argv[1];
@@ -174,7 +177,9 @@ const daemonBaseUrl = (hostname: string, port: number): string =>
 
 const cleanupPointer = (input: { hostname: string; scopeId: string; port: number }) =>
   Effect.gen(function* () {
-    yield* removeDaemonPointer({ hostname: input.hostname, scopeId: input.scopeId }).pipe(Effect.ignore);
+    yield* removeDaemonPointer({ hostname: input.hostname, scopeId: input.scopeId }).pipe(
+      Effect.ignore,
+    );
     yield* removeDaemonRecord({ hostname: input.hostname, port: input.port }).pipe(Effect.ignore);
   });
 
@@ -361,7 +366,9 @@ const stopDaemon = (
           ),
         );
       }
-      console.log(`No daemon running at ${target.baseUrl} (removed stale record for pid ${record.pid}).`);
+      console.log(
+        `No daemon running at ${target.baseUrl} (removed stale record for pid ${record.pid}).`,
+      );
       return;
     }
 
@@ -455,9 +462,7 @@ const printExecutionOutcome = (input: { baseUrl: string; outcome: ExecuteCodeOut
           }
           const template = buildResumeContentTemplate(requestedSchema);
           console.log("\nResume commands:");
-          console.log(
-            `  ${commandPrefix} --action accept --content '${JSON.stringify(template)}'`,
-          );
+          console.log(`  ${commandPrefix} --action accept --content '${JSON.stringify(template)}'`);
           console.log(`  ${commandPrefix} --action decline`);
           console.log(`  ${commandPrefix} --action cancel`);
         } else {
@@ -663,7 +668,7 @@ const runStdioMcpSession = () =>
     );
   });
 
-const scope = Options.text("scope").pipe(
+const scope = Options.string("scope").pipe(
   Options.optional,
   Options.withDescription("Path to workspace directory containing executor.jsonc"),
 );
@@ -673,10 +678,9 @@ const applyScope = (s: Option.Option<string>) => {
   if (dir) process.env.EXECUTOR_SCOPE_DIR = resolve(dir);
 };
 
-const parseOptionalJsonObject = (raw: string | undefined): Effect.Effect<
-  Record<string, unknown> | undefined,
-  Error
-> =>
+const parseOptionalJsonObject = (
+  raw: string | undefined,
+): Effect.Effect<Record<string, unknown> | undefined, Error> =>
   raw === undefined
     ? Effect.succeed(undefined)
     : parseJsonObjectInput(raw).pipe(
@@ -883,13 +887,18 @@ const printCallBrowseHelp = (input: {
     }
     if (input.children.length < input.totalChildren || input.limit) {
       const suffix = input.limit ? ` (limit ${input.limit})` : "";
-      console.log(`Showing ${input.children.length} of ${input.totalChildren} subcommands${suffix}.`);
+      console.log(
+        `Showing ${input.children.length} of ${input.totalChildren} subcommands${suffix}.`,
+      );
     }
 
     const rows = input.children.map((child) => {
       const kind =
         child.invokable && child.hasChildren ? "tool+group" : child.invokable ? "tool" : "group";
-      return { name: child.segment, meta: `${kind}, ${child.toolCount} path${child.toolCount === 1 ? "" : "s"}` };
+      return {
+        name: child.segment,
+        meta: `${kind}, ${child.toolCount} path${child.toolCount === 1 ? "" : "s"}`,
+      };
     });
 
     const width = rows.reduce((max, row) => Math.max(max, row.name.length), 0);
@@ -956,14 +965,16 @@ const applyCallHelpChildFilters = (input: {
   };
 };
 
-const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileSystem.FileSystem | PlatformPath.Path> =>
+const runCallHelp = (
+  args: ParsedCallHelpArgs,
+): Effect.Effect<void, Error, FileSystem.FileSystem | PlatformPath.Path> =>
   Effect.gen(function* () {
     if (args.scopeDir) process.env.EXECUTOR_SCOPE_DIR = resolve(args.scopeDir);
 
     const daemonUrl = yield* ensureDaemon(args.baseUrl);
     const client = yield* makeApiClient(daemonUrl);
     const scopeInfo = yield* client.scope.info();
-    const tools = yield* client.tools.list({ path: { scopeId: scopeInfo.id } });
+    const tools = yield* client.tools.list({ params: { scopeId: scopeInfo.id } });
     const toolPaths = tools.map((tool) => tool.id);
 
     const inspection = yield* Effect.try({
@@ -1036,7 +1047,7 @@ const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileS
     if (exactTool && inspection.children.length === 0) {
       const schema = yield* client.tools
         .schema({
-          path: {
+          params: {
             scopeId: scopeInfo.id,
             toolId: exactTool.id,
           },
@@ -1046,7 +1057,7 @@ const runCallHelp = (args: ParsedCallHelpArgs): Effect.Effect<void, Error, FileS
             inputTypeScript: result.inputTypeScript,
             outputTypeScript: result.outputTypeScript,
           })),
-          Effect.catchAll(() => Effect.succeed(undefined)),
+          Effect.catchCause(() => Effect.succeed(undefined)),
         );
 
       yield* printCallLeafHelp({
@@ -1091,7 +1102,9 @@ const resolveToolInvocation = (input: {
 
     if (pathParts.some((part) => part.trim().startsWith("-"))) {
       return yield* Effect.fail(
-        new Error("Tool invocation no longer accepts flags. Use: executor call <path...> '{...json...}'"),
+        new Error(
+          "Tool invocation no longer accepts flags. Use: executor call <path...> '{...json...}'",
+        ),
       );
     }
 
@@ -1111,8 +1124,8 @@ const resolveToolInvocation = (input: {
 const callCommand = Command.make(
   "call",
   {
-    pathParts: Args.text({ name: "tool-path-segment" }).pipe(Args.repeated),
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    pathParts: Args.variadic(Args.string("tool-path-segment")),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ pathParts, baseUrl, scope }) =>
@@ -1132,25 +1145,25 @@ const callCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Invoke a tool path (e.g. `executor call github issues create '{\"title\":\"Hi\"}'`). Use `--help` to browse by namespace/path (`--match`, `--limit`).",
+    'Invoke a tool path (e.g. `executor call github issues create \'{"title":"Hi"}\'`). Use `--help` to browse by namespace/path (`--match`, `--limit`).',
   ),
 );
 
 const resumeCommand = Command.make(
   "resume",
   {
-    executionId: Options.text("execution-id").pipe(
+    executionId: Options.string("execution-id").pipe(
       Options.withDescription("Execution ID returned by a paused call"),
     ),
     action: Options.choice("action", ["accept", "decline", "cancel"] as const).pipe(
       Options.withDefault("accept"),
       Options.withDescription("Interaction response action"),
     ),
-    content: Options.text("content").pipe(
+    content: Options.string("content").pipe(
       Options.optional,
       Options.withDescription("JSON object to send when action=accept"),
     ),
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ executionId, action, content, baseUrl, scope }) =>
@@ -1162,7 +1175,7 @@ const resumeCommand = Command.make(
 
       const client = yield* makeApiClient(daemonUrl);
       const result = yield* client.executions.resume({
-        path: { executionId },
+        params: { executionId },
         payload: { action, content: contentObj },
       });
 
@@ -1188,10 +1201,10 @@ const resumeCommand = Command.make(
 const toolsSearchCommand = Command.make(
   "search",
   {
-    query: Args.text({ name: "query" }),
-    namespace: Options.text("namespace").pipe(Options.optional),
+    query: Args.string("query"),
+    namespace: Options.string("namespace").pipe(Options.optional),
     limit: Options.integer("limit").pipe(Options.withDefault(12)),
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ query, namespace, limit, baseUrl, scope }) =>
@@ -1211,9 +1224,9 @@ const toolsSearchCommand = Command.make(
 const toolsSourcesCommand = Command.make(
   "sources",
   {
-    query: Options.text("query").pipe(Options.optional),
+    query: Options.string("query").pipe(Options.optional),
     limit: Options.integer("limit").pipe(Options.withDefault(50)),
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ query, limit, baseUrl, scope }) =>
@@ -1232,8 +1245,8 @@ const toolsSourcesCommand = Command.make(
 const toolsDescribeCommand = Command.make(
   "describe",
   {
-    path: Args.text({ name: "path" }),
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    path: Args.string("path"),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ path, baseUrl, scope }) =>
@@ -1246,9 +1259,7 @@ const toolsDescribeCommand = Command.make(
 ).pipe(Command.withDescription("Describe a tool's TypeScript and JSON schema"));
 
 const toolsCommand = Command.make("tools").pipe(
-  Command.withSubcommands(
-    [toolsSearchCommand, toolsSourcesCommand, toolsDescribeCommand] as const,
-  ),
+  Command.withSubcommands([toolsSearchCommand, toolsSourcesCommand, toolsDescribeCommand] as const),
   Command.withDescription("Discover available tools and sources"),
 );
 
@@ -1256,11 +1267,11 @@ const webCommand = Command.make(
   "web",
   {
     port: Options.integer("port").pipe(Options.withDefault(DEFAULT_PORT)),
-    hostname: Options.text("hostname")
+    hostname: Options.string("hostname")
       .pipe(Options.withDefault("127.0.0.1"))
       .pipe(Options.withDescription("Bind address. Use 0.0.0.0 to listen on all interfaces.")),
-    allowedHost: Options.text("allowed-host")
-      .pipe(Options.repeated)
+    allowedHost: Options.string("allowed-host")
+      .pipe(Options.atLeast(0))
       .pipe(
         Options.withDescription(
           "Additional hostname permitted in the Host header (repeatable). localhost/127.0.0.1 are always allowed.",
@@ -1279,11 +1290,11 @@ const daemonRunCommand = Command.make(
   "run",
   {
     port: Options.integer("port").pipe(Options.withDefault(DEFAULT_PORT)),
-    hostname: Options.text("hostname")
+    hostname: Options.string("hostname")
       .pipe(Options.withDefault("127.0.0.1"))
       .pipe(Options.withDescription("Bind address. Keep this local unless you trust the network.")),
-    allowedHost: Options.text("allowed-host")
-      .pipe(Options.repeated)
+    allowedHost: Options.string("allowed-host")
+      .pipe(Options.atLeast(0))
       .pipe(
         Options.withDescription(
           "Additional hostname permitted in the Host header (repeatable). localhost/127.0.0.1 are always allowed.",
@@ -1312,7 +1323,7 @@ const daemonRunCommand = Command.make(
 const daemonStatusCommand = Command.make(
   "status",
   {
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
   },
   ({ baseUrl }) =>
     Effect.gen(function* () {
@@ -1336,7 +1347,9 @@ const daemonStatusCommand = Command.make(
       if (!isPidAlive(record.pid)) {
         if (!reachable) {
           yield* removeDaemonRecord({ hostname: host, port: target.port });
-          yield* removeDaemonPointer({ hostname: host, scopeId: target.scopeId }).pipe(Effect.ignore);
+          yield* removeDaemonPointer({ hostname: host, scopeId: target.scopeId }).pipe(
+            Effect.ignore,
+          );
           console.log(
             `Daemon not running at ${target.baseUrl} (removed stale record for pid ${record.pid}).`,
           );
@@ -1362,7 +1375,7 @@ const daemonStatusCommand = Command.make(
 const daemonStopCommand = Command.make(
   "stop",
   {
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
   },
   ({ baseUrl }) => stopDaemon(baseUrl),
 ).pipe(Command.withDescription("Stop the local daemon"));
@@ -1370,7 +1383,7 @@ const daemonStopCommand = Command.make(
 const daemonRestartCommand = Command.make(
   "restart",
   {
-    baseUrl: Options.text("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
+    baseUrl: Options.string("base-url").pipe(Options.withDefault(DEFAULT_BASE_URL)),
     scope,
   },
   ({ baseUrl, scope }) =>
@@ -1383,9 +1396,12 @@ const daemonRestartCommand = Command.make(
 ).pipe(Command.withDescription("Restart the local daemon"));
 
 const daemonCommand = Command.make("daemon").pipe(
-  Command.withSubcommands(
-    [daemonRunCommand, daemonStatusCommand, daemonStopCommand, daemonRestartCommand] as const,
-  ),
+  Command.withSubcommands([
+    daemonRunCommand,
+    daemonStatusCommand,
+    daemonStopCommand,
+    daemonRestartCommand,
+  ] as const),
   Command.withDescription("Manage the local daemon"),
 );
 
@@ -1401,9 +1417,14 @@ const mcpCommand = Command.make("mcp", { scope }, ({ scope }) =>
 // ---------------------------------------------------------------------------
 
 const root = Command.make("executor").pipe(
-  Command.withSubcommands(
-    [callCommand, resumeCommand, toolsCommand, webCommand, daemonCommand, mcpCommand] as const,
-  ),
+  Command.withSubcommands([
+    callCommand,
+    resumeCommand,
+    toolsCommand,
+    webCommand,
+    daemonCommand,
+    mcpCommand,
+  ] as const),
   Command.withDescription("Executor local CLI"),
 );
 
@@ -1412,9 +1433,7 @@ const root = Command.make("executor").pipe(
 // ---------------------------------------------------------------------------
 
 const runCli = Command.run(root, {
-  name: CLI_NAME,
   version: CLI_VERSION,
-  executable: CLI_NAME,
 });
 
 if (process.argv.includes("-v")) {
@@ -1425,18 +1444,19 @@ if (process.argv.includes("-v")) {
 const isCallHelpInvocation =
   process.argv[2] === "call" && process.argv.slice(3).some((arg) => isHelpFlag(arg));
 
-const program = (isCallHelpInvocation
-  ? Effect.gen(function* () {
-      const args = yield* Effect.try({
-        try: () => parseCallHelpArgs(process.argv.slice(3)),
-        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-      });
-      yield* runCallHelp(args);
-    })
-  : runCli(process.argv)
+const program = (
+  isCallHelpInvocation
+    ? Effect.gen(function* () {
+        const args = yield* Effect.try({
+          try: () => parseCallHelpArgs(process.argv.slice(3)),
+          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+        });
+        yield* runCallHelp(args);
+      })
+    : runCli
 ).pipe(
-  Effect.provide(BunContext.layer),
-  Effect.catchAllCause((cause) =>
+  Effect.provide(BunServices.layer),
+  Effect.catchCause((cause) =>
     Effect.sync(() => {
       if (shouldPrintVerboseErrors(process.argv)) {
         console.error(Cause.pretty(cause));

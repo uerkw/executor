@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAtomSet } from "@effect-atom/atom-react";
+import { useAtomSet } from "@effect/atom-react";
 import { Option } from "effect";
 
 import { ConnectionId, ScopeId, SecretId } from "@executor-js/sdk/core";
@@ -374,7 +374,7 @@ export default function AddOpenApiSource(props: {
     try {
       const credentials = serializeHttpCredentials(specFetchCredentials);
       const result = await doPreview({
-        path: { scopeId },
+        params: { scopeId },
         payload: {
           spec: specUrl,
           specFetchCredentials: credentials,
@@ -482,7 +482,7 @@ export default function AddOpenApiSource(props: {
         setStartingOAuth(true);
         const connectionId = openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow);
         const response = await doStartOAuth({
-          path: { scopeId },
+          params: { scopeId },
           payload: {
             endpoint: tokenUrl,
             redirectUrl: tokenUrl,
@@ -531,7 +531,7 @@ export default function AddOpenApiSource(props: {
       await oauth.openAuthorization({
         run: async () => {
           const response = await doStartOAuth({
-            path: { scopeId },
+            params: { scopeId },
             payload: {
               endpoint: authorizationUrl,
               connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
@@ -619,7 +619,7 @@ export default function AddOpenApiSource(props: {
     });
     try {
       const result = await doAdd({
-        path: { scopeId },
+        params: { scopeId },
         payload: {
           spec: specUrl,
           specFetchCredentials: serializeHttpCredentials(specFetchCredentials),
@@ -641,7 +641,7 @@ export default function AddOpenApiSource(props: {
 
       for (const binding of headerBindings) {
         await doSetBinding({
-          path: { scopeId },
+          params: { scopeId },
           payload: {
             sourceId,
             sourceScope,
@@ -658,7 +658,7 @@ export default function AddOpenApiSource(props: {
 
       if (configuredOAuth2 && oauth2ClientIdSecretId) {
         await doSetBinding({
-          path: { scopeId },
+          params: { scopeId },
           payload: {
             sourceId,
             sourceScope,
@@ -675,7 +675,7 @@ export default function AddOpenApiSource(props: {
 
       if (configuredOAuth2?.clientSecretSlot && oauth2ClientSecretSecretId) {
         await doSetBinding({
-          path: { scopeId },
+          params: { scopeId },
           payload: {
             sourceId,
             sourceScope,
@@ -692,7 +692,7 @@ export default function AddOpenApiSource(props: {
 
       if (configuredOAuth2 && oauth2Auth) {
         await doSetBinding({
-          path: { scopeId },
+          params: { scopeId },
           payload: {
             sourceId,
             sourceScope,

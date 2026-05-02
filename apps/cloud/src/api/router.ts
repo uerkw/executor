@@ -1,39 +1,56 @@
-import { HttpApp, HttpRouter } from "@effect/platform";
-import { Context, Effect } from "effect";
+import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { Context, Effect, Scope } from "effect";
+
+export type ApiRouteApp = Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  unknown,
+  HttpServerRequest.HttpServerRequest | Scope.Scope
+>;
 
 type RequestAppService = {
-  readonly app: HttpApp.Default;
+  readonly app: ApiRouteApp;
 };
 
-export class OrgRequestHandlerService extends Context.Tag(
+export class OrgRequestHandlerService extends Context.Service<OrgRequestHandlerService, RequestAppService>()(
   "@executor-js/cloud/OrgRequestHandlerService",
-)<OrgRequestHandlerService, RequestAppService>() {}
+) {}
 
-export class NonProtectedRequestHandlerService extends Context.Tag(
+export class NonProtectedRequestHandlerService extends Context.Service<NonProtectedRequestHandlerService, RequestAppService>()(
   "@executor-js/cloud/NonProtectedRequestHandlerService",
-)<NonProtectedRequestHandlerService, RequestAppService>() {}
+) {}
 
-export class AutumnRequestHandlerService extends Context.Tag(
+export class AutumnRequestHandlerService extends Context.Service<AutumnRequestHandlerService, RequestAppService>()(
   "@executor-js/cloud/AutumnRequestHandlerService",
-)<AutumnRequestHandlerService, RequestAppService>() {}
+) {}
 
-export class ProtectedRequestHandlerService extends Context.Tag(
+export class ProtectedRequestHandlerService extends Context.Service<ProtectedRequestHandlerService, RequestAppService>()(
   "@executor-js/cloud/ProtectedRequestHandlerService",
-)<ProtectedRequestHandlerService, RequestAppService>() {}
+) {}
 
 export const ApiRouterApp = Effect.gen(function* () {
   const org = yield* OrgRequestHandlerService;
   const nonProtected = yield* NonProtectedRequestHandlerService;
   const autumn = yield* AutumnRequestHandlerService;
   const protectedHandler = yield* ProtectedRequestHandlerService;
+  const asRouteApp = (app: ApiRouteApp) => {
+    const webHandler = HttpEffect.toWebHandler(app);
+    return HttpEffect.fromWebHandler((request) => webHandler(request)).pipe(
+      Effect.catchCause(() =>
+        Effect.succeed(HttpServerResponse.text("Internal Server Error", { status: 500 })),
+      ),
+    );
+  };
 
-  return yield* HttpRouter.empty.pipe(
-    HttpRouter.mountApp("/org", org.app, { includePrefix: true }),
-    HttpRouter.mountApp("/auth", nonProtected.app, { includePrefix: true }),
-    HttpRouter.mountApp("/autumn", autumn.app, { includePrefix: true }),
-    HttpRouter.mountApp("/", protectedHandler.app),
-    HttpRouter.toHttpApp,
-  );
+  const router = yield* HttpRouter.make;
+  yield* router.add("*", "/org/*", asRouteApp(org.app));
+  yield* router.add("*", "/auth/*", asRouteApp(nonProtected.app));
+  yield* router.add("*", "/autumn/*", asRouteApp(autumn.app));
+  yield* router.add("*", "/scope", asRouteApp(protectedHandler.app));
+  yield* router.add("*", "/scopes/*", asRouteApp(protectedHandler.app));
+  yield* router.add("*", "/executions/*", asRouteApp(protectedHandler.app));
+  yield* router.add("*", "/oauth/*", asRouteApp(protectedHandler.app));
+
+  return router.asHttpEffect();
 });
 
-export const ApiRequestHandler = Effect.map(ApiRouterApp, HttpApp.toWebHandler);
+export const ApiRequestHandler = ApiRouterApp;

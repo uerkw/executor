@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { useAtomSet, useAtomValue, Result } from "@effect-atom/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 
 import { connectionsAtom } from "@executor-js/react/api/atoms";
 import { useScope } from "@executor-js/react/api/scope-context";
@@ -37,14 +38,15 @@ export default function GoogleDiscoverySignInButton(props: { sourceId: string })
     popupClosedMessage: "OAuth cancelled: popup was closed before completing the flow.",
   });
 
-  const source = Result.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
+  const source =
+    AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
   const auth = source?.config.auth;
   const oauth2 = auth && auth.kind === "oauth2" ? auth : null;
-  const connections = Result.isSuccess(connectionsResult) ? connectionsResult.value : null;
+  const connections = AsyncResult.isSuccess(connectionsResult) ? connectionsResult.value : null;
   const isConnected =
     oauth2 !== null &&
     connections !== null &&
-    connections.some((c) => c.id === oauth2.connectionId);
+    connections.some((c: { readonly id: string }) => c.id === oauth2.connectionId);
 
   const handleSignIn = useCallback(async () => {
     if (!oauth2 || !source) return;
@@ -64,7 +66,7 @@ export default function GoogleDiscoverySignInButton(props: { sourceId: string })
       },
       onSuccess: async (result: OAuthCompletionPayload) => {
         await doUpdate({
-          path: { scopeId, namespace: props.sourceId },
+          params: { scopeId, namespace: props.sourceId },
           payload: {
             auth: {
               kind: "oauth2",

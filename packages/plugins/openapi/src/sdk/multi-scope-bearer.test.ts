@@ -19,16 +19,9 @@
 
 import { expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import {
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpClient,
-  HttpServerRequest,
-  OpenApi,
-} from "@effect/platform";
-import { NodeHttpServer } from "@effect/platform-node";
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { HttpClient, HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
 import {
   collectSchemas,
@@ -59,7 +52,7 @@ class EchoHeaders extends Schema.Class<EchoHeaders>("EchoHeaders")({
 }) {}
 
 const ProjectsGroup = HttpApiGroup.make("projects").add(
-  HttpApiEndpoint.get("list", "/v9/projects").addSuccess(EchoHeaders),
+  HttpApiEndpoint.get("list", "/v9/projects", { success: EchoHeaders }),
 );
 
 const VercelApi = HttpApi.make("vercelApi").add(ProjectsGroup);
@@ -76,10 +69,9 @@ const ProjectsGroupLive = HttpApiBuilder.group(VercelApi, "projects", (handlers)
   ),
 );
 
-const ApiLive = HttpApiBuilder.api(VercelApi).pipe(Layer.provide(ProjectsGroupLive));
+const ApiLive = HttpApiBuilder.layer(VercelApi).pipe(Layer.provide(ProjectsGroupLive));
 
-const TestLayer = HttpApiBuilder.serve().pipe(
-  Layer.provide(ApiLive),
+const TestLayer = HttpRouter.serve(ApiLive, { disableListenLog: true, disableLogger: true }).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
 );
 
@@ -118,6 +110,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
 
         const httpClient = yield* HttpClient.HttpClient;
         const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const baseUrl = "";
         const plugins = [
           openApiPlugin({ httpClientLayer: clientLayer }),
           memorySecretsPlugin(),
@@ -179,7 +172,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
           spec: specJson,
           scope: orgScope.id as string,
           namespace: "vercel",
-          baseUrl: "",
+          baseUrl,
           headers: {
             Authorization: {
               secretId: "vercel_api_token",
@@ -240,15 +233,15 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
         // -------------------------------------------------------------
         const aliceRows = yield* aliceExec.secrets.list();
         const aliceToken = aliceRows.find(
-          (r) => (r.id as unknown as string) === "vercel_api_token",
+          (r) => String(r.id) === "vercel_api_token",
         );
-        expect(aliceToken?.scopeId as unknown as string).toBe("user-alice");
+        expect(String(aliceToken?.scopeId)).toBe("user-alice");
 
         const bobRows = yield* bobExec.secrets.list();
         const bobToken = bobRows.find(
-          (r) => (r.id as unknown as string) === "vercel_api_token",
+          (r) => String(r.id) === "vercel_api_token",
         );
-        expect(bobToken?.scopeId as unknown as string).toBe("user-bob");
+        expect(String(bobToken?.scopeId)).toBe("user-bob");
 
         // Admin's scope never received a token — `get` at the org
         // scope yields null and the source is effectively unusable
@@ -261,13 +254,13 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
         //    bob's token row, and vice versa.
         // -------------------------------------------------------------
         const aliceIds = new Set(
-          aliceRows.map((r) => `${r.scopeId as unknown as string}:${r.id as unknown as string}`),
+          aliceRows.map((r) => `${String(r.scopeId)}:${String(r.id)}`),
         );
         expect(aliceIds).toContain("user-alice:vercel_api_token");
         expect(aliceIds).not.toContain("user-bob:vercel_api_token");
 
         const bobIds = new Set(
-          bobRows.map((r) => `${r.scopeId as unknown as string}:${r.id as unknown as string}`),
+          bobRows.map((r) => `${String(r.scopeId)}:${String(r.id)}`),
         );
         expect(bobIds).toContain("user-bob:vercel_api_token");
         expect(bobIds).not.toContain("user-alice:vercel_api_token");
@@ -300,6 +293,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
 
         const httpClient = yield* HttpClient.HttpClient;
         const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const baseUrl = "";
         const plugins = [
           openApiPlugin({ httpClientLayer: clientLayer }),
           memorySecretsPlugin(),
@@ -352,7 +346,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
           spec: specJson,
           scope: orgScope.id as string,
           namespace: "vercel",
-          baseUrl: "",
+          baseUrl,
           headers: {
             Authorization: new ConfiguredHeaderBinding({
               kind: "binding",
@@ -448,6 +442,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
 
         const httpClient = yield* HttpClient.HttpClient;
         const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const baseUrl = "";
         const plugins = [
           openApiPlugin({ httpClientLayer: clientLayer }),
           memorySecretsPlugin(),
@@ -488,7 +483,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
           spec: specJson,
           scope: orgScope.id as string,
           namespace: "vercel",
-          baseUrl: "",
+          baseUrl,
           headers: {
             Authorization: new ConfiguredHeaderBinding({
               kind: "binding",
@@ -589,7 +584,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
           spec: specJson,
           scope: orgScope.id as string,
           namespace: "vercel",
-          baseUrl: "",
+          baseUrl,
           headers: {
             Authorization: new ConfiguredHeaderBinding({
               kind: "binding",
@@ -706,6 +701,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
 
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const baseUrl = "";
       const plugins = [
         openApiPlugin({ httpClientLayer: clientLayer }),
         memorySecretsPlugin(),
@@ -745,7 +741,7 @@ layer(TestLayer)("OpenAPI multi-scope bearer (Vercel-style)", (it) => {
         spec: specJson,
         scope: orgScope.id as string,
         namespace: "vercel",
-        baseUrl: "",
+        baseUrl,
         headers: {
           Authorization: new ConfiguredHeaderBinding({
             kind: "binding",

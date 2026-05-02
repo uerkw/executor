@@ -1,11 +1,6 @@
-import {
-  PolicyId,
-  type ScopeId,
-  type ToolId,
-  type SecretId,
-  type ToolPolicyAction,
-} from "@executor-js/sdk";
-import { Atom, Result } from "@effect-atom/atom-react";
+import { PolicyId, type ScopeId, type ToolId, type SecretId } from "@executor-js/sdk";
+import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 
 import { ExecutorApiClient } from "./client";
 import { ReactivityKey } from "./reactivity-keys";
@@ -25,7 +20,7 @@ export const scopeAtom = ExecutorApiClient.query("scope", "info", {
 
 export const toolsAtom = (scopeId: ScopeId) =>
   ExecutorApiClient.query("tools", "list", {
-    path: { scopeId },
+    params: { scopeId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.tools],
   });
@@ -33,21 +28,21 @@ export const toolsAtom = (scopeId: ScopeId) =>
 /** Tools for a specific source */
 export const sourceToolsAtom = (sourceId: string, scopeId: ScopeId) =>
   ExecutorApiClient.query("sources", "tools", {
-    path: { scopeId, sourceId },
+    params: { scopeId, sourceId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.tools],
   });
 
 export const toolSchemaAtom = (scopeId: ScopeId, toolId: ToolId) =>
   ExecutorApiClient.query("tools", "schema", {
-    path: { scopeId, toolId },
+    params: { scopeId, toolId },
     timeToLive: "1 minute",
     reactivityKeys: [ReactivityKey.tools],
   });
 
 export const sourcesAtom = (scopeId: ScopeId) =>
   ExecutorApiClient.query("sources", "list", {
-    path: { scopeId },
+    params: { scopeId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.sources],
   });
@@ -58,28 +53,28 @@ export const sourceAtom = (sourceId: string, scopeId: ScopeId) =>
 
 export const secretsAtom = (scopeId: ScopeId) =>
   ExecutorApiClient.query("secrets", "list", {
-    path: { scopeId },
+    params: { scopeId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.secrets],
   });
 
 export const secretStatusAtom = (scopeId: ScopeId, secretId: SecretId) =>
   ExecutorApiClient.query("secrets", "status", {
-    path: { scopeId, secretId },
+    params: { scopeId, secretId },
     timeToLive: "15 seconds",
     reactivityKeys: [ReactivityKey.secrets],
   });
 
 export const connectionsAtom = (scopeId: ScopeId) =>
   ExecutorApiClient.query("connections", "list", {
-    path: { scopeId },
+    params: { scopeId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.connections],
   });
 
 export const policiesAtom = (scopeId: ScopeId) =>
   ExecutorApiClient.query("policies", "list", {
-    path: { scopeId },
+    params: { scopeId },
     timeToLive: "30 seconds",
     reactivityKeys: [ReactivityKey.policies],
   });
@@ -94,10 +89,7 @@ export const setSecret = ExecutorApiClient.mutation("secrets", "set");
 
 export const removeSecret = ExecutorApiClient.mutation("secrets", "remove");
 
-export const removeConnection = ExecutorApiClient.mutation(
-  "connections",
-  "remove",
-);
+export const removeConnection = ExecutorApiClient.mutation("connections", "remove");
 
 export const removeSource = ExecutorApiClient.mutation("sources", "remove");
 
@@ -143,23 +135,10 @@ export const policiesOptimisticAtom = Atom.family((scopeId: ScopeId) =>
 export const createPolicyOptimistic = Atom.family((scopeId: ScopeId) =>
   policiesOptimisticAtom(scopeId).pipe(
     Atom.optimisticFn({
-      reducer: (
-        current,
-        arg: {
-          path: { scopeId: ScopeId };
-          payload: {
-            pattern: string;
-            action: ToolPolicyAction;
-            position?: string;
-          };
-          reactivityKeys?: ReadonlyArray<unknown>;
-        },
-      ) =>
-        Result.map(current, (rows) => [
+      reducer: (current, arg) =>
+        AsyncResult.map(current, (rows) => [
           {
-            id: PolicyId.make(
-              `pending-${Math.random().toString(36).slice(2)}`,
-            ),
+            id: PolicyId.make(`pending-${Math.random().toString(36).slice(2)}`),
             scopeId,
             pattern: arg.payload.pattern,
             action: arg.payload.action,
@@ -180,32 +159,15 @@ export const createPolicyOptimistic = Atom.family((scopeId: ScopeId) =>
 export const updatePolicyOptimistic = Atom.family((_scopeId: ScopeId) =>
   policiesOptimisticAtom(_scopeId).pipe(
     Atom.optimisticFn({
-      reducer: (
-        current,
-        arg: {
-          path: { scopeId: ScopeId; policyId: PolicyId };
-          payload: {
-            pattern?: string;
-            action?: ToolPolicyAction;
-            position?: string;
-          };
-          reactivityKeys?: ReadonlyArray<unknown>;
-        },
-      ) =>
-        Result.map(current, (rows) =>
+      reducer: (current, arg) =>
+        AsyncResult.map(current, (rows) =>
           rows.map((r) =>
-            r.id === arg.path.policyId
+            r.id === arg.params.policyId
               ? {
                   ...r,
-                  ...(arg.payload.action !== undefined
-                    ? { action: arg.payload.action }
-                    : {}),
-                  ...(arg.payload.pattern !== undefined
-                    ? { pattern: arg.payload.pattern }
-                    : {}),
-                  ...(arg.payload.position !== undefined
-                    ? { position: arg.payload.position }
-                    : {}),
+                  ...(arg.payload.action !== undefined ? { action: arg.payload.action } : {}),
+                  ...(arg.payload.pattern !== undefined ? { pattern: arg.payload.pattern } : {}),
+                  ...(arg.payload.position !== undefined ? { position: arg.payload.position } : {}),
                 }
               : r,
           ),
@@ -218,16 +180,8 @@ export const updatePolicyOptimistic = Atom.family((_scopeId: ScopeId) =>
 export const removePolicyOptimistic = Atom.family((scopeId: ScopeId) =>
   policiesOptimisticAtom(scopeId).pipe(
     Atom.optimisticFn({
-      reducer: (
-        current,
-        arg: {
-          path: { scopeId: ScopeId; policyId: PolicyId };
-          reactivityKeys?: ReadonlyArray<unknown>;
-        },
-      ) =>
-        Result.map(current, (rows) =>
-          rows.filter((r) => r.id !== arg.path.policyId),
-        ),
+      reducer: (current, arg) =>
+        AsyncResult.map(current, (rows) => rows.filter((r) => r.id !== arg.params.policyId)),
       fn: removePolicy,
     }),
   ),

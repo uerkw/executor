@@ -1,4 +1,4 @@
-import { HttpApiBuilder } from "@effect/platform";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Context, Effect } from "effect";
 
 import { addGroup, capture } from "@executor-js/api";
@@ -9,6 +9,7 @@ import type {
   McpUpdateSourceInput,
 } from "../sdk/plugin";
 import type { SecretBackedValue } from "../sdk/types";
+import { McpStoredSourceSchema } from "../sdk/stored-source";
 import { McpGroup } from "./group";
 
 // ---------------------------------------------------------------------------
@@ -19,10 +20,8 @@ import { McpGroup } from "./group";
 // (no `Captured<>` inversion).
 // ---------------------------------------------------------------------------
 
-export class McpExtensionService extends Context.Tag("McpExtensionService")<
-  McpExtensionService,
-  McpPluginExtension
->() {}
+export class McpExtensionService extends Context.Service<McpExtensionService, McpPluginExtension
+>()("McpExtensionService") {}
 
 // ---------------------------------------------------------------------------
 // Composed API
@@ -107,7 +106,7 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
         }),
       ),
     )
-    .handle("addSource", ({ path, payload }) =>
+    .handle("addSource", ({ params: path, payload }) =>
       capture(
         Effect.gen(function* () {
           const ext = yield* McpExtensionService;
@@ -117,7 +116,7 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
         }),
       ),
     )
-    .handle("removeSource", ({ path, payload }) =>
+    .handle("removeSource", ({ params: path, payload }) =>
       capture(
         Effect.gen(function* () {
           const ext = yield* McpExtensionService;
@@ -126,7 +125,7 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
         }),
       ),
     )
-    .handle("refreshSource", ({ path, payload }) =>
+    .handle("refreshSource", ({ params: path, payload }) =>
       capture(
         Effect.gen(function* () {
           const ext = yield* McpExtensionService;
@@ -134,15 +133,22 @@ export const McpHandlers = HttpApiBuilder.group(ExecutorApiWithMcp, "mcp", (hand
         }),
       ),
     )
-    .handle("getSource", ({ path }) =>
+    .handle("getSource", ({ params: path }) =>
       capture(
         Effect.gen(function* () {
           const ext = yield* McpExtensionService;
-          return yield* ext.getSource(path.namespace, path.scopeId);
+          const source = yield* ext.getSource(path.namespace, path.scopeId);
+          return source
+            ? new McpStoredSourceSchema({
+                namespace: source.namespace,
+                name: source.name,
+                config: source.config,
+              })
+            : null;
         }),
       ),
     )
-    .handle("updateSource", ({ path, payload }) =>
+    .handle("updateSource", ({ params: path, payload }) =>
       capture(
         Effect.gen(function* () {
           const ext = yield* McpExtensionService;

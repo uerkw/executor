@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { generateKeyBetween } from "fractional-indexing";
 
 import type { ToolPolicyRow } from "./core-schema";
@@ -352,14 +352,14 @@ describe("executor.policies", () => {
   it.effect("rejects malformed patterns", () =>
     Effect.gen(function* () {
       const executor = yield* setupExecutor();
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         executor.policies.create({
           scope: "test-scope",
           pattern: "vercel..bad",
           action: "block",
         }),
       );
-      expect(result._tag).toBe("Left");
+      expect(Result.isFailure(result)).toBe(true);
     }),
   );
 
@@ -521,18 +521,15 @@ describe("blocked tools", () => {
         pattern: "vercel.*",
         action: "block",
       });
-      const result = yield* Effect.either(
-        executor.tools.invoke("vercel.delete", {}, {
-          onElicitation: "accept-all",
-        }),
+      const result = yield* Effect.result(
+        executor.tools.invoke("vercel.delete", {}),
       );
-      expect(result._tag).toBe("Left");
-      if (result._tag === "Left") {
-        expect((result.left as { _tag?: string })._tag).toBe(
-          "ToolBlockedError",
-        );
-        expect((result.left as { pattern?: string }).pattern).toBe("vercel.*");
-      }
+      expect(Result.isFailure(result)).toBe(true);
+      if (!Result.isFailure(result)) return;
+      expect((result.failure as { _tag?: string })._tag).toBe(
+        "ToolBlockedError",
+      );
+      expect((result.failure as { pattern?: string }).pattern).toBe("vercel.*");
     }),
   );
 });
@@ -579,17 +576,16 @@ describe("approve / require_approval interaction with annotations", () => {
         pattern: "vercel.deploy",
         action: "require_approval",
       });
-      const result = yield* Effect.either(
+      const result = yield* Effect.result(
         executor.tools.invoke("vercel.deploy", {}, {
           onElicitation: decliningHandler,
         }),
       );
-      expect(result._tag).toBe("Left");
-      if (result._tag === "Left") {
-        expect((result.left as { _tag?: string })._tag).toBe(
-          "ElicitationDeclinedError",
-        );
-      }
+      expect(Result.isFailure(result)).toBe(true);
+      if (!Result.isFailure(result)) return;
+      expect((result.failure as { _tag?: string })._tag).toBe(
+        "ElicitationDeclinedError",
+      );
     }),
   );
 

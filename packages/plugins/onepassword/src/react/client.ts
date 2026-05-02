@@ -1,5 +1,5 @@
-import { AtomHttpApi } from "@effect-atom/atom-react";
-import { FetchHttpClient } from "@effect/platform";
+import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
+import { FetchHttpClient } from "effect/unstable/http";
 import { addGroup } from "@executor-js/api";
 import { getBaseUrl } from "@executor-js/react/api/base-url";
 import { OnePasswordGroup } from "../api/group";
@@ -10,7 +10,7 @@ import { OnePasswordGroup } from "../api/group";
 
 const OnePasswordApi = addGroup(OnePasswordGroup);
 
-export const OnePasswordClient = AtomHttpApi.Tag<"OnePasswordClient">()("OnePasswordClient", {
+export const OnePasswordClient = AtomHttpApi.Service<"OnePasswordClient">()("OnePasswordClient", {
   api: OnePasswordApi,
   httpClient: FetchHttpClient.layer,
   baseUrl: getBaseUrl(),

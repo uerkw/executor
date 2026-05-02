@@ -5,8 +5,12 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
+import http from "node:http";
 import { readFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { ScopeId, SecretId } from "@executor-js/sdk";
 
@@ -30,6 +34,257 @@ const MINIMAL_OPENAPI_SPEC = JSON.stringify({
   },
 });
 
+const invocableOpenApiSpec = (baseUrl: string) =>
+  JSON.stringify({
+    openapi: "3.0.0",
+    info: { title: "Invocable Source API", version: "1.0.0" },
+    servers: [{ url: baseUrl }],
+    paths: {
+      "/echo/{message}": {
+        get: {
+          operationId: "echoMessage",
+          summary: "Echo message",
+          parameters: [
+            {
+              name: "message",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "suffix",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "ok",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      message: { type: "string" },
+                      suffix: { type: "string" },
+                      path: { type: "string" },
+                    },
+                    required: ["message", "path"],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+const startEchoServer = () => {
+  const requests: Array<{ readonly path: string; readonly suffix: string | null }> = [];
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    const match = /^\/echo\/([^/]+)$/.exec(url.pathname);
+    if (!match) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not_found" }));
+      return;
+    }
+
+    requests.push({
+      path: url.pathname,
+      suffix: url.searchParams.get("suffix"),
+    });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        message: decodeURIComponent(match[1]!),
+        suffix: url.searchParams.get("suffix") ?? undefined,
+        path: url.pathname,
+      }),
+    );
+  });
+
+  return new Promise<{
+    readonly baseUrl: string;
+    readonly requests: () => ReadonlyArray<{ readonly path: string; readonly suffix: string | null }>;
+    readonly close: () => Promise<void>;
+  }>((resolveServer) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolveServer({
+        baseUrl: `http://127.0.0.1:${port}`,
+        requests: () => requests,
+        close: () => new Promise((close) => server.close(() => close())),
+      });
+    });
+  });
+};
+
+const readBody = (req: http.IncomingMessage): Promise<string> =>
+  new Promise((resolveBody, rejectBody) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => resolveBody(body));
+    req.on("error", rejectBody);
+  });
+
+const GRAPHQL_INTROSPECTION_RESPONSE = {
+  data: {
+    __schema: {
+      queryType: { name: "Query" },
+      mutationType: null,
+      types: [
+        {
+          kind: "OBJECT",
+          name: "Query",
+          description: null,
+          fields: [
+            {
+              name: "hello",
+              description: "Say hello",
+              args: [
+                {
+                  name: "name",
+                  description: null,
+                  type: { kind: "SCALAR", name: "String", ofType: null },
+                  defaultValue: null,
+                },
+              ],
+              type: { kind: "SCALAR", name: "String", ofType: null },
+            },
+          ],
+          inputFields: null,
+          enumValues: null,
+        },
+        {
+          kind: "SCALAR",
+          name: "String",
+          description: null,
+          fields: null,
+          inputFields: null,
+          enumValues: null,
+        },
+      ],
+    },
+  },
+};
+
+const startGraphqlServer = () => {
+  const requests: Array<{ readonly query: string; readonly variables: unknown }> = [];
+  const server = http.createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== "/graphql") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ errors: [{ message: "not found" }] }));
+      return;
+    }
+
+    const parsed = JSON.parse(await readBody(req)) as {
+      readonly query?: string;
+      readonly variables?: Record<string, unknown>;
+    };
+    const query = parsed.query ?? "";
+    requests.push({ query, variables: parsed.variables ?? null });
+
+    res.writeHead(200, { "content-type": "application/json" });
+    if (query.includes("__schema")) {
+      res.end(JSON.stringify(GRAPHQL_INTROSPECTION_RESPONSE));
+      return;
+    }
+
+    res.end(
+      JSON.stringify({
+        data: {
+          hello: `Hello ${String(parsed.variables?.name ?? "world")}`,
+        },
+      }),
+    );
+  });
+
+  return new Promise<{
+    readonly endpoint: string;
+    readonly requests: () => ReadonlyArray<{ readonly query: string; readonly variables: unknown }>;
+    readonly close: () => Promise<void>;
+  }>((resolveServer) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolveServer({
+        endpoint: `http://127.0.0.1:${port}/graphql`,
+        requests: () => requests,
+        close: () => new Promise((close) => server.close(() => close())),
+      });
+    });
+  });
+};
+
+const createCloudMcpServer = () => {
+  const server = new McpServer(
+    { name: "cloud-e2e-mcp", version: "1.0.0" },
+    { capabilities: {} },
+  );
+
+  server.registerTool(
+    "simple_echo",
+    { description: "Echoes from the cloud e2e MCP server", inputSchema: {} },
+    async () => ({
+      content: [{ type: "text" as const, text: "cloud-mcp-ok" }],
+    }),
+  );
+
+  return server;
+};
+
+const startMcpServer = () => {
+  const calls: string[] = [];
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const server = http.createServer(async (req, res) => {
+    calls.push(`${req.method ?? "GET"} ${req.url ?? "/"}`);
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (sessionId) {
+      const transport = transports.get(sessionId);
+      if (!transport) {
+        res.writeHead(404);
+        res.end("Session not found");
+        return;
+      }
+      await transport.handleRequest(req, res);
+      return;
+    }
+
+    const mcp = createCloudMcpServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (id) => {
+        transports.set(id, transport);
+      },
+    });
+    await mcp.connect(transport);
+    await transport.handleRequest(req, res);
+  });
+
+  return new Promise<{
+    readonly endpoint: string;
+    readonly calls: () => readonly string[];
+    readonly close: () => Promise<void>;
+  }>((resolveServer) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolveServer({
+        endpoint: `http://127.0.0.1:${port}`,
+        calls: () => calls,
+        close: () =>
+          new Promise((close) => {
+            server.closeAllConnections();
+            server.close(() => close());
+          }),
+      });
+    });
+  });
+};
+
 // The Cloudflare OpenAPI spec is the biggest real spec we care about:
 // 16MB, 2700+ operations, thousands of shared schemas. Exercising
 // addSpec end-to-end on it through the real postgres adapter is the
@@ -51,7 +306,7 @@ describe("sources api (HTTP)", () => {
       yield* asOrg(org, (client) =>
         Effect.gen(function* () {
           const result = yield* client.openapi.addSpec({
-            path: { scopeId: ScopeId.make(org) },
+            params: { scopeId: ScopeId.make(org) },
             payload: { spec: MINIMAL_OPENAPI_SPEC, namespace },
           });
           expect(result.namespace).toBe(namespace);
@@ -60,7 +315,7 @@ describe("sources api (HTTP)", () => {
       );
 
       const sources = yield* asOrg(org, (client) =>
-        client.sources.list({ path: { scopeId: ScopeId.make(org) } }),
+        client.sources.list({ params: { scopeId: ScopeId.make(org) } }),
       );
       expect(sources.map((s) => s.id)).toContain(namespace);
     }),
@@ -73,16 +328,276 @@ describe("sources api (HTTP)", () => {
 
       yield* asOrg(org, (client) =>
         client.openapi.addSpec({
-          path: { scopeId: ScopeId.make(org) },
+          params: { scopeId: ScopeId.make(org) },
           payload: { spec: MINIMAL_OPENAPI_SPEC, namespace },
         }),
       );
 
       const fetched = yield* asOrg(org, (client) =>
-        client.openapi.getSource({ path: { scopeId: ScopeId.make(org), namespace } }),
+        client.openapi.getSource({ params: { scopeId: ScopeId.make(org), namespace } }),
       );
       expect(fetched).not.toBeNull();
       expect(fetched?.namespace).toBe(namespace);
+    }),
+  );
+
+  it.effect("openapi.previewSpec returns class-backed preview metadata over HTTP", () =>
+    Effect.gen(function* () {
+      const org = `org_${crypto.randomUUID()}`;
+      const preview = yield* asOrg(org, (client) =>
+        client.openapi.previewSpec({
+          params: { scopeId: ScopeId.make(org) },
+          payload: { spec: MINIMAL_OPENAPI_SPEC },
+        }),
+      );
+
+      expect(preview).toMatchObject({
+        operationCount: 1,
+        operations: [
+          expect.objectContaining({
+            operationId: "ping",
+            method: "get",
+            path: "/ping",
+          }),
+        ],
+      });
+    }),
+  );
+
+  it.effect("added OpenAPI source can be listed, inspected, and invoked through execution", () =>
+    Effect.gen(function* () {
+      const server = yield* Effect.acquireRelease(
+        Effect.promise(() => startEchoServer()),
+        (fixture) => Effect.promise(() => fixture.close()),
+      );
+      const org = `org_${crypto.randomUUID()}`;
+      const namespace = `ns_${crypto.randomUUID().replace(/-/g, "_")}`;
+      const scopeId = ScopeId.make(org);
+
+      const addResult = yield* asOrg(org, (client) =>
+        client.openapi.addSpec({
+          params: { scopeId },
+          payload: {
+            spec: invocableOpenApiSpec(server.baseUrl),
+            namespace,
+          },
+        }),
+      );
+      expect(addResult).toEqual({ namespace, toolCount: 1 });
+
+      const fetched = yield* asOrg(org, (client) =>
+        client.openapi.getSource({ params: { scopeId, namespace } }),
+      );
+      expect(fetched).toMatchObject({
+        namespace,
+        name: "Invocable Source API",
+        config: { baseUrl: server.baseUrl },
+      });
+
+      const tools = yield* asOrg(org, (client) =>
+        client.sources.tools({ params: { scopeId, sourceId: namespace } }),
+      );
+      const toolId = `${namespace}.echo.echoMessage`;
+      expect(tools.map((tool) => tool.id)).toContain(toolId);
+
+      const execution = yield* asOrg(org, (client) =>
+        client.executions.execute({
+          payload: {
+            code: [
+              `const result = await tools.${namespace}.echo.echoMessage({ message: "hello", suffix: "world" });`,
+              "return result;",
+            ].join("\n"),
+          },
+        }),
+      );
+
+      if (execution.status !== "completed") {
+        throw new Error(`Expected completed execution, got ${execution.status}`);
+      }
+      expect(execution.isError).toBe(false);
+      expect(execution.structured).toMatchObject({
+        status: "completed",
+        result: {
+          message: "hello",
+          suffix: "world",
+          path: "/echo/hello",
+        },
+        logs: [],
+      });
+      expect(server.requests()).toEqual([{ path: "/echo/hello", suffix: "world" }]);
+    }),
+  );
+
+  it.effect("mcp.getSource returns a persisted source even when discovery failed", () =>
+    Effect.gen(function* () {
+      const org = `org_${crypto.randomUUID()}`;
+      const namespace = `mcp_${crypto.randomUUID().replace(/-/g, "_")}`;
+      const scopeId = ScopeId.make(org);
+
+      const addResult = yield* asOrg(org, (client) =>
+        client.mcp
+          .addSource({
+            params: { scopeId },
+            payload: {
+              transport: "remote",
+              name: "Broken MCP",
+              endpoint: "http://127.0.0.1:1/mcp",
+              remoteTransport: "auto",
+              namespace,
+            },
+          })
+          .pipe(Effect.result),
+      );
+      expect(addResult._tag).toBe("Failure");
+
+      const fetched = yield* asOrg(org, (client) =>
+        client.mcp.getSource({ params: { scopeId, namespace } }),
+      );
+      expect(fetched).toMatchObject({
+        namespace,
+        name: "Broken MCP",
+        config: {
+          transport: "remote",
+          endpoint: "http://127.0.0.1:1/mcp",
+          remoteTransport: "auto",
+        },
+      });
+
+      const tools = yield* asOrg(org, (client) =>
+        client.sources.tools({ params: { scopeId, sourceId: namespace } }),
+      );
+      expect(tools).toEqual([]);
+    }),
+  );
+
+  it.effect("added GraphQL source can be inspected and invoked through execution", () =>
+    Effect.gen(function* () {
+      const server = yield* Effect.acquireRelease(
+        Effect.promise(() => startGraphqlServer()),
+        (fixture) => Effect.promise(() => fixture.close()),
+      );
+      const org = `org_${crypto.randomUUID()}`;
+      const namespace = `gql_${crypto.randomUUID().replace(/-/g, "_")}`;
+      const scopeId = ScopeId.make(org);
+
+      const added = yield* asOrg(org, (client) =>
+        client.graphql.addSource({
+          params: { scopeId },
+          payload: {
+            endpoint: server.endpoint,
+            namespace,
+            name: "Cloud GraphQL",
+          },
+        }),
+      );
+      expect(added).toEqual({ namespace, toolCount: 1 });
+
+      const fetched = yield* asOrg(org, (client) =>
+        client.graphql.getSource({ params: { scopeId, namespace } }),
+      );
+      expect(fetched).toMatchObject({
+        namespace,
+        name: "Cloud GraphQL",
+        endpoint: server.endpoint,
+      });
+
+      const tools = yield* asOrg(org, (client) =>
+        client.sources.tools({ params: { scopeId, sourceId: namespace } }),
+      );
+      const toolId = `${namespace}.query.hello`;
+      expect(tools.map((tool) => tool.id)).toContain(toolId);
+
+      const execution = yield* asOrg(org, (client) =>
+        client.executions.execute({
+          payload: {
+            code: [
+              `const result = await tools.${namespace}.query.hello({ name: "Ada" });`,
+              "return result;",
+            ].join("\n"),
+          },
+        }),
+      );
+
+      if (execution.status !== "completed") {
+        throw new Error(`Expected completed execution, got ${execution.status}`);
+      }
+      expect(execution.isError).toBe(false);
+      expect(execution.structured).toMatchObject({
+        status: "completed",
+        result: { hello: "Hello Ada" },
+      });
+      expect(server.requests().some((request) => request.query.includes("__schema"))).toBe(true);
+      expect(server.requests()).toContainEqual(
+        expect.objectContaining({ variables: { name: "Ada" } }),
+      );
+    }),
+  );
+
+  it.effect("added MCP source can be inspected and invoked through execution", () =>
+    Effect.gen(function* () {
+      const server = yield* Effect.acquireRelease(
+        Effect.promise(() => startMcpServer()),
+        (fixture) => Effect.promise(() => fixture.close()),
+      );
+      const org = `org_${crypto.randomUUID()}`;
+      const namespace = `mcp_${crypto.randomUUID().replace(/-/g, "_")}`;
+      const scopeId = ScopeId.make(org);
+
+      const added = yield* asOrg(org, (client) =>
+        client.mcp.addSource({
+          params: { scopeId },
+          payload: {
+            transport: "remote",
+            name: "Cloud MCP",
+            endpoint: server.endpoint,
+            remoteTransport: "streamable-http",
+            namespace,
+          },
+        }),
+      );
+      expect(added).toEqual({ namespace, toolCount: 1 });
+
+      const fetched = yield* asOrg(org, (client) =>
+        client.mcp.getSource({ params: { scopeId, namespace } }),
+      );
+      expect(fetched).toMatchObject({
+        namespace,
+        name: "Cloud MCP",
+        config: {
+          transport: "remote",
+          endpoint: server.endpoint,
+          remoteTransport: "streamable-http",
+        },
+      });
+
+      const tools = yield* asOrg(org, (client) =>
+        client.sources.tools({ params: { scopeId, sourceId: namespace } }),
+      );
+      const toolId = `${namespace}.simple_echo`;
+      expect(tools.map((tool) => tool.id)).toContain(toolId);
+
+      const execution = yield* asOrg(org, (client) =>
+        client.executions.execute({
+          payload: {
+            code: [
+              `const result = await tools.${namespace}.simple_echo({});`,
+              "return result;",
+            ].join("\n"),
+          },
+        }),
+      );
+
+      if (execution.status !== "completed") {
+        throw new Error(`Expected completed execution, got ${execution.status}`);
+      }
+      expect(execution.isError).toBe(false);
+      expect(execution.structured).toMatchObject({
+        status: "completed",
+        result: {
+          content: [{ type: "text", text: "cloud-mcp-ok" }],
+        },
+      });
+      expect(server.calls().length).toBeGreaterThanOrEqual(2);
     }),
   );
 
@@ -94,17 +609,17 @@ describe("sources api (HTTP)", () => {
       yield* asOrg(org, (client) =>
         Effect.gen(function* () {
           yield* client.openapi.addSpec({
-            path: { scopeId: ScopeId.make(org) },
+            params: { scopeId: ScopeId.make(org) },
             payload: { spec: MINIMAL_OPENAPI_SPEC, namespace },
           });
           yield* client.sources.remove({
-            path: { scopeId: ScopeId.make(org), sourceId: namespace },
+            params: { scopeId: ScopeId.make(org), sourceId: namespace },
           });
         }),
       );
 
       const after = yield* asOrg(org, (client) =>
-        client.sources.list({ path: { scopeId: ScopeId.make(org) } }),
+        client.sources.list({ params: { scopeId: ScopeId.make(org) } }),
       );
       expect(after.map((s) => s.id)).not.toContain(namespace);
     }),
@@ -117,10 +632,10 @@ describe("sources api (HTTP)", () => {
 
       const result = yield* asOrg(org, (client) =>
         client.sources
-          .remove({ path: { scopeId: ScopeId.make(org), sourceId: ghost } })
-          .pipe(Effect.either),
+          .remove({ params: { scopeId: ScopeId.make(org), sourceId: ghost } })
+          .pipe(Effect.result),
       );
-      expect(result._tag).toBe("Right");
+      expect(result._tag).toBe("Success");
     }),
   );
 
@@ -133,10 +648,10 @@ describe("sources api (HTTP)", () => {
 
       const result = yield* asOrg(org, (client) =>
         client.sources
-          .remove({ path: { scopeId: ScopeId.make(org), sourceId: "openapi" } })
-          .pipe(Effect.either),
+          .remove({ params: { scopeId: ScopeId.make(org), sourceId: "openapi" } })
+          .pipe(Effect.result),
       );
-      expect(result._tag).toBe("Left");
+      expect(result._tag).toBe("Failure");
     }),
   );
 
@@ -148,18 +663,18 @@ describe("sources api (HTTP)", () => {
       yield* asOrg(org, (client) =>
         Effect.gen(function* () {
           yield* client.openapi.addSpec({
-            path: { scopeId: ScopeId.make(org) },
+            params: { scopeId: ScopeId.make(org) },
             payload: { spec: MINIMAL_OPENAPI_SPEC, namespace },
           });
           yield* client.openapi.updateSource({
-            path: { scopeId: ScopeId.make(org), namespace },
+            params: { scopeId: ScopeId.make(org), namespace },
             payload: { name: "Renamed API", baseUrl: "https://override.example.com" },
           });
         }),
       );
 
       const fetched = yield* asOrg(org, (client) =>
-        client.openapi.getSource({ path: { scopeId: ScopeId.make(org), namespace } }),
+        client.openapi.getSource({ params: { scopeId: ScopeId.make(org), namespace } }),
       );
       expect(fetched?.name).toBe("Renamed API");
       expect(fetched?.config.baseUrl).toBe("https://override.example.com");
@@ -177,7 +692,7 @@ describe("sources api (HTTP)", () => {
 
       yield* asOrg(orgId, (client) =>
         client.openapi.addSpec({
-          path: { scopeId: ScopeId.make(orgId) },
+          params: { scopeId: ScopeId.make(orgId) },
           payload: {
             spec: MINIMAL_OPENAPI_SPEC,
             namespace,
@@ -195,15 +710,15 @@ describe("sources api (HTTP)", () => {
       yield* asUser(aliceId, orgId, (client) =>
         Effect.gen(function* () {
           yield* client.secrets.set({
-            path: { scopeId: ScopeId.make(aliceScope) },
+            params: { scopeId: ScopeId.make(aliceScope) },
             payload: {
               id: SecretId.make("alice_pat"),
               name: "Alice PAT",
               value: "alice-secret",
             },
           });
-          yield* client.openapi.setSourceBinding({
-            path: { scopeId: ScopeId.make(aliceScope) },
+          const binding = yield* client.openapi.setSourceBinding({
+            params: { scopeId: ScopeId.make(aliceScope) },
             payload: {
               sourceId: namespace,
               sourceScope: ScopeId.make(orgId),
@@ -215,13 +730,25 @@ describe("sources api (HTTP)", () => {
               },
             },
           });
+          expect(binding).toMatchObject({
+            sourceId: namespace,
+            sourceScopeId: ScopeId.make(orgId),
+            scopeId: ScopeId.make(aliceScope),
+            slot: "auth:personal-token",
+            value: {
+              kind: "secret",
+              secretId: SecretId.make("alice_pat"),
+            },
+          });
+          expect(binding.createdAt).toBeInstanceOf(Date);
+          expect(binding.updatedAt).toBeInstanceOf(Date);
         }),
       );
 
       yield* asUser(bobId, orgId, (client) =>
         Effect.gen(function* () {
           yield* client.secrets.set({
-            path: { scopeId: ScopeId.make(bobScope) },
+            params: { scopeId: ScopeId.make(bobScope) },
             payload: {
               id: SecretId.make("bob_pat"),
               name: "Bob PAT",
@@ -229,7 +756,7 @@ describe("sources api (HTTP)", () => {
             },
           });
           yield* client.openapi.setSourceBinding({
-            path: { scopeId: ScopeId.make(bobScope) },
+            params: { scopeId: ScopeId.make(bobScope) },
             payload: {
               sourceId: namespace,
               sourceScope: ScopeId.make(orgId),
@@ -246,7 +773,7 @@ describe("sources api (HTTP)", () => {
 
       const aliceBindings = yield* asUser(aliceId, orgId, (client) =>
         client.openapi.listSourceBindings({
-          path: {
+          params: {
             scopeId: ScopeId.make(aliceScope),
             namespace,
             sourceScopeId: ScopeId.make(orgId),
@@ -274,7 +801,7 @@ describe("sources api (HTTP)", () => {
 
       const bobBindings = yield* asUser(bobId, orgId, (client) =>
         client.openapi.listSourceBindings({
-          path: {
+          params: {
             scopeId: ScopeId.make(bobScope),
             namespace,
             sourceScopeId: ScopeId.make(orgId),
@@ -301,7 +828,7 @@ describe("sources api (HTTP)", () => {
       ).toBe(false);
 
       const sources = yield* asOrg(orgId, (client) =>
-        client.sources.list({ path: { scopeId: ScopeId.make(orgId) } }),
+        client.sources.list({ params: { scopeId: ScopeId.make(orgId) } }),
       );
       expect(sources.find((source) => source.id === namespace)?.scopeId).toBe(
         ScopeId.make(orgId),
@@ -318,7 +845,7 @@ describe("sources api (HTTP)", () => {
 
         const result = yield* asOrg(org, (client) =>
           client.openapi.addSpec({
-            path: { scopeId: ScopeId.make(org) },
+            params: { scopeId: ScopeId.make(org) },
             payload: { spec: CLOUDFLARE_SPEC, namespace },
           }),
         );
@@ -326,7 +853,7 @@ describe("sources api (HTTP)", () => {
         expect(result.toolCount).toBeGreaterThan(1000);
 
         const sources = yield* asOrg(org, (client) =>
-          client.sources.list({ path: { scopeId: ScopeId.make(org) } }),
+          client.sources.list({ params: { scopeId: ScopeId.make(org) } }),
         );
         expect(sources.map((s) => s.id)).toContain(namespace);
 
@@ -335,11 +862,11 @@ describe("sources api (HTTP)", () => {
         // fanning out to per-row deletes).
         yield* asOrg(org, (client) =>
           client.sources.remove({
-            path: { scopeId: ScopeId.make(org), sourceId: namespace },
+            params: { scopeId: ScopeId.make(org), sourceId: namespace },
           }),
         );
         const after = yield* asOrg(org, (client) =>
-          client.sources.list({ path: { scopeId: ScopeId.make(org) } }),
+          client.sources.list({ params: { scopeId: ScopeId.make(org) } }),
         );
         expect(after.map((s) => s.id)).not.toContain(namespace);
       }),

@@ -8,19 +8,11 @@
 // user-facing `secrets.list()` automatically.
 // ---------------------------------------------------------------------------
 
-import { afterEach } from "vitest";
-import { expect, layer } from "@effect/vitest";
+import { afterEach, expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import {
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpClient,
-  HttpServerRequest,
-  OpenApi,
-} from "@effect/platform";
-import { NodeHttpServer } from "@effect/platform-node";
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
 import {
   collectSchemas,
@@ -51,7 +43,7 @@ class EchoHeaders extends Schema.Class<EchoHeaders>("EchoHeaders")({
 }) {}
 
 const ItemsGroup = HttpApiGroup.make("items").add(
-  HttpApiEndpoint.get("echoHeaders", "/echo-headers").addSuccess(EchoHeaders),
+  HttpApiEndpoint.get("echoHeaders", "/echo-headers", { success: EchoHeaders }),
 );
 
 const TestApi = HttpApi.make("testApi").add(ItemsGroup);
@@ -68,10 +60,9 @@ const ItemsGroupLive = HttpApiBuilder.group(TestApi, "items", (handlers) =>
   ),
 );
 
-const ApiLive = HttpApiBuilder.api(TestApi).pipe(Layer.provide(ItemsGroupLive));
+const ApiLive = HttpApiBuilder.layer(TestApi).pipe(Layer.provide(ItemsGroupLive));
 
-const TestLayer = HttpApiBuilder.serve().pipe(
-  Layer.provide(ApiLive),
+const TestLayer = HttpRouter.serve(ApiLive, { disableListenLog: true, disableLogger: true }).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
 );
 
@@ -84,7 +75,11 @@ const TestLayer = HttpApiBuilder.serve().pipe(
 const originalFetch = globalThis.fetch;
 
 const mockTokenFetch = (tokenByCode: Record<string, string>) => {
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof _input === "string" ? _input : _input.toString();
+    if (!url.includes("token.example.com")) {
+      return originalFetch(_input, init);
+    }
     const bodyText =
       init?.body instanceof URLSearchParams
         ? init.body.toString()
@@ -108,7 +103,7 @@ const mockTokenFetch = (tokenByCode: Record<string, string>) => {
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
-  }) as unknown as typeof fetch;
+  }, { preconnect: originalFetch.preconnect });
 };
 
 afterEach(() => {
@@ -139,9 +134,11 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
         storage: () => ({}),
         secretProviders: [memoryProvider],
       }));
-
-      const httpClient = yield* HttpClient.HttpClient;
-      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const clientLayer = FetchHttpClient.layer;
+      const server = yield* HttpServer.HttpServer;
+      const address = server.address;
+      if (address._tag !== "TcpAddress") return yield* Effect.die("test server must bind to TCP");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
       const plugins = [
         openApiPlugin({ httpClientLayer: clientLayer }),
         memorySecretsPlugin(),
@@ -229,7 +226,7 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
         clientIdSecretId: "petstore_client_id",
         clientSecretSecretId: "petstore_client_secret",
         scopes: ["read"],
-        tokenScope: scope as unknown as string,
+        tokenScope: String(scope),
       });
 
       const startAuthorizationCode = (
@@ -311,14 +308,14 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
         spec: specJson,
         scope: aliceScope.id as string,
         namespace: "petstore",
-        baseUrl: "",
+        baseUrl,
         oauth2: aliceOAuth2Auth,
       });
       yield* bobExec.openapi.addSpec({
         spec: specJson,
         scope: bobScope.id as string,
         namespace: "petstore",
-        baseUrl: "",
+        baseUrl,
         oauth2: bobOAuth2Auth,
       });
 
@@ -347,17 +344,17 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       // -------------------------------------------------------------
       const aliceConnections = yield* aliceExec.connections.list();
       const aliceConn = aliceConnections.find((c) => c.id === aliceAuth.connectionId);
-      expect(aliceConn?.scopeId as unknown as string).toBe("user-alice");
+      expect(String(aliceConn?.scopeId)).toBe("user-alice");
 
       const bobConnections = yield* bobExec.connections.list();
       const bobConn = bobConnections.find((c) => c.id === bobAuth.connectionId);
-      expect(bobConn?.scopeId as unknown as string).toBe("user-bob");
+      expect(String(bobConn?.scopeId)).toBe("user-bob");
 
       const adminConnectionIds = new Set(
         (yield* adminExec.connections.list()).map((c) => c.id as string),
       );
-      expect(adminConnectionIds).not.toContain(aliceAuth.connectionId as unknown as string);
-      expect(adminConnectionIds).not.toContain(bobAuth.connectionId as unknown as string);
+      expect(adminConnectionIds).not.toContain(String(aliceAuth.connectionId));
+      expect(adminConnectionIds).not.toContain(String(bobAuth.connectionId));
 
       // -------------------------------------------------------------
       // 6. Connection-owned secrets are filtered from secrets.list().
@@ -365,7 +362,7 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       //    tokens are hidden behind the Connection primitive.
       // -------------------------------------------------------------
       const aliceSecretIds = new Set(
-        (yield* aliceExec.secrets.list()).map((s) => s.id as unknown as string),
+        (yield* aliceExec.secrets.list()).map((s) => String(s.id)),
       );
       expect(aliceSecretIds).toContain("petstore_client_id");
       expect(aliceSecretIds).toContain("petstore_client_secret");
@@ -406,9 +403,11 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
         storage: () => ({}),
         secretProviders: [memoryProvider],
       }));
-
-      const httpClient = yield* HttpClient.HttpClient;
-      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const clientLayer = FetchHttpClient.layer;
+      const server = yield* HttpServer.HttpServer;
+      const address = server.address;
+      if (address._tag !== "TcpAddress") return yield* Effect.die("test server must bind to TCP");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
       const plugins = [
         openApiPlugin({ httpClientLayer: clientLayer }),
         memorySecretsPlugin(),
@@ -500,7 +499,11 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       // user's row ends up with a token minted from *their own*
       // credential resolution.
       const tokenCalls: string[] = [];
-      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof _input === "string" ? _input : _input.toString();
+        if (!url.includes("token.example.com")) {
+          return originalFetch(_input, init);
+        }
         const bodyText =
           init?.body instanceof URLSearchParams
             ? init.body.toString()
@@ -517,7 +520,7 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
-      }) as unknown as typeof fetch;
+      }, { preconnect: originalFetch.preconnect });
 
       const startInput = {
         connectionId: "shared-petstore-oauth",
@@ -574,7 +577,7 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
         spec: specJson,
         scope: orgScope.id as string,
         namespace: "petstore",
-        baseUrl: "",
+        baseUrl,
         oauth2: adminAuth,
       });
 
@@ -601,16 +604,16 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       // what lets a single `source.oauth2.connectionId` resolve
       // per-caller via `findInnermostConnectionRow`.
       const aliceConn = (yield* aliceExec.connections.list()).find(
-        (c) => c.id === stableId && (c.scopeId as unknown as string) === "user-alice",
+        (c) => c.id === stableId && String(c.scopeId) === "user-alice",
       );
       const bobConn = (yield* bobExec.connections.list()).find(
-        (c) => c.id === stableId && (c.scopeId as unknown as string) === "user-bob",
+        (c) => c.id === stableId && String(c.scopeId) === "user-bob",
       );
       const orgConn = (yield* adminExec.connections.list()).find((c) => c.id === stableId);
       expect(aliceConn).toBeDefined();
       expect(bobConn).toBeDefined();
       expect(orgConn).toBeDefined();
-      expect(orgConn?.scopeId as unknown as string).toBe("org");
+      expect(String(orgConn?.scopeId)).toBe("org");
 
       // (3) Scope-stacked secret resolution produced per-user tokens.
       // The exchange call Alice made used her shadowed value; Bob's

@@ -12,19 +12,11 @@
 //      `ConnectionReauthRequiredError` so the UI can prompt sign-in.
 // ---------------------------------------------------------------------------
 
-import { afterEach } from "vitest";
-import { expect, layer } from "@effect/vitest";
+import { afterEach, expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import {
-  HttpApi,
-  HttpApiBuilder,
-  HttpApiEndpoint,
-  HttpApiGroup,
-  HttpClient,
-  HttpServerRequest,
-  OpenApi,
-} from "@effect/platform";
-import { NodeHttpServer } from "@effect/platform-node";
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
 import {
   ConnectionId,
@@ -59,7 +51,7 @@ class EchoHeaders extends Schema.Class<EchoHeaders>("EchoHeaders")({
 }) {}
 
 const ItemsGroup = HttpApiGroup.make("items").add(
-  HttpApiEndpoint.get("echoHeaders", "/echo-headers").addSuccess(EchoHeaders),
+  HttpApiEndpoint.get("echoHeaders", "/echo-headers", { success: EchoHeaders }),
 );
 
 const TestApi = HttpApi.make("testApi").add(ItemsGroup);
@@ -76,10 +68,9 @@ const ItemsGroupLive = HttpApiBuilder.group(TestApi, "items", (handlers) =>
   ),
 );
 
-const ApiLive = HttpApiBuilder.api(TestApi).pipe(Layer.provide(ItemsGroupLive));
+const ApiLive = HttpApiBuilder.layer(TestApi).pipe(Layer.provide(ItemsGroupLive));
 
-const TestLayer = HttpApiBuilder.serve().pipe(
-  Layer.provide(ApiLive),
+const TestLayer = HttpRouter.serve(ApiLive, { disableListenLog: true, disableLogger: true }).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
 );
 
@@ -96,10 +87,14 @@ type TokenCall = {
 };
 
 const mockTokenFetch = (
-  handler: (body: URLSearchParams) => Effect.Effect<Response> | Promise<Response>,
+  handler: (body: URLSearchParams) => Effect.Effect<Response, never, never> | Promise<Response>,
 ) => {
   const calls: TokenCall[] = [];
-  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof _input === "string" ? _input : _input.toString();
+    if (!url.includes("token.example.com")) {
+      return originalFetch(_input, init);
+    }
     const bodyText =
       init?.body instanceof URLSearchParams
         ? init.body.toString()
@@ -109,11 +104,9 @@ const mockTokenFetch = (
     const body = new URLSearchParams(bodyText);
     calls.push({ body });
     const out = handler(body);
-    if (out && typeof (out as Promise<Response>).then === "function") {
-      return await (out as Promise<Response>);
-    }
-    return await Effect.runPromise(out as Effect.Effect<Response>);
-  }) as unknown as typeof fetch;
+    if (Effect.isEffect(out)) return await Effect.runPromise(out);
+    return await out;
+  }, { preconnect: originalFetch.preconnect });
   return { calls };
 };
 
@@ -148,9 +141,11 @@ const makeExecutor = () =>
       storage: () => ({}),
       secretProviders: [memoryProvider],
     }));
-
-    const httpClient = yield* HttpClient.HttpClient;
-    const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const clientLayer = FetchHttpClient.layer;
+      const server = yield* HttpServer.HttpServer;
+      const address = server.address;
+      if (address._tag !== "TcpAddress") return yield* Effect.die("test server must bind to TCP");
+      const baseUrl = `http://127.0.0.1:${address.port}`;
     const plugins = [
       openApiPlugin({ httpClientLayer: clientLayer }),
       memorySecretsPlugin(),
@@ -193,12 +188,12 @@ const makeExecutor = () =>
       }),
     );
 
-    return { executor, scopeId };
+    return { executor, scopeId, baseUrl };
   });
 
-type ExecutorValue = Effect.Effect.Success<
-  ReturnType<typeof makeExecutor>
->["executor"];
+type EffectSuccess<T> = T extends Effect.Effect<infer A, unknown, unknown> ? A : never;
+
+type ExecutorValue = EffectSuccess<ReturnType<typeof makeExecutor>>["executor"];
 
 // Seed an authorizationCode Connection with an already-expired access
 // token and a stored refresh token. The test's mock token endpoint
@@ -258,7 +253,7 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
     "expired access_token is refreshed via grant_type=refresh_token before invoke",
     () =>
       Effect.gen(function* () {
-        const { executor, scopeId } = yield* makeExecutor();
+        const { executor, scopeId, baseUrl } = yield* makeExecutor();
         const { calls } = mockTokenFetch(
           () =>
             Effect.succeed(
@@ -282,9 +277,9 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
 
         yield* executor.openapi.addSpec({
           spec: specJson,
-          scope: scopeId as unknown as string,
+          scope: String(scopeId),
           namespace: "petstore",
-          baseUrl: "",
+          baseUrl,
           oauth2: auth,
         });
 
@@ -315,7 +310,7 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
     "concurrent invokes with an expired token issue exactly one refresh",
     () =>
       Effect.gen(function* () {
-        const { executor, scopeId } = yield* makeExecutor();
+        const { executor, scopeId, baseUrl } = yield* makeExecutor();
         const { calls } = mockTokenFetch(
           () =>
             Effect.succeed(
@@ -339,9 +334,9 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
 
         yield* executor.openapi.addSpec({
           spec: specJson,
-          scope: scopeId as unknown as string,
+          scope: String(scopeId),
           namespace: "petstore",
-          baseUrl: "",
+          baseUrl,
           oauth2: auth,
         });
 
@@ -375,7 +370,7 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
     "invalid_grant from refresh surfaces as ConnectionReauthRequiredError",
     () =>
       Effect.gen(function* () {
-        const { executor, scopeId } = yield* makeExecutor();
+        const { executor, scopeId, baseUrl } = yield* makeExecutor();
         mockTokenFetch(
           () =>
             Effect.succeed(
@@ -397,9 +392,9 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
 
         yield* executor.openapi.addSpec({
           spec: specJson,
-          scope: scopeId as unknown as string,
+          scope: String(scopeId),
           namespace: "petstore",
-          baseUrl: "",
+          baseUrl,
           oauth2: auth,
         });
 

@@ -1,11 +1,8 @@
-import {
-  HttpApiBuilder,
-  HttpApp,
-  HttpServer,
-  HttpApi,
-} from "@effect/platform";
+import { HttpApiBuilder, HttpApi } from "effect/unstable/httpapi";
+import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import type { Effect as EffectType } from "effect/Effect";
 
 import { CloudAuthPublicApi } from "./api";
 import { CloudAuthPublicHandlers } from "./handlers";
@@ -13,11 +10,30 @@ import { UserStoreService } from "./context";
 import { WorkOSAuth } from "./workos";
 
 const TestAuthPublicApi = HttpApi.make("cloudWeb").add(CloudAuthPublicApi);
+type EffectSuccess<T> = T extends EffectType<infer A, infer _E, infer _R> ? A : never;
+type AuthenticateWithCodeResult = EffectSuccess<
+  ReturnType<WorkOSAuth["Service"]["authenticateWithCode"]>
+>;
+const fakeUser: AuthenticateWithCodeResult["user"] = {
+  object: "user",
+  id: "user_1",
+  email: "test@example.com",
+  emailVerified: true,
+  profilePictureUrl: null,
+  firstName: null,
+  lastName: null,
+  lastSignInAt: null,
+  locale: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  externalId: null,
+  metadata: {},
+};
 
-const makeAuthFetch = (workos: Partial<WorkOSAuth["Type"]>) => {
+const makeAuthFetch = (workos: Partial<WorkOSAuth["Service"]>) => {
   const WorkOSTest = Layer.succeed(
     WorkOSAuth,
-    new Proxy(workos as WorkOSAuth["Type"], {
+    new Proxy(workos as WorkOSAuth["Service"], {
       get: (target, prop) => {
         if (prop in target) return target[prop as keyof typeof target];
         return () => {
@@ -26,25 +42,18 @@ const makeAuthFetch = (workos: Partial<WorkOSAuth["Type"]>) => {
       },
     }),
   );
-  const UserStoreTest = Layer.succeed(UserStoreService, {
+  const UserStoreTest = Layer.succeed(UserStoreService)({
     use: <A>() => Effect.sync(() => undefined as A),
   });
-  const app = Effect.flatMap(
-    HttpApiBuilder.httpApp.pipe(
-      Effect.provide(
-        HttpApiBuilder.api(TestAuthPublicApi).pipe(
-          Layer.provide(CloudAuthPublicHandlers),
-          Layer.provideMerge(WorkOSTest),
-          Layer.provideMerge(UserStoreTest),
-          Layer.provideMerge(HttpServer.layerContext),
-          Layer.provideMerge(HttpApiBuilder.Router.Live),
-          Layer.provideMerge(HttpApiBuilder.Middleware.layer),
-        ),
-      ),
-    ),
-    (app) => app,
-  ).pipe(Effect.provide(HttpServer.layerContext));
-  return HttpApp.toWebHandler(app);
+  const apiLayer = HttpApiBuilder.layer(TestAuthPublicApi).pipe(
+    Layer.provide(CloudAuthPublicHandlers),
+    Layer.provideMerge(WorkOSTest),
+    Layer.provideMerge(UserStoreTest),
+    Layer.provideMerge(HttpServer.layerServices),
+    Layer.provideMerge(Layer.succeed(HttpRouter.RouterConfig)({ maxParamLength: 1000 })),
+  );
+  const web = HttpRouter.toWebHandler(apiLayer, { disableLogger: true });
+  return web.handler as (request: Request) => Promise<Response>;
 };
 
 describe("Auth callback handlers", () => {
@@ -52,7 +61,7 @@ describe("Auth callback handlers", () => {
     Effect.gen(function* () {
       let observedState: string | undefined;
       const fetch = makeAuthFetch({
-        getAuthorizationUrl: (_redirectUri, state) => {
+        getAuthorizationUrl: (_redirectUri: string, state?: string) => {
           observedState = state;
           return `https://auth.example.test?state=${state}`;
         },
@@ -78,13 +87,13 @@ describe("Auth callback handlers", () => {
         authenticateWithCode: () =>
           Effect.sync(() => {
             authenticateCalls++;
-            return {
-              user: { id: "user_1" },
+            const result: AuthenticateWithCodeResult = {
+              user: fakeUser,
               accessToken: "access_token",
               refreshToken: "refresh_token",
-              organizationId: null,
               sealedSession: "sealed_session",
-            } as never;
+            };
+            return result;
           }),
       });
 
@@ -104,12 +113,12 @@ describe("Auth callback handlers", () => {
       const fetch = makeAuthFetch({
         authenticateWithCode: () =>
           Effect.succeed({
-            user: { id: "user_1" },
+            user: fakeUser,
             accessToken: "access_token",
             refreshToken: "refresh_token",
             organizationId: "org_1",
             sealedSession: "sealed_session",
-          } as never),
+          } satisfies AuthenticateWithCodeResult),
       });
 
       const response = yield* Effect.promise(() =>

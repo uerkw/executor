@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Option } from "effect";
-import { FetchHttpClient } from "@effect/platform";
+import { FetchHttpClient } from "effect/unstable/http";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 

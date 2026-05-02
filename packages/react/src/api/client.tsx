@@ -1,5 +1,5 @@
-import { AtomHttpApi } from "@effect-atom/atom-react";
-import { FetchHttpClient } from "@effect/platform";
+import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
+import { FetchHttpClient } from "effect/unstable/http";
 import { ExecutorApi } from "@executor-js/api";
 
 import { getBaseUrl } from "./base-url";
@@ -8,10 +8,10 @@ import { getBaseUrl } from "./base-url";
 // Core API client — tools + secrets
 // ---------------------------------------------------------------------------
 
-class ExecutorApiClient extends AtomHttpApi.Tag<ExecutorApiClient>()("ExecutorApiClient", {
+const ExecutorApiClient = AtomHttpApi.Service<"ExecutorApiClient">()("ExecutorApiClient", {
   api: ExecutorApi,
   httpClient: FetchHttpClient.layer,
   baseUrl: getBaseUrl(),
-}) {}
+});
 
 export { ExecutorApiClient };

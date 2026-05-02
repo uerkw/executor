@@ -411,11 +411,11 @@ describe("pause/resume with multiple elicitations", () => {
 
     // `execution.fiber` is on `InternalPausedExecution`; the exported
     // `PausedExecution` type doesn't carry it. Cast to read.
-    const sandboxFiber = (
-      paused1.execution as unknown as {
-        readonly fiber: Fiber.Fiber<unknown, unknown>;
-      }
-    ).fiber;
+    const pausedWithFiber = (value: unknown): {
+      readonly fiber: Fiber.Fiber<unknown, unknown>;
+    } =>
+      value as { readonly fiber: Fiber.Fiber<unknown, unknown> };
+    const sandboxFiber = pausedWithFiber(paused1.execution).fiber;
     const exitProbe = await Effect.runPromise(
       Effect.race(
         Fiber.await(sandboxFiber),
@@ -434,9 +434,8 @@ describe("pause/resume with multiple elicitations", () => {
     expect(outcome2).not.toBeNull();
     const resumed = outcome2 as NonNullable<typeof outcome2>;
     expect(resumed.status).toBe("completed");
-    if (resumed.status === "completed") {
-      expect(resumed.result.error).toBeUndefined();
-      expect(resumed.result.result).toMatchObject({ ok: true });
-    }
+    if (resumed.status !== "completed") return;
+    expect(resumed.result.error).toBeUndefined();
+    expect(resumed.result.result).toMatchObject({ ok: true });
   }, 10000);
 });
