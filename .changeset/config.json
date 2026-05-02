@@ -9,6 +9,7 @@
       "@executor-js/codemode-core",
       "@executor-js/runtime-quickjs",
       "@executor-js/execution",
+      "@executor-js/config",
       "@executor-js/cli",
       "@executor-js/plugin-file-secrets",
       "@executor-js/plugin-google-discovery",
