@@ -1,7 +1,9 @@
 ## Highlights
 
-### Platform binaries distributed via `optionalDependencies`
-The CLI now ships its native binary as one of several `executor-<plat>-<arch>` packages listed under `optionalDependencies`, the same pattern esbuild/swc/opencode use. npm and bun only fetch the matching binary, and there's no postinstall network call — `npm i -g executor` and `bun i -g executor` (which blocks postinstall by default) both work. For machines without node at all, install via `curl … install.sh | bash`.
+### Install paths fixed
+`npm i -g executor` and `bun i -g executor` both work cleanly on a fresh machine. For machines without node, `curl … install.sh | bash` does the same thing.
+
+> 1.4.13 was a partial release — it only made it to GitHub Releases, not npm. If you tried `npm i -g executor` and got 1.4.12, that's why. 1.4.14 is the first complete release.
 
 ### MCP sources honor upstream `destructiveHint`
 MCP sources now read `destructiveHint` from upstream tool annotations. Tools marked destructive will require approval before running, surfaced via MCP elicitation. Refresh existing sources (or remove + re-add) to pick up annotations on tools added before this change.
