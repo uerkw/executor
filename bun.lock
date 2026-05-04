@@ -451,6 +451,7 @@
         "ajv": "^8.17.1",
         "ajv-formats": "^3.0.1",
         "effect": "catalog:",
+        "sucrase": "^3.35.1",
       },
       "devDependencies": {
         "@types/node": "catalog:",
@@ -492,7 +493,6 @@
       "dependencies": {
         "@executor-js/codemode-core": "workspace:*",
         "effect": "catalog:",
-        "sucrase": "^3.35.1",
       },
       "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.14.2",

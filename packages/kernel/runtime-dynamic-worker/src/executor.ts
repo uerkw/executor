@@ -15,13 +15,13 @@ import * as Effect from "effect/Effect";
 
 import {
   recoverExecutionBody,
+  stripTypeScript,
   type CodeExecutor,
   type ExecuteResult,
   type SandboxToolInvoker,
 } from "@executor-js/codemode-core";
 
 import { buildExecutorModule } from "./module-template";
-import { stripTypeScript } from "./strip-types";
 
 // ---------------------------------------------------------------------------
 // Errors

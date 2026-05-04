@@ -41,7 +41,8 @@
     "@standard-schema/spec": "^1.0.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "sucrase": "^3.35.1"
   },
   "devDependencies": {
     "@types/node": "catalog:",
