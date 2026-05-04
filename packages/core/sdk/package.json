@@ -1,6 +1,6 @@
 {
   "name": "@executor-js/sdk",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "homepage": "https://github.com/RhysSullivan/executor/tree/main/packages/core/sdk",
   "bugs": {
     "url": "https://github.com/RhysSullivan/executor/issues"
@@ -61,8 +61,12 @@
     "react": "catalog:"
   },
   "peerDependenciesMeta": {
-    "@effect/atom-react": { "optional": true },
-    "react": { "optional": true }
+    "@effect/atom-react": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@effect/atom-react": "catalog:",
