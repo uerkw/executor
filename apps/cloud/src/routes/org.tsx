@@ -124,6 +124,9 @@ function OrgPage() {
   const canUseDomains = customerLoading
     ? false
     : check({ featureId: "domain-verification" }).allowed;
+  const canInviteMember = customerLoading
+    ? false
+    : check({ featureId: "members", requiredBalance: 1 }).allowed;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editName, setEditName] = useState(orgName);
   const [savingName, setSavingName] = useState(false);
@@ -253,7 +256,7 @@ function OrgPage() {
           {!canUseDomains && (
             <div className="mb-3 flex items-center justify-between rounded-lg border border-border px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                Domain verification is available on the Professional plan.
+                Domain verification is available on the Team plan.
               </p>
               <Link to="/billing/plans">
                 <Button size="sm" variant="outline">
@@ -303,11 +306,36 @@ function OrgPage() {
         {/* Members */}
         <section className="mb-10">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-medium text-foreground">Members</h2>
-            <Button size="sm" className="min-w-32" onClick={() => setInviteOpen(true)}>
-              Invite member
-            </Button>
+            <div>
+              <h2 className="text-sm font-medium text-foreground">Members</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Free organizations can include up to 3 members.
+              </p>
+            </div>
+            {canInviteMember ? (
+              <Button size="sm" className="min-w-32" onClick={() => setInviteOpen(true)}>
+                Invite member
+              </Button>
+            ) : (
+              <Link to="/billing/plans">
+                <Button size="sm" className="min-w-32">
+                  Upgrade
+                </Button>
+              </Link>
+            )}
           </div>
+          {!canInviteMember && (
+            <div className="mb-3 flex items-center justify-between rounded-lg border border-border px-4 py-3">
+              <p className="text-sm text-muted-foreground">
+                Upgrade to Team to add more than 3 members.
+              </p>
+              <Link to="/billing/plans">
+                <Button size="sm" variant="outline">
+                  View plans
+                </Button>
+              </Link>
+            </div>
+          )}
           <Input
             type="text"
             placeholder="Search by name or email..."

@@ -52,6 +52,25 @@ const assertDomainInSessionOrg = (domainId: string) =>
     }
   });
 
+const reserveMemberSlot = Effect.gen(function* () {
+  const auth = yield* AuthContext;
+  const autumn = yield* AutumnService;
+  const check = yield* autumn
+    .use((client) =>
+      client.check({
+        customerId: auth.organizationId,
+        featureId: "members",
+        requiredBalance: 1,
+        sendEvent: true,
+      }),
+    )
+    .pipe(Effect.orElseSucceed(() => ({ allowed: true })));
+
+  if (!check.allowed) {
+    return yield* new Forbidden();
+  }
+});
+
 export const OrgHandlers = HttpApiBuilder.group(OrgHttpApi, "org", (handlers) =>
   handlers
     .handle("listMembers", () =>
@@ -104,12 +123,17 @@ export const OrgHandlers = HttpApiBuilder.group(OrgHttpApi, "org", (handlers) =>
         yield* requireAdmin;
         const auth = yield* AuthContext;
         const workos = yield* WorkOSAuth;
+        const autumn = yield* AutumnService;
 
-        const invitation = yield* workos.sendInvitation({
-          email: payload.email,
-          organizationId: auth.organizationId,
-          roleSlug: payload.roleSlug,
-        });
+        yield* reserveMemberSlot;
+
+        const invitation = yield* workos
+          .sendInvitation({
+            email: payload.email,
+            organizationId: auth.organizationId,
+            roleSlug: payload.roleSlug,
+          })
+          .pipe(Effect.tapError(() => autumn.trackMemberChange(auth.organizationId, -1)));
 
         return { id: invitation.id, email: invitation.email };
       }),
@@ -119,7 +143,10 @@ export const OrgHandlers = HttpApiBuilder.group(OrgHttpApi, "org", (handlers) =>
         yield* requireAdmin;
         yield* assertMembershipInSessionOrg(params.membershipId);
         const workos = yield* WorkOSAuth;
+        const auth = yield* AuthContext;
+        const autumn = yield* AutumnService;
         yield* workos.deleteOrgMembership(params.membershipId);
+        yield* autumn.trackMemberChange(auth.organizationId, -1);
         return { success: true };
       }),
     )

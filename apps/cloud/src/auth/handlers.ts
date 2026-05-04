@@ -10,6 +10,7 @@ import { authorizeOrganization } from "./authorize-organization";
 import { env } from "cloudflare:workers";
 import { WorkOSError } from "./errors";
 import { WorkOSAuth } from "./workos";
+import { AutumnService } from "../services/autumn";
 
 const COOKIE_OPTIONS = {
   path: "/",
@@ -69,10 +70,8 @@ const setResponseCookie = (
   options: typeof RESPONSE_COOKIE_OPTIONS,
 ) => HttpServerResponse.setCookieUnsafe(response, name, value, options);
 
-const deleteResponseCookie = (
-  response: HttpServerResponse.HttpServerResponse,
-  name: string,
-) => HttpServerResponse.setCookieUnsafe(response, name, "", DELETE_COOKIE_OPTIONS);
+const deleteResponseCookie = (response: HttpServerResponse.HttpServerResponse, name: string) =>
+  HttpServerResponse.setCookieUnsafe(response, name, "", DELETE_COOKIE_OPTIONS);
 
 // ---------------------------------------------------------------------------
 // Single non-protected API surface — public (login/callback) + session
@@ -208,7 +207,9 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
           );
 
           return {
-            organizations: organizations.filter((org): org is NonNullable<typeof org> => org !== null),
+            organizations: organizations.filter(
+              (org): org is NonNullable<typeof org> => org !== null,
+            ),
             activeOrganizationId: session.organizationId,
           };
         }),
@@ -231,11 +232,13 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
         Effect.gen(function* () {
           const workos = yield* WorkOSAuth;
           const users = yield* UserStoreService;
+          const autumn = yield* AutumnService;
           const session = yield* SessionContext;
 
           const name = payload.name.trim();
           const org = yield* workos.createOrganization(name);
           yield* workos.createMembership(org.id, session.accountId, "admin");
+          yield* autumn.trackMemberChange(org.id, 1);
           yield* users.use((s) => s.upsertOrganization({ id: org.id, name: org.name }));
 
           // Try to attach the new org to the current session. This can fail
@@ -246,9 +249,7 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
           // cookie and fail loudly; the frontend will bounce to login and
           // the callback's rehydrate path will pick up the new membership.
           const refreshed = yield* workos.refreshSession(session.sealedSession, org.id);
-          const verified = refreshed
-            ? yield* workos.authenticateSealedSession(refreshed)
-            : null;
+          const verified = refreshed ? yield* workos.authenticateSealedSession(refreshed) : null;
 
           if (!refreshed || !verified || verified.organizationId !== org.id) {
             yield* Effect.logWarning(

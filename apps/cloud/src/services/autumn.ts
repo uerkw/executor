@@ -28,6 +28,7 @@ export type IAutumnService = Readonly<{
    * user-facing request.
    */
   trackExecution: (organizationId: string) => Effect.Effect<void, never, never>;
+  trackMemberChange: (organizationId: string, value: number) => Effect.Effect<void, never, never>;
 }>;
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ const make = Effect.sync(() => {
     return {
       use: () => notConfigured,
       trackExecution: () => Effect.void,
+      trackMemberChange: () => Effect.void,
     } satisfies IAutumnService;
   }
 
@@ -59,9 +61,7 @@ const make = Effect.sync(() => {
     Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({ "autumn.customer.id": organizationId });
       const outcome = yield* Effect.result(
-        use((c) =>
-          c.track({ customerId: organizationId, featureId: "executions", value: 1 }),
-        ),
+        use((c) => c.track({ customerId: organizationId, featureId: "executions", value: 1 })),
       );
       if (outcome._tag === "Failure") {
         // Silent billing data loss is worth paging on — autumn.trackExecution
@@ -72,12 +72,27 @@ const make = Effect.sync(() => {
       }
     }).pipe(Effect.withSpan("autumn.trackExecution"));
 
-  return { use, trackExecution } satisfies IAutumnService;
+  const trackMemberChange = (organizationId: string, value: number) =>
+    Effect.gen(function* () {
+      yield* Effect.annotateCurrentSpan({
+        "autumn.customer.id": organizationId,
+        "autumn.members.delta": value,
+      });
+      const outcome = yield* Effect.result(
+        use((c) => c.track({ customerId: organizationId, featureId: "members", value })),
+      );
+      if (outcome._tag === "Failure") {
+        console.error("[billing] member tracking failed:", outcome.failure);
+        Sentry.captureException(outcome.failure);
+        yield* Effect.annotateCurrentSpan({ "autumn.track.members.failed": true });
+      }
+    }).pipe(Effect.withSpan("autumn.trackMemberChange"));
+
+  return { use, trackExecution, trackMemberChange } satisfies IAutumnService;
 });
 
-export class AutumnService extends Context.Service<
-  AutumnService,
-  IAutumnService
->()("@executor-js/cloud/AutumnService") {
+export class AutumnService extends Context.Service<AutumnService, IAutumnService>()(
+  "@executor-js/cloud/AutumnService",
+) {
   static Default = Layer.effect(this)(make);
 }
