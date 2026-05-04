@@ -19,6 +19,7 @@ import { migrateLegacyConnections } from "./migrate-connections";
 import {
   Scope,
   ScopeId,
+  type AnyPlugin,
   collectSchemas,
   createExecutor,
 } from "@executor-js/sdk";
@@ -27,7 +28,7 @@ import {
   makeSqliteBlobStore,
 } from "@executor-js/storage-file";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { makeFileConfigSink } from "@executor-js/config";
+import { loadPluginsFromJsonc, makeFileConfigSink } from "@executor-js/config";
 import * as executorSchema from "./executor-schema";
 
 import { syncFromConfig, resolveConfigPath } from "./config-sync";
@@ -87,7 +88,13 @@ const makeScopeId = (cwd: string): string => {
   return `${folder}-${hash}`;
 };
 
-type LocalPlugins = ReturnType<typeof executorConfig.plugins>;
+// Plugins reach the host through two doors that compose:
+//   - `executor.config.ts`'s static tuple (typed at TS compile time)
+//   - `executor.jsonc#plugins` (loaded via jiti at boot)
+// We concatenate the two and widen the result to `readonly AnyPlugin[]`.
+// The frontend's typed atom client still resolves correctly because
+// each plugin imports its own group from `${pkg}/shared`.
+type LocalPlugins = readonly AnyPlugin[];
 
 interface LocalExecutorBundle {
   readonly executor: Effect.Success<ReturnType<typeof createExecutor<LocalPlugins>>>;
@@ -132,7 +139,31 @@ const createLocalExecutorLayer = () => {
         fsLayer: NodeFileSystem.layer,
       });
 
-      const plugins = executorConfig.plugins({ configFile });
+      const staticPlugins = executorConfig.plugins({ configFile });
+      const dynamicPlugins =
+        (yield* Effect.promise(() =>
+          loadPluginsFromJsonc({ path: configPath, deps: { configFile } }),
+        )) ?? [];
+      // Static config wins on conflict — mirrors @executor-js/vite-plugin's
+      // ordering. Without this, a package listed in both surfaces would
+      // boot twice (double routes, double in-memory storage).
+      const staticPackageNames = new Set(
+        staticPlugins
+          .map((p) => p.packageName)
+          .filter((n): n is string => !!n),
+      );
+      const dedupedDynamic = dynamicPlugins.filter((p) => {
+        if (p.packageName && staticPackageNames.has(p.packageName)) {
+          console.warn(
+            `[executor] plugin "${p.packageName}" appears in both ` +
+              `executor.config.ts and executor.jsonc#plugins. The static ` +
+              `entry wins; the jsonc entry is ignored.`,
+          );
+          return false;
+        }
+        return true;
+      });
+      const plugins: LocalPlugins = [...staticPlugins, ...dedupedDynamic];
       const schema = collectSchemas(plugins);
       const adapter = makeSqliteAdapter({ db, schema });
       const blobs = makeSqliteBlobStore({ db });
