@@ -540,6 +540,39 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     }),
   );
 
+  it.effect("listSourceBindings returns [] for a removed source", () =>
+    // Regression: the React bindings atom revalidates after a removeSpec
+    // (sourceWriteKeys invalidate it) before unmount. The store used to
+    // throw StorageError("source does not exist"), which surfaced to the
+    // browser as a 500. A removed source has no bindings — return [].
+    Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [
+            openApiPlugin({ httpClientLayer: clientLayer }),
+            memorySecretsPlugin(),
+          ] as const,
+        }),
+      );
+
+      yield* executor.openapi.addSpec({
+        spec: specJson,
+        scope: TEST_SCOPE,
+        namespace: "removable",
+        baseUrl: "",
+      });
+      yield* executor.openapi.removeSpec("removable", TEST_SCOPE);
+
+      const bindings = yield* executor.openapi.listSourceBindings(
+        "removable",
+        TEST_SCOPE,
+      );
+      expect(bindings).toEqual([]);
+    }),
+  );
+
   // -------------------------------------------------------------------------
   // Multi-scope shadowing — regression suite covering the bug class where
   // store reads/writes that don't pin scope_id collapse onto whichever row
