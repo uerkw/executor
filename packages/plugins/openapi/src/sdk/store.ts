@@ -419,8 +419,7 @@ export const makeDefaultOpenapiStore = ({
           : new Date(row.updated_at as string),
     });
 
-  const validateBindingTarget = (params: {
-    readonly sourceId: string;
+  const validateBindingScopes = (params: {
     readonly sourceScope: string;
     readonly targetScope: string;
   }) =>
@@ -445,6 +444,18 @@ export const makeDefaultOpenapiStore = ({
           }),
         );
       }
+    });
+
+  const validateBindingTarget = (params: {
+    readonly sourceId: string;
+    readonly sourceScope: string;
+    readonly targetScope: string;
+  }) =>
+    Effect.gen(function* () {
+      yield* validateBindingScopes({
+        sourceScope: params.sourceScope,
+        targetScope: params.targetScope,
+      });
       const source = yield* adapter.findOne({
         model: "openapi_source",
         where: [
@@ -701,8 +712,7 @@ export const makeDefaultOpenapiStore = ({
 
     listSourceBindings: (sourceId, sourceScope) =>
       Effect.gen(function* () {
-        yield* validateBindingTarget({
-          sourceId,
+        yield* validateBindingScopes({
           sourceScope,
           targetScope: sourceScope,
         });
@@ -729,8 +739,7 @@ export const makeDefaultOpenapiStore = ({
 
     resolveSourceBinding: (sourceId, sourceScope, slot) =>
       Effect.gen(function* () {
-        yield* validateBindingTarget({
-          sourceId,
+        yield* validateBindingScopes({
           sourceScope,
           targetScope: sourceScope,
         });
