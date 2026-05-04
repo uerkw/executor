@@ -183,6 +183,10 @@ describe("Auth callback handlers", () => {
             refreshToken: "refresh_token",
             sealedSession: "sealed_session_no_org",
           } satisfies AuthenticateWithCodeResult),
+        // The handler only reads `data[*].organizationId` and
+        // `data[*].status`, so we stub a minimal shape matching that
+        // contract instead of hand-rolling the full WorkOS SDK types.
+        // oxlint-disable-next-line executor/no-double-cast
         listUserMemberships: (() =>
           Effect.succeed({
             data: [
@@ -228,6 +232,9 @@ describe("Auth callback handlers", () => {
             refreshToken: "refresh_token",
             sealedSession: "sealed_session_fallback",
           } satisfies AuthenticateWithCodeResult),
+        // Same minimal-shape stub as above — see comment in the
+        // pending-membership test.
+        // oxlint-disable-next-line executor/no-double-cast
         listUserMemberships: (() =>
           Effect.succeed({
             data: [
