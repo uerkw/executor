@@ -44,12 +44,14 @@ import {
   type ElicitationRequest,
 } from "./elicitation";
 import {
+  ConnectionInUseError,
   ConnectionNotFoundError,
   ConnectionProviderNotRegisteredError,
   ConnectionReauthRequiredError,
   ConnectionRefreshNotSupportedError,
   NoHandlerError,
   PluginNotLoadedError,
+  SecretInUseError,
   SecretOwnedByConnectionError,
   SourceRemovalNotAllowedError,
   ToolBlockedError,
@@ -84,6 +86,7 @@ import {
   SetSecretInput,
   type SecretProvider,
 } from "./secrets";
+import { Usage } from "./usages";
 import {
   ToolSchema,
   type Source,
@@ -211,11 +214,22 @@ export type Executor<TPlugins extends readonly AnyPlugin[] = []> = {
     ) => Effect.Effect<SecretRef, StorageFailure>;
     /** Delete a bare (non-connection-owned) secret. Connection-owned
      *  secrets are rejected with `SecretOwnedByConnectionError` — use
-     *  `connections.remove` instead. */
+     *  `connections.remove` instead. Refuses with `SecretInUseError`
+     *  if any plugin reports the secret as in use; the caller should
+     *  show the `usages(id)` list and ask the user to detach first. */
     readonly remove: (
       id: string,
-    ) => Effect.Effect<void, SecretOwnedByConnectionError | StorageFailure>;
+    ) => Effect.Effect<
+      void,
+      SecretOwnedByConnectionError | SecretInUseError | StorageFailure
+    >;
     readonly list: () => Effect.Effect<readonly SecretRef[], StorageFailure>;
+    /** All places this secret is referenced — fans out across every
+     *  plugin's `usagesForSecret`. Used by the Secrets-tab "Used by"
+     *  list and by `remove` for its RESTRICT check. */
+    readonly usages: (
+      id: string,
+    ) => Effect.Effect<readonly Usage[], StorageFailure>;
     readonly providers: () => Effect.Effect<readonly string[]>;
   };
 
@@ -251,7 +265,16 @@ export type Executor<TPlugins extends readonly AnyPlugin[] = []> = {
       | ConnectionRefreshError
       | StorageFailure
     >;
-    readonly remove: (id: string) => Effect.Effect<void, StorageFailure>;
+    /** Refuses with `ConnectionInUseError` if any plugin reports the
+     *  connection as in use. */
+    readonly remove: (
+      id: string,
+    ) => Effect.Effect<void, ConnectionInUseError | StorageFailure>;
+    /** All places this connection is referenced — fans out across every
+     *  plugin's `usagesForConnection`. */
+    readonly usages: (
+      id: string,
+    ) => Effect.Effect<readonly Usage[], StorageFailure>;
     readonly providers: () => Effect.Effect<readonly string[]>;
   };
 
@@ -945,9 +968,129 @@ export const createExecutor = <
         });
       });
 
+    // Fan out across every plugin that contributes `usagesForSecret`. Each
+    // plugin queries its own normalized columns through its scoped adapter,
+    // so scope filtering is automatic.
+    //
+    // The display path (`secretsUsages` / `connectionsUsages` from the API)
+    // calls `*Lenient`: per-plugin errors become a logWarning so one buggy
+    // plugin can't break the UI footer. The delete RESTRICT path
+    // (`secretsRemove` / `connectionsRemove`) calls `*Strict`: per-plugin
+    // errors fail the whole call so a transient plugin failure can't be
+    // mistaken for "no usages" and let through a delete that creates
+    // dangling refs.
+    const secretsUsagesStrict = (
+      id: string,
+    ): Effect.Effect<readonly Usage[], StorageFailure> =>
+      Effect.gen(function* () {
+        const secretId = SecretId.make(id);
+        const perPlugin = yield* Effect.all(
+          [...runtimes.values()]
+            .filter((r) => r.plugin.usagesForSecret)
+            .map((r) =>
+              r.plugin.usagesForSecret!({
+                ctx: r.ctx,
+                args: { secretId },
+              }).pipe(
+                Effect.mapError(
+                  (cause): StorageFailure =>
+                    new StorageError({
+                      message: `usagesForSecret failed for plugin ${r.plugin.id}`,
+                      cause,
+                    }),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        );
+        return perPlugin.flat();
+      });
+
+    const secretsUsages = (
+      id: string,
+    ): Effect.Effect<readonly Usage[], StorageFailure> =>
+      Effect.gen(function* () {
+        const secretId = SecretId.make(id);
+        const perPlugin = yield* Effect.all(
+          [...runtimes.values()]
+            .filter((r) => r.plugin.usagesForSecret)
+            .map((r) =>
+              r.plugin.usagesForSecret!({
+                ctx: r.ctx,
+                args: { secretId },
+              }).pipe(
+                Effect.catchCause((cause: unknown) =>
+                  Effect.logWarning(
+                    `usagesForSecret failed for plugin ${r.plugin.id}`,
+                    cause,
+                  ).pipe(Effect.as([] as readonly Usage[])),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        );
+        return perPlugin.flat();
+      });
+
+    const connectionsUsagesStrict = (
+      id: string,
+    ): Effect.Effect<readonly Usage[], StorageFailure> =>
+      Effect.gen(function* () {
+        const connectionId = ConnectionId.make(id);
+        const perPlugin = yield* Effect.all(
+          [...runtimes.values()]
+            .filter((r) => r.plugin.usagesForConnection)
+            .map((r) =>
+              r.plugin.usagesForConnection!({
+                ctx: r.ctx,
+                args: { connectionId },
+              }).pipe(
+                Effect.mapError(
+                  (cause): StorageFailure =>
+                    new StorageError({
+                      message: `usagesForConnection failed for plugin ${r.plugin.id}`,
+                      cause,
+                    }),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        );
+        return perPlugin.flat();
+      });
+
+    const connectionsUsages = (
+      id: string,
+    ): Effect.Effect<readonly Usage[], StorageFailure> =>
+      Effect.gen(function* () {
+        const connectionId = ConnectionId.make(id);
+        const perPlugin = yield* Effect.all(
+          [...runtimes.values()]
+            .filter((r) => r.plugin.usagesForConnection)
+            .map((r) =>
+              r.plugin.usagesForConnection!({
+                ctx: r.ctx,
+                args: { connectionId },
+              }).pipe(
+                Effect.catchCause((cause: unknown) =>
+                  Effect.logWarning(
+                    `usagesForConnection failed for plugin ${r.plugin.id}`,
+                    cause,
+                  ).pipe(Effect.as([] as readonly Usage[])),
+                ),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        );
+        return perPlugin.flat();
+      });
+
     const secretsRemove = (
       id: string,
-    ): Effect.Effect<void, SecretOwnedByConnectionError | StorageFailure> =>
+    ): Effect.Effect<
+      void,
+      SecretOwnedByConnectionError | SecretInUseError | StorageFailure
+    > =>
       Effect.gen(function* () {
         // Remove is shadowing-aware: drop only the innermost-scope row.
         // Removing a user-scope override on a secret that also has an
@@ -972,6 +1115,27 @@ export const createExecutor = <
               ),
             }),
           );
+        }
+        // RESTRICT: refuse if any source/binding still references this
+        // secret AND deleting the innermost row would leave the reference
+        // dangling. With shadowing, deleting a user-scope override still
+        // leaves outer-scope rows that the reference resolves to — that
+        // case is safe to allow. Only block when this is the last row
+        // with this id across the entire scope stack.
+        // Strict variant: per-plugin failures fail the gate (vs. lenient
+        // display path that swallows them) so we never silently let a
+        // reference dangle on a transient error.
+        const willDangle = rows.length <= 1;
+        if (willDangle) {
+          const usages = yield* secretsUsagesStrict(id);
+          if (usages.length > 0) {
+            return yield* Effect.fail(
+              new SecretInUseError({
+                secretId: SecretId.make(id),
+                usageCount: usages.length,
+              }),
+            );
+          }
         }
         const targetScope = (target?.scope_id as string | undefined) ??
           scopeIds[0]!;
@@ -1488,10 +1652,29 @@ export const createExecutor = <
 
     const connectionsRemove = (
       id: string,
-    ): Effect.Effect<void, StorageFailure> =>
+    ): Effect.Effect<void, ConnectionInUseError | StorageFailure> =>
       Effect.gen(function* () {
-        const row = yield* findInnermostConnectionRow(id);
+        const allRows = yield* core.findMany({
+          model: "connection",
+          where: [{ field: "id", value: id }],
+        });
+        const row = findInnermost(allRows as readonly ConnectionRow[]);
         if (!row) return;
+        // RESTRICT: refuse if any source/binding still references this
+        // connection AND deleting the innermost row would leave the
+        // reference dangling. Same shadowing rationale as `secretsRemove`.
+        const willDangle = allRows.length <= 1;
+        if (willDangle) {
+          const usages = yield* connectionsUsagesStrict(id);
+          if (usages.length > 0) {
+            return yield* Effect.fail(
+              new ConnectionInUseError({
+                connectionId: ConnectionId.make(id),
+                usageCount: usages.length,
+              }),
+            );
+          }
+        }
         const scope = row.scope_id as string;
         yield* adapter.transaction(() =>
           Effect.gen(function* () {
@@ -2800,6 +2983,7 @@ export const createExecutor = <
         set: secretsSet,
         remove: secretsRemove,
         list: secretsList,
+        usages: secretsUsages,
         providers: () =>
           Effect.sync(
             () => Array.from(secretProviders.keys()) as readonly string[],
@@ -2813,6 +2997,7 @@ export const createExecutor = <
         setIdentityLabel: connectionsSetIdentityLabel,
         accessToken: connectionsAccessToken,
         remove: connectionsRemove,
+        usages: connectionsUsages,
         providers: () =>
           Effect.sync(
             () =>

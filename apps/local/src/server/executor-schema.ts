@@ -122,9 +122,7 @@ export const openapi_source = sqliteTable("openapi_source", {
   source_url: text('source_url'),
   base_url: text('base_url'),
   headers: text('headers', { mode: "json" }),
-  query_params: text('query_params', { mode: "json" }),
-  oauth2: text('oauth2', { mode: "json" }),
-  invocation_config: text('invocation_config', { mode: "json" }).notNull()
+  oauth2: text('oauth2', { mode: "json" })
 }, (table) => [
   primaryKey({ columns: [table.scope_id, table.id] }),
   index("openapi_source_scope_id_idx").on(table.scope_id),
@@ -147,7 +145,10 @@ export const openapi_source_binding = sqliteTable("openapi_source_binding", {
   source_scope_id: text('source_scope_id').notNull(),
   target_scope_id: text('target_scope_id').notNull(),
   slot: text('slot').notNull(),
-  value: text('value', { mode: "json" }).notNull(),
+  kind: text({ enum: ['secret', 'connection', 'text'] }).notNull(),
+  secret_id: text('secret_id'),
+  connection_id: text('connection_id'),
+  text_value: text('text_value'),
   created_at: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updated_at: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
 }, (table) => [
@@ -155,6 +156,56 @@ export const openapi_source_binding = sqliteTable("openapi_source_binding", {
   index("openapi_source_binding_source_scope_id_idx").on(table.source_scope_id),
   index("openapi_source_binding_target_scope_id_idx").on(table.target_scope_id),
   index("openapi_source_binding_slot_idx").on(table.slot),
+  index("openapi_source_binding_secret_id_idx").on(table.secret_id),
+  index("openapi_source_binding_connection_id_idx").on(table.connection_id),
+]);
+
+export const openapi_source_query_param = sqliteTable("openapi_source_query_param", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("openapi_source_query_param_scope_id_idx").on(table.scope_id),
+  index("openapi_source_query_param_source_id_idx").on(table.source_id),
+  index("openapi_source_query_param_secret_id_idx").on(table.secret_id),
+]);
+
+export const openapi_source_spec_fetch_header = sqliteTable("openapi_source_spec_fetch_header", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("openapi_source_spec_fetch_header_scope_id_idx").on(table.scope_id),
+  index("openapi_source_spec_fetch_header_source_id_idx").on(table.source_id),
+  index("openapi_source_spec_fetch_header_secret_id_idx").on(table.secret_id),
+]);
+
+export const openapi_source_spec_fetch_query_param = sqliteTable("openapi_source_spec_fetch_query_param", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("openapi_source_spec_fetch_query_param_scope_id_idx").on(table.scope_id),
+  index("openapi_source_spec_fetch_query_param_source_id_idx").on(table.source_id),
+  index("openapi_source_spec_fetch_query_param_secret_id_idx").on(table.secret_id),
 ]);
 
 export const mcp_source = sqliteTable("mcp_source", {
@@ -162,10 +213,53 @@ export const mcp_source = sqliteTable("mcp_source", {
   scope_id: text('scope_id').notNull(),
   name: text('name').notNull(),
   config: text('config', { mode: "json" }).notNull(),
+  auth_kind: text({ enum: ['none', 'header', 'oauth2'] }).default("none").notNull(),
+  auth_header_name: text('auth_header_name'),
+  auth_secret_id: text('auth_secret_id'),
+  auth_secret_prefix: text('auth_secret_prefix'),
+  auth_connection_id: text('auth_connection_id'),
+  auth_client_id_secret_id: text('auth_client_id_secret_id'),
+  auth_client_secret_secret_id: text('auth_client_secret_secret_id'),
   created_at: integer('created_at', { mode: 'timestamp_ms' }).notNull()
 }, (table) => [
   primaryKey({ columns: [table.scope_id, table.id] }),
   index("mcp_source_scope_id_idx").on(table.scope_id),
+  index("mcp_source_auth_secret_id_idx").on(table.auth_secret_id),
+  index("mcp_source_auth_connection_id_idx").on(table.auth_connection_id),
+  index("mcp_source_auth_client_id_secret_id_idx").on(table.auth_client_id_secret_id),
+  index("mcp_source_auth_client_secret_secret_id_idx").on(table.auth_client_secret_secret_id),
+]);
+
+export const mcp_source_header = sqliteTable("mcp_source_header", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("mcp_source_header_scope_id_idx").on(table.scope_id),
+  index("mcp_source_header_source_id_idx").on(table.source_id),
+  index("mcp_source_header_secret_id_idx").on(table.secret_id),
+]);
+
+export const mcp_source_query_param = sqliteTable("mcp_source_query_param", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("mcp_source_query_param_scope_id_idx").on(table.scope_id),
+  index("mcp_source_query_param_source_id_idx").on(table.source_id),
+  index("mcp_source_query_param_secret_id_idx").on(table.secret_id),
 ]);
 
 export const mcp_binding = sqliteTable("mcp_binding", {
@@ -185,11 +279,51 @@ export const google_discovery_source = sqliteTable("google_discovery_source", {
   scope_id: text('scope_id').notNull(),
   name: text('name').notNull(),
   config: text('config', { mode: "json" }).notNull(),
+  auth_kind: text({ enum: ['none', 'oauth2'] }).default("none").notNull(),
+  auth_connection_id: text('auth_connection_id'),
+  auth_client_id_secret_id: text('auth_client_id_secret_id'),
+  auth_client_secret_secret_id: text('auth_client_secret_secret_id'),
+  auth_scopes: text('auth_scopes', { mode: "json" }),
   created_at: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updated_at: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
 }, (table) => [
   primaryKey({ columns: [table.scope_id, table.id] }),
   index("google_discovery_source_scope_id_idx").on(table.scope_id),
+  index("google_discovery_source_auth_connection_id_idx").on(table.auth_connection_id),
+  index("google_discovery_source_auth_client_id_secret_id_idx").on(table.auth_client_id_secret_id),
+  index("google_discovery_source_auth_client_secret_secret_id_idx").on(table.auth_client_secret_secret_id),
+]);
+
+export const google_discovery_source_credential_header = sqliteTable("google_discovery_source_credential_header", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("google_discovery_source_credential_header_scope_id_idx").on(table.scope_id),
+  index("google_discovery_source_credential_header_source_id_idx").on(table.source_id),
+  index("google_discovery_source_credential_header_secret_id_idx").on(table.secret_id),
+]);
+
+export const google_discovery_source_credential_query_param = sqliteTable("google_discovery_source_credential_query_param", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("google_discovery_source_credential_query_param_scope_id_idx").on(table.scope_id),
+  index("google_discovery_source_credential_query_param_source_id_idx").on(table.source_id),
+  index("google_discovery_source_credential_query_param_secret_id_idx").on(table.secret_id),
 ]);
 
 export const google_discovery_binding = sqliteTable("google_discovery_binding", {
@@ -209,12 +343,44 @@ export const graphql_source = sqliteTable("graphql_source", {
   scope_id: text('scope_id').notNull(),
   name: text('name').notNull(),
   endpoint: text('endpoint').notNull(),
-  headers: text('headers', { mode: "json" }),
-  query_params: text('query_params', { mode: "json" }),
-  auth: text('auth', { mode: "json" })
+  auth_kind: text({ enum: ['none', 'oauth2'] }).default("none").notNull(),
+  auth_connection_id: text('auth_connection_id')
 }, (table) => [
   primaryKey({ columns: [table.scope_id, table.id] }),
   index("graphql_source_scope_id_idx").on(table.scope_id),
+  index("graphql_source_auth_connection_id_idx").on(table.auth_connection_id),
+]);
+
+export const graphql_source_header = sqliteTable("graphql_source_header", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("graphql_source_header_scope_id_idx").on(table.scope_id),
+  index("graphql_source_header_source_id_idx").on(table.source_id),
+  index("graphql_source_header_secret_id_idx").on(table.secret_id),
+]);
+
+export const graphql_source_query_param = sqliteTable("graphql_source_query_param", {
+  id: text('id').notNull(),
+  scope_id: text('scope_id').notNull(),
+  source_id: text('source_id').notNull(),
+  name: text('name').notNull(),
+  kind: text({ enum: ['text', 'secret'] }).notNull(),
+  text_value: text('text_value'),
+  secret_id: text('secret_id'),
+  secret_prefix: text('secret_prefix')
+}, (table) => [
+  primaryKey({ columns: [table.scope_id, table.id] }),
+  index("graphql_source_query_param_scope_id_idx").on(table.scope_id),
+  index("graphql_source_query_param_source_id_idx").on(table.source_id),
+  index("graphql_source_query_param_secret_id_idx").on(table.secret_id),
 ]);
 
 export const graphql_operation = sqliteTable("graphql_operation", {
@@ -226,13 +392,5 @@ export const graphql_operation = sqliteTable("graphql_operation", {
   primaryKey({ columns: [table.scope_id, table.id] }),
   index("graphql_operation_scope_id_idx").on(table.scope_id),
   index("graphql_operation_source_id_idx").on(table.source_id),
-]);
-
-export const blob = sqliteTable("blob", {
-  namespace: text('namespace').notNull(),
-  key: text('key').notNull(),
-  value: text('value').notNull()
-}, (table) => [
-  primaryKey({ columns: [table.namespace, table.key] }),
 ]);
 
