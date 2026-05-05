@@ -38,6 +38,44 @@
   },
   "overrides": [
     {
+      "files": [
+        "apps/cli/src/**/*.{ts,tsx}",
+        "apps/desktop/src/main.ts",
+        "scripts/**/*.{ts,js}",
+        "packages/kernel/runtime-*/src/**/*.{ts,tsx,js,mjs}",
+      ],
+      "rules": {
+        "executor/no-error-constructor": "off",
+        "executor/no-instanceof-error": "off",
+        "executor/no-promise-catch": "off",
+        "executor/no-promise-reject": "off",
+        "executor/no-try-catch-or-throw": "off",
+        "executor/no-unknown-error-message": "off",
+      },
+    },
+    {
+      "files": ["apps/marketing/src/**/*.astro"],
+      "rules": {
+        "executor/no-error-constructor": "off",
+        "executor/no-instanceof-error": "off",
+        "executor/no-try-catch-or-throw": "off",
+        "executor/no-unknown-error-message": "off",
+      },
+    },
+    {
+      "files": ["packages/core/vite-plugin/src/**/*.{ts,tsx}"],
+      "rules": {
+        "executor/no-try-catch-or-throw": "off",
+      },
+    },
+    {
+      "files": ["packages/react/src/components/**/*.{ts,tsx}"],
+      "rules": {
+        "executor/no-error-constructor": "off",
+        "executor/no-try-catch-or-throw": "off",
+      },
+    },
+    {
       "files": ["packages/plugins/workos-vault/src/**/*.{ts,tsx}"],
       "rules": {
         "executor/no-inline-object-type-assertion": "error",
