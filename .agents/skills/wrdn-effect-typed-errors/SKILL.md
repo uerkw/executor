@@ -152,6 +152,25 @@ Effect.ignore(
 );
 ```
 
+### Effect die / orDie escape hatches
+
+Bad in domain code:
+
+```ts
+program.pipe(Effect.orDie)
+Effect.die(error)
+```
+
+Good:
+
+```ts
+program.pipe(
+  Effect.mapError((cause) => new DomainError({ message: "Operation failed", cause })),
+)
+```
+
+`Effect.die`, `Effect.dieMessage`, `Effect.orDie`, and `Effect.orDieWith` turn typed failures into defects. Use them only at a true runtime boundary where the host cannot represent typed failures, and keep that usage behind a narrow lint suppression with a `boundary:` reason. Do not use `orDie` to avoid threading an error type through normal Effect code.
+
 ### try/catch
 
 Bad:

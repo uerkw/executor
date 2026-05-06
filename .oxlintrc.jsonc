@@ -8,6 +8,7 @@
     "executor/no-double-cast": "error",
     "executor/no-cross-package-relative-imports": "error",
     "executor/require-reactivity-keys": "error",
+    "executor/no-effect-escape-hatch": "error",
     "executor/no-effect-internal-tags": "error",
     "executor/no-error-constructor": "error",
     "executor/no-instanceof-error": "error",
@@ -47,6 +48,7 @@
         "packages/kernel/runtime-*/src/**/*.{ts,tsx,js,mjs}",
       ],
       "rules": {
+        "executor/no-effect-escape-hatch": "off",
         "executor/no-error-constructor": "off",
         "executor/no-instanceof-error": "off",
         "executor/no-json-parse": "off",
@@ -59,6 +61,7 @@
     {
       "files": ["apps/marketing/src/**/*.astro"],
       "rules": {
+        "executor/no-effect-escape-hatch": "off",
         "executor/no-error-constructor": "off",
         "executor/no-instanceof-error": "off",
         "executor/no-json-parse": "off",

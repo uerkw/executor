@@ -1,6 +1,7 @@
 import noConditionalTests from "./oxlint-plugin-executor/rules/no-conditional-tests.js";
 import noCrossPackageRelativeImports from "./oxlint-plugin-executor/rules/no-cross-package-relative-imports.js";
 import noDoubleCast from "./oxlint-plugin-executor/rules/no-double-cast.js";
+import noEffectEscapeHatch from "./oxlint-plugin-executor/rules/no-effect-escape-hatch.js";
 import noEffectInternalTags from "./oxlint-plugin-executor/rules/no-effect-internal-tags.js";
 import noErrorConstructor from "./oxlint-plugin-executor/rules/no-error-constructor.js";
 import noInlineObjectTypeAssertion from "./oxlint-plugin-executor/rules/no-inline-object-type-assertion.js";
@@ -34,6 +35,7 @@ export default {
     "no-double-cast": noDoubleCast,
     "no-cross-package-relative-imports": noCrossPackageRelativeImports,
     "require-reactivity-keys": requireReactivityKeys,
+    "no-effect-escape-hatch": noEffectEscapeHatch,
     "no-effect-internal-tags": noEffectInternalTags,
     "no-error-constructor": noErrorConstructor,
     "no-ts-nocheck": noTsNocheck,
