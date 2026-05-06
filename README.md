@@ -144,10 +144,11 @@ As part of my coding process, I give my agent access to references to other code
 
 A non exhaustive list of references are:
 
-- [Better Auth](https://github.com/better-auth/better-auth)
-- [Effect](https://github.com/Effect-TS/effect)
-- [OpenCode](https://github.com/anomalyco/opencode)
-- [OpenClaw](https://github.com/openclaw/openclaw)
-- [Emdash](https://github.com/emdash-cms/emdash)
+- [Better Auth](https://github.com/better-auth/better-auth) - Storage adapter reference
+- [Effect](https://github.com/Effect-TS/effect) - General code patterns
+- [OpenCode](https://github.com/anomalyco/opencode) - Plugin system reference
+- [OpenClaw](https://github.com/openclaw/openclaw) - Plugin system reference
+- [Emdash](https://github.com/emdash-cms/emdash) - Plugin system reference
+- [Pi](https://github.com/badlogic/pi-mono) - Plugin systme reference
 
 It's encouraged also that you can use this codebase as a reference to understand how it's implemented
