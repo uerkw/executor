@@ -19,6 +19,7 @@ import noTsNocheck from "./oxlint-plugin-executor/rules/no-ts-nocheck.js";
 import noTryCatchOrThrow from "./oxlint-plugin-executor/rules/no-try-catch-or-throw.js";
 import noUnknownErrorMessage from "./oxlint-plugin-executor/rules/no-unknown-error-message.js";
 import noUnknownShapeProbing from "./oxlint-plugin-executor/rules/no-unknown-shape-probing.js";
+import noUnsupportedEffectApi from "./oxlint-plugin-executor/rules/no-unsupported-effect-api.js";
 import noVitestImport from "./oxlint-plugin-executor/rules/no-vitest-import.js";
 import preferSchemaInferredTypes from "./oxlint-plugin-executor/rules/prefer-schema-inferred-types.js";
 import preferYieldTaggedError from "./oxlint-plugin-executor/rules/prefer-yield-tagged-error.js";
@@ -53,6 +54,7 @@ export default {
     "no-try-catch-or-throw": noTryCatchOrThrow,
     "no-unknown-error-message": noUnknownErrorMessage,
     "no-unknown-shape-probing": noUnknownShapeProbing,
+    "no-unsupported-effect-api": noUnsupportedEffectApi,
     "prefer-schema-inferred-types": preferSchemaInferredTypes,
     "prefer-value-inferred-extension-types": preferValueInferredExtensionTypes,
     "prefer-yield-tagged-error": preferYieldTaggedError,

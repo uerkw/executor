@@ -53,6 +53,16 @@ The lint rule is not a mandate to make every file Effect-shaped. It is acceptabl
 - control is immediately translated into a typed Effect failure, stable IPC payload, stable test assertion, or deliberately best-effort cleanup
 - the suppression is narrow and explains the boundary
 
+## Repo Effect API compatibility
+
+Use the APIs that exist in this repo's pinned Effect runtime:
+
+- Use `Effect.callback` for callback adapters. Do not use `Effect.async`.
+- Use `Effect.andThen` or `Effect.gen` sequencing. Do not use `Effect.zipRight`.
+- Use `Effect.timeoutOrElse` or `Effect.timeoutOption`. Do not use `Effect.timeoutFail`.
+
+These are not style preferences; the unavailable APIs fail at typecheck or runtime.
+
 Good boundary suppression:
 
 ```ts
