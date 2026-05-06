@@ -117,6 +117,21 @@ describe("buildAuthorizationUrl", () => {
     expect(url.searchParams.get("tenant")).toBe("acme");
     expect(url.searchParams.get("client_id")).toBe("client-123");
   });
+
+  it("includes RFC 8707 resource indicator when provided", () => {
+    const url = new URL(
+      buildAuthorizationUrl({
+        ...baseInput,
+        resource: "https://api.example.com/v1/mcp",
+      }),
+    );
+    expect(url.searchParams.get("resource")).toBe("https://api.example.com/v1/mcp");
+  });
+
+  it("omits resource parameter when not provided", () => {
+    const url = new URL(buildAuthorizationUrl(baseInput));
+    expect(url.searchParams.has("resource")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -182,6 +197,37 @@ describe("exchangeAuthorizationCode", () => {
     expect(body.get("redirect_uri")).toBe("https://app.example.com/cb");
     expect(body.get("code_verifier")).toBe("verifier");
     expect(body.get("code")).toBe("abc");
+  });
+
+  it("includes RFC 8707 resource parameter on the token request when provided", async () => {
+    const { calls } = captureFetch(jsonResponse(200, validBody));
+    await Effect.runPromise(
+      exchangeAuthorizationCode({
+        tokenUrl: "https://example.com/token",
+        clientId: "cid",
+        redirectUrl: "https://app.example.com/cb",
+        codeVerifier: "verifier",
+        code: "abc",
+        resource: "https://api.example.com/v1/mcp",
+      }),
+    );
+    const body = calls[0]!.init.body as URLSearchParams;
+    expect(body.get("resource")).toBe("https://api.example.com/v1/mcp");
+  });
+
+  it("omits resource parameter when not provided", async () => {
+    const { calls } = captureFetch(jsonResponse(200, validBody));
+    await Effect.runPromise(
+      exchangeAuthorizationCode({
+        tokenUrl: "https://example.com/token",
+        clientId: "cid",
+        redirectUrl: "https://app.example.com/cb",
+        codeVerifier: "verifier",
+        code: "abc",
+      }),
+    );
+    const body = calls[0]!.init.body as URLSearchParams;
+    expect(body.has("resource")).toBe(false);
   });
 
   it("omits client_secret when none is provided (public clients with PKCE)", async () => {
@@ -454,6 +500,20 @@ describe("refreshAccessToken", () => {
     );
     const body = calls[0]!.init.body as URLSearchParams;
     expect(body.has("scope")).toBe(false);
+  });
+
+  it("includes RFC 8707 resource parameter on refresh requests when provided", async () => {
+    const { calls } = captureFetch(jsonResponse(200, validBody));
+    await Effect.runPromise(
+      refreshAccessToken({
+        tokenUrl: "https://example.com/token",
+        clientId: "cid",
+        refreshToken: "old",
+        resource: "https://api.example.com/v1/mcp",
+      }),
+    );
+    const body = calls[0]!.init.body as URLSearchParams;
+    expect(body.get("resource")).toBe("https://api.example.com/v1/mcp");
   });
 
   it("strips refreshed id_tokens whose iss does not match AS metadata", async () => {

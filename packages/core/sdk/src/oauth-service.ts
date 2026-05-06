@@ -107,6 +107,7 @@ const DynamicDcrSessionPayload = Schema.Struct({
   resourceMetadataUrl: Schema.NullOr(Schema.String),
   resourceMetadata: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
   scopes: Schema.Array(Schema.String),
+  resource: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultType(Effect.succeed(null))),
 });
 
 const AuthorizationCodeSessionPayload = Schema.Struct({
@@ -344,9 +345,20 @@ export const makeOAuth2Service = (
           )
         : null;
 
+      // Dynamic registration is only viable when the AS advertises a
+      // registration_endpoint AND a token_endpoint_auth_method we can use
+      // (`none`, `client_secret_post`, or `client_secret_basic`). If the AS
+      // doesn't list any methods we assume `none` is acceptable per OAuth
+      // 2.1 §2.4 (server's choice).
+      const advertisedAuthMethods =
+        authServer?.metadata.token_endpoint_auth_methods_supported ?? [];
+      const hasNegotiableAuthMethod =
+        advertisedAuthMethods.length === 0 ||
+        advertisedAuthMethods.some(
+          (m) => m === "none" || m === "client_secret_post" || m === "client_secret_basic",
+        );
       const supportsDynamicRegistration = !!(
-        authServer?.metadata.registration_endpoint &&
-        (authServer.metadata.token_endpoint_auth_methods_supported ?? []).includes("none")
+        authServer?.metadata.registration_endpoint && hasNegotiableAuthMethod
       );
 
       // Bearer challenge probe — POST the endpoint unauth, look for
@@ -421,10 +433,12 @@ export const makeOAuth2Service = (
           resourceQueryParams: input.queryParams,
         },
       ).pipe(
-        Effect.catchTag("OAuthDiscoveryError", ({ message }) =>
+        Effect.catchTag("OAuthDiscoveryError", ({ message, error, errorDescription }) =>
           Effect.fail(
             new OAuthStartError({
               message: `Dynamic authorization setup failed: ${message}`,
+              error,
+              errorDescription,
             }),
           ),
         ),
@@ -444,9 +458,10 @@ export const makeOAuth2Service = (
         authorizationUrl: started.state.authorizationServerMetadata.authorization_endpoint,
         clientId: started.state.clientInformation.client_id,
         redirectUrl: input.redirectUrl,
-        scopes: strategy.scopes ?? started.state.authorizationServerMetadata.scopes_supported ?? [],
+        scopes: started.state.scopes,
         state: sessionId,
         codeChallenge,
+        resource: started.state.resource,
       });
 
       const payload: OAuthSessionPayload = {
@@ -466,9 +481,8 @@ export const makeOAuth2Service = (
         resourceMetadataUrl: started.state.resourceMetadataUrl,
         resourceMetadata:
           (started.state.resourceMetadata as Record<string, unknown> | null) ?? null,
-        scopes: [
-          ...(strategy.scopes ?? started.state.authorizationServerMetadata.scopes_supported ?? []),
-        ],
+        scopes: [...started.state.scopes],
+        resource: started.state.resource,
       };
 
       yield* writeSession({
@@ -811,6 +825,7 @@ export const makeOAuth2Service = (
                   : "body",
               scopes: [...payload.scopes],
               scope: exchangeResult.tokens.scope ?? null,
+              resource: payload.resource,
             }
           : {
               kind: "authorization-code",
@@ -922,6 +937,7 @@ export const makeOAuth2Service = (
         code,
         idTokenSigningAlgValuesSupported: md.id_token_signing_alg_values_supported,
         clientAuth: ci.token_endpoint_auth_method === "client_secret_basic" ? "basic" : "body",
+        resource: payload.resource ?? undefined,
       }).pipe(
         Effect.mapError(
           ({ message, error }: OAuth2Error) =>
@@ -1198,6 +1214,10 @@ export const makeOAuth2Service = (
                 clientAuth: state.clientAuth,
                 idTokenSigningAlgValuesSupported:
                   state.kind === "dynamic-dcr" ? state.idTokenSigningAlgValuesSupported : undefined,
+                resource:
+                  state.kind === "dynamic-dcr" || state.kind === "authorization-code"
+                    ? (state.resource ?? undefined)
+                    : undefined,
               })
         ).pipe(
           Effect.mapError(
