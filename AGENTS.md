@@ -55,3 +55,7 @@ inspect it there.
 - `packages/kernel/*`: execution runtimes and code execution substrate.
 - `apps/local`, `apps/cloud`, `apps/cli`, and `apps/desktop`: product entry
   points that compose the packages.
+
+## Other
+
+Please make note of mistakes you make in MISTAKES.md. If you find you wish you had more context or tools, write that down in DESIRES.md. If you learn anything about your env write that down in LEARNINGS.md.
