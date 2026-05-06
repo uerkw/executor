@@ -137,3 +137,17 @@ Visit [executor.sh](https://executor.sh) to learn more.
 ## Attribution
 
 - Thank you to [Crystian](https://www.linkedin.com/in/crystian/) for providing the npm package name `executor`.
+
+## References
+
+As part of my coding process, I give my agent access to references to other codebases to understand patterns and how other people have implemented systems.
+
+A non exhaustive list of references are:
+
+- [Better Auth](https://github.com/better-auth/better-auth)
+- [Effect](https://github.com/Effect-TS/effect)
+- [OpenCode](https://github.com/anomalyco/opencode)
+- [OpenClaw](https://github.com/openclaw/openclaw)
+- [Emdash](https://github.com/emdash-cms/emdash)
+
+It's encouraged also that you can use this codebase as a reference to understand how it's implemented
