@@ -640,11 +640,14 @@ export const beginDynamicAuthorization = (
       });
     }
 
+    const scopes = input.scopes ?? authServer.metadata.scopes_supported ?? [];
+
     const baseClientMetadata: DynamicClientMetadata = {
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
       client_name: "Executor",
+      ...(scopes.length > 0 ? { scope: scopes.join(" ") } : {}),
       ...(input.clientMetadata ?? {}),
       redirect_uris: input.clientMetadata?.redirect_uris ?? [input.redirectUrl],
     };
@@ -669,7 +672,6 @@ export const beginDynamicAuthorization = (
 
     const codeVerifier = createPkceCodeVerifier();
     const codeChallenge = yield* Effect.promise(() => createPkceCodeChallenge(codeVerifier));
-    const scopes = input.scopes ?? authServer.metadata.scopes_supported ?? [];
 
     const authorizationUrl = buildAuthorizationUrl({
       authorizationUrl: authServer.metadata.authorization_endpoint,

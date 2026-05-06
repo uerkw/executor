@@ -14,6 +14,7 @@ type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 const DcrRequestBody = Schema.Struct({
   redirect_uris: Schema.Array(Schema.String),
   token_endpoint_auth_method: Schema.String,
+  scope: Schema.optional(Schema.String),
 });
 const decodeDcrRequestBody = Schema.decodeUnknownSync(Schema.fromJsonString(DcrRequestBody));
 
@@ -347,6 +348,62 @@ describe("beginDynamicAuthorization", () => {
     );
     expect(result.state.clientInformation.client_id).toBe("dyn-client-42");
     expect(result.state.resourceMetadata?.resource).toBe("https://backboard.railway.com");
+  });
+
+  it("declares requested scopes in the DCR body so Auth0-style servers don't reject /authorize", async () => {
+    const { calls } = installFetchRouter([
+      {
+        match: (u) => u === "https://mcp.grata.com/.well-known/oauth-protected-resource",
+        handle: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u) => u === "https://mcp.grata.com/.well-known/oauth-authorization-server",
+        handle: () =>
+          new Response(
+            JSON.stringify({
+              issuer: "https://mcp.grata.com/",
+              authorization_endpoint: "https://mcp.grata.com/authorize",
+              token_endpoint: "https://mcp.grata.com/token",
+              registration_endpoint: "https://mcp.grata.com/register",
+              scopes_supported: ["openid", "profile", "email", "offline_access"],
+              response_types_supported: ["code"],
+              grant_types_supported: ["authorization_code", "refresh_token"],
+              code_challenge_methods_supported: ["S256"],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      },
+      {
+        match: (u) => u === "https://mcp.grata.com/register",
+        handle: () =>
+          new Response(
+            JSON.stringify({
+              client_id: "grata-client-id",
+              redirect_uris: ["https://app.example/cb"],
+              token_endpoint_auth_method: "none",
+              scope: "openid profile email offline_access",
+            }),
+            { status: 201, headers: { "content-type": "application/json" } },
+          ),
+      },
+    ]);
+
+    const result = await Effect.runPromise(
+      beginDynamicAuthorization({
+        endpoint: "https://mcp.grata.com/",
+        redirectUrl: "https://app.example/cb",
+        state: "state-grata",
+      }),
+    );
+
+    const dcrCall = calls.find((c) => c.url === "https://mcp.grata.com/register");
+    expect(dcrCall).toBeDefined();
+    const body = decodeDcrRequestBody(String(dcrCall!.init.body));
+    expect(body.scope).toBe("openid profile email offline_access");
+
+    const authUrl = new URL(result.authorizationUrl);
+    expect(authUrl.searchParams.get("scope")).toBe("openid profile email offline_access");
+    expect(authUrl.searchParams.get("client_id")).toBe("grata-client-id");
   });
 
   it("skips discovery + DCR when previousState is provided", async () => {
