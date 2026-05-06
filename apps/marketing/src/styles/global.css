@@ -54,7 +54,13 @@ body {
   pointer-events: none;
   z-index: 1;
 }
-.pattern-graph { -webkit-mask-image: url("/pattern-graph-paper.svg"); mask-image: url("/pattern-graph-paper.svg"); -webkit-mask-size: 100px 100px; mask-size: 100px 100px; opacity: 0.08; }
+.pattern-graph {
+  -webkit-mask-image: url("/pattern-graph-paper.svg");
+  mask-image: url("/pattern-graph-paper.svg");
+  -webkit-mask-size: 100px 100px;
+  mask-size: 100px 100px;
+  opacity: 0.08;
+}
 
 /* Soft fade overlay — paint the surface color back over the pattern's bottom */
 .pattern-fade-overlay {
@@ -76,14 +82,30 @@ body {
 
 /* Page-load reveals */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
-.rise   { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.rise-1 { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both; }
-.rise-2 { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.13s both; }
-.rise-3 { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.21s both; }
-.rise-4 { animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.30s both; }
+.rise {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.rise-1 {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+}
+.rise-2 {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.13s both;
+}
+.rise-3 {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.21s both;
+}
+.rise-4 {
+  animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
+}
 
 /* Hairline-bordered surface for the beam panel — minimal elevation */
 .surface-card {
@@ -106,7 +128,9 @@ body {
   letter-spacing: -0.005em;
   transition: background 0.15s ease;
 }
-.btn-primary:hover { background: #1f1f24; }
+.btn-primary:hover {
+  background: #1f1f24;
+}
 
 .btn-link {
   color: var(--color-ink-2);
@@ -118,7 +142,9 @@ body {
   gap: 0.4rem;
   transition: color 0.15s ease;
 }
-.btn-link:hover { color: var(--color-ink); }
+.btn-link:hover {
+  color: var(--color-ink);
+}
 
 /* Legal pages */
 .legal-prose {
@@ -126,7 +152,9 @@ body {
   line-height: 1.75;
   font-size: 15.5px;
 }
-.legal-prose > :first-child { margin-top: 0; }
+.legal-prose > :first-child {
+  margin-top: 0;
+}
 .legal-prose h2 {
   margin-top: 3rem;
   margin-bottom: 0.85rem;
@@ -136,10 +164,24 @@ body {
   font-weight: 600;
   border-top: 1px solid var(--color-rule);
 }
-.legal-prose h3 { margin-top: 1.6rem; margin-bottom: 0.5rem; font-size: 0.95rem; font-weight: 600; }
-.legal-prose p, .legal-prose ul { margin: 0.85rem 0; }
-.legal-prose ul { list-style: none; padding-left: 0; }
-.legal-prose li { position: relative; padding-left: 1.25rem; }
+.legal-prose h3 {
+  margin-top: 1.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.legal-prose p,
+.legal-prose ul {
+  margin: 0.85rem 0;
+}
+.legal-prose ul {
+  list-style: none;
+  padding-left: 0;
+}
+.legal-prose li {
+  position: relative;
+  padding-left: 1.25rem;
+}
 .legal-prose li::before {
   content: "";
   position: absolute;
@@ -157,4 +199,7 @@ body {
   text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
   text-underline-offset: 3px;
 }
-.legal-prose strong { color: var(--color-ink); font-weight: 600; }
+.legal-prose strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
