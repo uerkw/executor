@@ -2,364 +2,314 @@
 import Layout from '../layouts/Layout.astro'
 ---
 
-<Layout title="Executor — The unified tool catalog for AI agents" description="Stop making everyone on your team set up their own agent integrations. Connect your services to Executor once, and give every agent in your organization safe, authenticated access to your entire stack.">
-  <main class="bg-zinc-950 text-zinc-50 min-h-screen selection:bg-zinc-800 selection:text-white">
+<Layout title="Executor | Unified Catalog" description="Connect your services once, give every agent authenticated access to your stack.">
+  <main class="bg-white min-h-screen text-slate-800 font-sans selection:bg-blue-200 selection:text-blue-900 pb-32 overflow-hidden relative">
     
-    {/* NAVIGATION */}
-    <nav class="fixed top-0 inset-x-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900">
-      <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <div class="flex items-center gap-2 font-mono font-semibold text-lg tracking-tight">
-          <div class="w-5 h-5 rounded bg-white"></div>
+    {/* Architectural Blueprint Background */}
+    <div class="absolute inset-0 bg-[linear-gradient(#e2e8f0_1px,transparent_1px),linear-gradient(90deg,#e2e8f0_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none opacity-50"></div>
+
+    {/* TOP BAR */}
+    <nav class="fixed top-0 w-full bg-white/90 backdrop-blur-md border-b border-slate-200 z-50">
+      <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-2 font-bold text-slate-900 tracking-tight">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-blue-600"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>
           Executor
         </div>
-        <div class="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
-          <a href="/docs" class="hover:text-white transition-colors">Docs</a>
-          <a href="/pricing" class="hover:text-white transition-colors">Pricing</a>
-          <a href="https://github.com/executor-js/executor" class="hover:text-white transition-colors">GitHub ⭐</a>
+        <div class="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+          <a href="/docs" class="hover:text-blue-600 transition-colors">Documentation</a>
+          <a href="/pricing" class="hover:text-blue-600 transition-colors">Pricing</a>
+          <a href="https://github.com/executor-js/executor" class="hover:text-blue-600 transition-colors">GitHub</a>
         </div>
         <div class="flex items-center gap-4">
-          <a href="/docs" class="bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Get Started</a>
+          <a href="/docs" class="bg-blue-600 text-white px-5 py-2 rounded-md text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm">
+            Get Started
+          </a>
         </div>
       </div>
     </nav>
 
-    {/* 1. THE HERO */}
-    <section class="pt-40 pb-20 px-6 overflow-hidden">
-      <div class="max-w-4xl mx-auto text-center">
-        <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 font-serif">
-          The unified tool catalog <br class="hidden md:block"/> for AI agents.
-        </h1>
-        <p class="text-xl md:text-2xl text-zinc-400 max-w-3xl mx-auto leading-relaxed font-sans mb-12">
-          Stop making everyone on your team set up their own agent integrations. Connect your services to Executor once, and give every agent in your organization safe, authenticated access to your entire stack.
-        </p>
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a href="/docs" class="bg-white text-black px-8 py-3 rounded-lg text-base font-semibold hover:bg-zinc-200 transition-colors w-full sm:w-auto">
-            Get Started
-          </a>
-          <div class="flex items-center bg-zinc-900 border border-zinc-800 px-6 py-3 rounded-lg text-zinc-300 font-mono text-sm w-full sm:w-auto">
-            <span class="text-zinc-500 mr-3">~</span>
-            npx create-executor-app
+    {/* HERO & INTERACTIVE BLUEPRINT */}
+    <section class="pt-32 pb-20 px-6 relative z-10">
+      <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center gap-12">
+        
+        <div class="w-full lg:w-5/12">
+          <div class="inline-flex border border-blue-200 bg-blue-50 text-blue-700 px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider mb-6">
+            System Architecture
           </div>
-        </div>
-      </div>
-
-      {/* Hero Visual: 3-Column Diagram */}
-      <div class="max-w-6xl mx-auto mt-24 relative">
-        <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent z-10 h-full w-full pointer-events-none"></div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-0">
-          
-          {/* Left: Sources */}
-          <div class="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 flex flex-col gap-4">
-            <div class="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-2">Sources In</div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-xs">S</div>
-              <span class="text-sm font-medium">Sentry (OpenAPI)</span>
-            </div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-full bg-zinc-700/20 flex items-center justify-center text-zinc-300 text-xs">G</div>
-              <span class="text-sm font-medium">GitHub (GraphQL)</span>
-            </div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 text-xs">L</div>
-              <span class="text-sm font-medium">Linear (MCP)</span>
-            </div>
-          </div>
-
-          {/* Middle: Executor */}
-          <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-6 flex flex-col items-center justify-center text-center relative shadow-2xl shadow-zinc-900">
-            <div class="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-[1px] bg-zinc-700 hidden md:block"></div>
-            <div class="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-[1px] bg-zinc-700 hidden md:block"></div>
-            
-            <div class="w-16 h-16 rounded-xl bg-white shadow-lg flex items-center justify-center mb-6">
-              <div class="w-8 h-8 rounded bg-black"></div>
-            </div>
-            <h3 class="font-bold text-xl text-white mb-2">Executor Hub</h3>
-            <p class="text-sm text-zinc-400">Unified Catalog &<br/>Auth Proxy</p>
-          </div>
-
-          {/* Right: Agents */}
-          <div class="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6 flex flex-col gap-4">
-            <div class="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-2">Agents Out</div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-md bg-orange-500/20 flex items-center justify-center text-orange-400 text-xs">C</div>
-              <span class="text-sm font-medium">Claude Desktop</span>
-            </div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-md bg-zinc-100 flex items-center justify-center text-black text-xs font-serif">C</div>
-              <span class="text-sm font-medium">Cursor</span>
-            </div>
-            <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-3 flex items-center gap-3">
-              <div class="w-6 h-6 rounded-md bg-green-500/20 flex items-center justify-center text-green-400 text-xs font-mono">{`>_`}</div>
-              <span class="text-sm font-medium">Custom CI Scripts</span>
-            </div>
-          </div>
-          
-        </div>
-      </div>
-    </section>
-
-    {/* Divider */}
-    <div class="max-w-6xl mx-auto px-6"><div class="h-px bg-zinc-900 w-full"></div></div>
-
-    {/* 2. THE CORE PAIN POINT */}
-    <section class="py-32 px-6">
-      <div class="max-w-4xl mx-auto text-center">
-        <h2 class="text-3xl md:text-5xl font-bold tracking-tight mb-8 font-serif">End the integration Groundhog Day.</h2>
-        <p class="text-xl text-zinc-400 leading-relaxed font-sans">
-          Right now, every time a developer wants their agent to talk to Jira or AWS, they have to configure it locally. When you switch to a new agent, you have to do it all over again. Executor centralizes your tools. You expose your APIs and specs in one place, and the capabilities are instantly synced and shared across every agent your team uses.
-        </p>
-      </div>
-    </section>
-
-    {/* 3. CONTEXT & SCALE */}
-    <section class="py-32 px-6 bg-zinc-900/20 border-y border-zinc-900">
-      <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-        <div>
-          <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-6 font-serif">Infinite capabilities.<br/>Zero context bloat.</h2>
-          <p class="text-lg text-zinc-400 leading-relaxed">
-            Feeding thousands of tool descriptions into an agent destroys its context window and ruins reasoning. Executor solves this. No matter how massive your tool catalog gets, Executor intelligently routes and exposes only what the agent needs, when it needs it. You get the power of 10,000 tools without degrading your agent's performance.
+          <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-6 text-slate-900">
+            Wire it once.<br/>
+            Route it everywhere.
+          </h1>
+          <p class="text-lg text-slate-600 leading-relaxed mb-8">
+            Click the building blocks on the blueprint to see how Executor centralizes API routing, handles context windows, and securely passes data to your agents.
           </p>
-        </div>
-        <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-6 font-mono text-sm text-zinc-300 shadow-xl overflow-hidden relative">
-          <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
-          <div class="text-zinc-500 mb-4">// Executor exposes one tool: execute</div>
-          <div class="text-purple-400">await</div> <div class="inline">executor.search(</div><div class="text-green-400 inline">'*aws*rds*'</div><div class="inline">)</div>
-          <br/><br/>
-          <div class="text-zinc-500 mb-2">// Agent runs code in a sandbox</div>
-          <div class="text-purple-400">const</div> <div class="inline">db = tools.aws.rds.describeDBInstances()</div>
-          <br/>
-          <div class="text-purple-400">if</div> <div class="inline">(db.status ===</div> <div class="text-green-400 inline">'stopped'</div><div class="inline">) {'{'}</div>
-          <br/>
-          &nbsp;&nbsp;<div class="text-purple-400">await</div> <div class="inline">tools.slack.notify({'...'})</div>
-          <br/>
-          <div class="inline">{'}'}</div>
-        </div>
-      </div>
-    </section>
-
-    {/* 4. INTERACTIVE POLICIES */}
-    <section class="py-32 px-6 overflow-hidden">
-      <div class="max-w-6xl mx-auto">
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <h2 class="text-3xl md:text-5xl font-bold tracking-tight mb-6 font-serif">Trust your agents to work.<br/>Never trust them with the keys.</h2>
-          <p class="text-lg text-zinc-400 leading-relaxed">
-            Give your agents access to production, safely. Executor’s policy engine lets you define exactly what happens when an agent tries to take action. Auto-approve safe queries, strictly block destructive actions, or require human-in-the-loop approval before an agent drops a database or refunds a charge.
-          </p>
-        </div>
-
-        {/* Interactive Demo UI */}
-        <div class="max-w-4xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden" id="policy-demo">
-          <div class="border-b border-zinc-800 p-4 flex items-center justify-between bg-zinc-950">
-            <div class="flex gap-2">
-              <div class="w-3 h-3 rounded-full bg-zinc-800"></div>
-              <div class="w-3 h-3 rounded-full bg-zinc-800"></div>
-              <div class="w-3 h-3 rounded-full bg-zinc-800"></div>
+          <div class="flex flex-col sm:flex-row gap-4">
+            <a href="/docs" class="bg-slate-900 text-white px-6 py-3 rounded-lg font-semibold shadow-md hover:bg-slate-800 transition-colors text-center">Start Wiring</a>
+            <div class="px-6 py-3 rounded-lg bg-white border border-slate-200 text-slate-600 font-mono text-sm shadow-sm flex items-center gap-3 justify-center">
+              <span class="text-blue-500 font-bold">$</span>
+              npx create-executor-app
             </div>
-            <div class="text-xs font-mono text-zinc-500">executor-policy-engine</div>
-            <div></div>
           </div>
+        </div>
+
+        {/* INTERACTIVE BLUEPRINT SVG DIAGRAM */}
+        <div class="w-full lg:w-7/12 bg-slate-50 border-2 border-slate-200 rounded-2xl shadow-xl p-8 relative">
+          <div class="absolute top-4 left-4 text-xs font-mono text-slate-400 font-bold uppercase tracking-widest">FIG 1. Routing Topology</div>
           
-          <div class="grid grid-cols-1 md:grid-cols-3">
-            {/* Sidebar Controls */}
-            <div class="col-span-1 border-r border-zinc-800 bg-zinc-950/50 p-6 flex flex-col gap-4">
-              <div class="text-xs font-bold tracking-wider text-zinc-500 uppercase mb-2">Select Policy</div>
+          <div class="relative w-full aspect-[4/3] mt-8" id="blueprint-container">
+            {/* SVG Connections */}
+            <svg class="absolute inset-0 w-full h-full pointer-events-none z-0">
+              {/* Dashed background lines */}
+              <path d="M 15% 20% L 50% 50%" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
+              <path d="M 15% 50% L 50% 50%" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
+              <path d="M 15% 80% L 50% 50%" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
+              <path d="M 50% 50% L 85% 35%" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
+              <path d="M 50% 50% L 85% 65%" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" />
               
-              <button class="policy-btn active flex flex-col items-start p-3 rounded-lg border border-zinc-700 bg-zinc-800 text-left transition-all" data-policy="approve">
-                <span class="text-sm font-bold text-green-400 mb-1 flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-green-400"></span> Auto-Approve
-                </span>
-                <span class="text-xs text-zinc-400">Safe read-only actions.</span>
-              </button>
+              {/* Solid active line (drawn by JS) */}
+              <path d="" fill="none" stroke="#2563eb" stroke-width="3" id="active-line" class="transition-all duration-300" />
+            </svg>
 
-              <button class="policy-btn flex flex-col items-start p-3 rounded-lg border border-zinc-800 hover:border-zinc-700 text-left transition-all" data-policy="block">
-                <span class="text-sm font-bold text-red-400 mb-1 flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-red-400"></span> Block
-                </span>
-                <span class="text-xs text-zinc-400">Highly destructive actions.</span>
-              </button>
+            {/* Nodes */}
+            <button class="bp-node absolute top-[20%] left-[15%] -translate-x-1/2 -translate-y-1/2 w-24 h-16 bg-white border-2 border-slate-300 rounded-lg shadow-sm flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all z-10 group" data-type="source" data-id="1">
+              <span class="font-bold text-sm text-slate-800 group-hover:text-blue-600">Sentry</span>
+              <span class="text-[10px] text-slate-500 font-mono">OpenAPI</span>
+            </button>
+            <button class="bp-node absolute top-[50%] left-[15%] -translate-x-1/2 -translate-y-1/2 w-24 h-16 bg-white border-2 border-slate-300 rounded-lg shadow-sm flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all z-10 group" data-type="source" data-id="2">
+              <span class="font-bold text-sm text-slate-800 group-hover:text-blue-600">GitHub</span>
+              <span class="text-[10px] text-slate-500 font-mono">GraphQL</span>
+            </button>
+            <button class="bp-node absolute top-[80%] left-[15%] -translate-x-1/2 -translate-y-1/2 w-24 h-16 bg-white border-2 border-slate-300 rounded-lg shadow-sm flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:shadow-md transition-all z-10 group" data-type="source" data-id="3">
+              <span class="font-bold text-sm text-slate-800 group-hover:text-blue-600">Linear</span>
+              <span class="text-[10px] text-slate-500 font-mono">MCP</span>
+            </button>
 
-              <button class="policy-btn flex flex-col items-start p-3 rounded-lg border border-zinc-800 hover:border-zinc-700 text-left transition-all" data-policy="human">
-                <span class="text-sm font-bold text-yellow-400 mb-1 flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-yellow-400"></span> Require Approval
-                </span>
-                <span class="text-xs text-zinc-400">Pause and ask a human.</span>
-              </button>
+            {/* Central Hub */}
+            <div class="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-blue-600 rounded-2xl shadow-xl shadow-blue-600/30 flex flex-col items-center justify-center z-20 text-white transition-transform duration-300" id="bp-hub">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mb-2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              <span class="font-bold">Executor Hub</span>
             </div>
 
-            {/* Execution Viewer */}
-            <div class="col-span-2 p-6 bg-zinc-900 flex flex-col justify-center min-h-[300px] relative font-mono text-sm">
-              {/* Output: Approve */}
-              <div id="output-approve" class="policy-output space-y-4">
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-blue-400">Agent</span>
-                  <span>Executing: <span class="text-white">sentry.list_issues()</span></span>
-                </div>
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-green-400">Policy</span>
-                  <span>Matched rule: <span class="text-white">"sentry.*"</span> -> Allow</span>
-                </div>
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-zinc-500">System</span>
-                  <span class="text-white bg-zinc-800 px-2 py-1 rounded">✔ Success: Returned 12 issues.</span>
-                </div>
-              </div>
-
-              {/* Output: Block */}
-              <div id="output-block" class="policy-output space-y-4 hidden">
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-blue-400">Agent</span>
-                  <span>Executing: <span class="text-white">aws.ec2.terminate_instances()</span></span>
-                </div>
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-red-400">Policy</span>
-                  <span>Matched rule: <span class="text-white">"aws.ec2.terminate*"</span> -> Block</span>
-                </div>
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-zinc-500">System</span>
-                  <span class="text-red-400 bg-red-400/10 px-2 py-1 rounded border border-red-400/20">✖ Error: Action explicitly forbidden by organization policy.</span>
-                </div>
-              </div>
-
-              {/* Output: Human */}
-              <div id="output-human" class="policy-output space-y-4 hidden">
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-blue-400">Agent</span>
-                  <span>Executing: <span class="text-white">github.repos.delete()</span></span>
-                </div>
-                <div class="flex gap-3 text-zinc-400">
-                  <span class="text-yellow-400">Policy</span>
-                  <span>Matched rule: <span class="text-white">"github.*.delete"</span> -> Require Approval</span>
-                </div>
-                <div class="flex gap-3 text-zinc-400 animate-pulse">
-                  <span class="text-zinc-500">System</span>
-                  <span class="text-yellow-400">⏸️ Execution paused. Waiting for human approval...</span>
-                </div>
-                <div class="mt-4 border border-zinc-700 bg-zinc-950 p-4 rounded-lg shadow-xl shadow-black/50 ml-12 animate-fade-in relative">
-                  <div class="text-xs text-zinc-500 mb-2">Incoming Approval Request</div>
-                  <div class="text-sm text-white mb-4">Agent wants to delete repository: `legacy-api`.</div>
-                  <div class="flex gap-3">
-                    <button class="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs hover:bg-green-500/30">Approve</button>
-                    <button class="px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs hover:bg-red-500/30">Deny</button>
-                  </div>
-                </div>
-              </div>
+            {/* Agents */}
+            <div class="absolute top-[35%] left-[85%] -translate-x-1/2 -translate-y-1/2 w-24 h-16 bg-white border-2 border-slate-300 rounded-lg shadow-sm flex flex-col items-center justify-center z-10 opacity-50 transition-opacity" id="bp-agent-1">
+              <span class="font-bold text-sm text-slate-800">Claude</span>
+              <span class="text-[10px] text-slate-500 font-mono">Desktop</span>
             </div>
+            <div class="absolute top-[65%] left-[85%] -translate-x-1/2 -translate-y-1/2 w-24 h-16 bg-white border-2 border-slate-300 rounded-lg shadow-sm flex flex-col items-center justify-center z-10 opacity-50 transition-opacity" id="bp-agent-2">
+              <span class="font-bold text-sm text-slate-800">Cursor</span>
+              <span class="text-[10px] text-slate-500 font-mono">IDE</span>
+            </div>
+
+            {/* Information Popover */}
+            <div class="absolute bottom-4 right-4 left-4 bg-white/90 backdrop-blur border border-slate-200 p-4 rounded-xl shadow-lg opacity-100 transition-opacity duration-300 z-30 font-mono text-sm" id="bp-info">
+              Select a source node to simulate routing.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    {/* CONTEXT BLOAT & CODE */}
+    <section class="py-24 px-6 relative z-10">
+      <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+        <div>
+          <h2 class="text-4xl font-bold tracking-tight mb-6 text-slate-900">
+            Infinite catalog.<br/>Zero context bloat.
+          </h2>
+          <p class="text-lg text-slate-600 leading-relaxed mb-8">
+            Feeding thousands of tool descriptions into an agent destroys its context window and reasoning. Executor solves this elegantly. No matter how massive your tool catalog gets, Executor selectively routes and exposes only what the agent needs.
+          </p>
+        </div>
+        
+        {/* IDE Mockup */}
+        <div class="bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-slate-800">
+          <div class="flex items-center gap-2 px-4 py-3 bg-slate-950 border-b border-slate-800">
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div class="w-3 h-3 rounded-full bg-slate-700"></div>
+            <span class="ml-4 text-xs font-mono text-slate-500">sandbox.ts</span>
+          </div>
+          <div class="p-6 font-mono text-[13px] leading-loose text-slate-300">
+            <div class="text-slate-500 mb-2">// Agents execute dynamic discovery in a secure V8 isolate</div>
+            <div>
+              <span class="text-pink-400">const</span> <span class="text-blue-300">tools</span> <span class="text-pink-400">=</span> <span class="text-purple-400">await</span> <span class="text-white">executor.search</span>(<span class="text-emerald-400">'*aws*rds*'</span>)
+            </div>
+            <br/>
+            <div>
+              <span class="text-pink-400">const</span> <span class="text-blue-300">db</span> <span class="text-pink-400">=</span> <span class="text-white">tools.aws.rds.describeDBInstances</span>()
+            </div>
+            <div>
+              <span class="text-purple-400">if</span> (<span class="text-blue-300">db.status</span> <span class="text-pink-400">===</span> <span class="text-emerald-400">'stopped'</span>) {'{'}
+            </div>
+            <div class="pl-6">
+              <span class="text-purple-400">await</span> <span class="text-white">tools.slack.notify</span>({'{'} <span class="text-blue-300">message:</span> <span class="text-emerald-400">'DB down'</span> {'}'})
+            </div>
+            <div>{'}'}</div>
           </div>
         </div>
       </div>
     </section>
 
-    {/* 5. FLEXIBLE AUTH */}
-    <section class="py-32 px-6 bg-zinc-900/20 border-y border-zinc-900">
-      <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-        <div class="order-2 md:order-1 flex flex-col gap-4">
-          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <div class="font-medium text-white mb-1">Slack Bot Token</div>
-              <div class="text-xs text-zinc-400">Used for read/write to #engineering</div>
-            </div>
-            <div class="text-xs font-mono bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/20">Org-Level</div>
+    {/* AUTH ARCHITECTURE */}
+    <section class="py-24 px-6 border-t border-slate-200 relative z-10 bg-slate-50">
+      <div class="max-w-6xl mx-auto text-center">
+        <h2 class="text-4xl font-bold text-slate-900 mb-6">Centralized auth. Zero leaked secrets.</h2>
+        <p class="text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto mb-16">
+          Stop pasting API keys into agent prompts or local env files. Executor acts as a secure proxy. Set global Org-level tokens for shared services, or enforce Per-User OAuth so agents only act with your exact permissions.
+        </p>
+        
+        {/* Interactive Exploded View */}
+        <div class="relative h-[400px] flex flex-col items-center justify-center group cursor-crosshair">
+          {/* Layer 1: App */}
+          <div class="absolute top-[20%] w-[400px] h-[100px] bg-white border-2 border-slate-300 rounded-xl shadow-md flex items-center justify-center font-bold text-slate-600 transition-all duration-500 group-hover:-translate-y-12 group-hover:scale-105 z-30">
+            Agent Interface (Claude / Cursor)
           </div>
-          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-5 flex items-center justify-between">
-            <div>
-              <div class="font-medium text-white mb-1">GitHub Personal Access Token</div>
-              <div class="text-xs text-zinc-400">Authenticates as the active user</div>
-            </div>
-            <div class="text-xs font-mono bg-purple-500/10 text-purple-400 px-2 py-1 rounded border border-purple-500/20">Per-User OAuth</div>
+          {/* Layer 2: Auth Proxy */}
+          <div class="absolute top-[40%] w-[420px] h-[100px] bg-blue-600 border-2 border-blue-700 rounded-xl shadow-xl shadow-blue-600/20 flex items-center justify-between px-8 font-bold text-white transition-all duration-500 group-hover:scale-105 z-20">
+            <span>Executor Auth Proxy</span>
+            <span class="text-xs bg-white/20 text-white px-2 py-1 rounded-md backdrop-blur-sm border border-white/20">Token Injector</span>
           </div>
-        </div>
-        <div class="order-1 md:order-2">
-          <h2 class="text-3xl md:text-4xl font-bold tracking-tight mb-6 font-serif">Centralized auth.<br/>Zero leaked secrets.</h2>
-          <p class="text-lg text-zinc-400 leading-relaxed">
-            Stop pasting API keys into agent prompts or local env files. Executor acts as a secure authentication proxy. Set global Org-level tokens for shared services, or enforce Per-User OAuth so agents only act with the exact permissions of the human commanding them. The agent never sees the raw keys.
+          {/* Layer 3: API */}
+          <div class="absolute top-[60%] w-[440px] h-[100px] bg-slate-100 border-2 border-slate-400 rounded-xl shadow-inner flex flex-col items-center justify-center font-bold text-slate-700 transition-all duration-500 group-hover:translate-y-12 group-hover:scale-105 z-10">
+            <span>Internal APIs / External Services</span>
+            <span class="text-xs font-normal text-slate-500 mt-1">Authenticated Requests Only</span>
+          </div>
+          <p class="absolute bottom-0 text-slate-500 text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+            Hover to expand. Tokens never reach the agent—they are securely injected mid-flight.
           </p>
         </div>
       </div>
     </section>
 
-    {/* 6. UNIVERSAL COMPATIBILITY */}
-    <section class="py-32 px-6">
-      <div class="max-w-4xl mx-auto text-center">
-        <h2 class="text-3xl md:text-5xl font-bold tracking-tight mb-8 font-serif">Bring your own agent.</h2>
-        <p class="text-xl text-zinc-400 leading-relaxed font-sans mb-12">
-          Executor speaks the Model Context Protocol (MCP) natively. Whether your team prefers chatting in Claude, coding in Cursor, or building custom agents, connecting them to Executor takes one click. Swap agents whenever you want; your tool catalog stays exactly where it is.
-        </p>
-        <div class="flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-zinc-400">
-          <div class="px-4 py-2 border border-zinc-800 rounded-full bg-zinc-900">Cursor</div>
-          <div class="px-4 py-2 border border-zinc-800 rounded-full bg-zinc-900">Claude Desktop</div>
-          <div class="px-4 py-2 border border-zinc-800 rounded-full bg-zinc-900">ChatGPT</div>
-          <div class="px-4 py-2 border border-zinc-800 rounded-full bg-zinc-900">Windsurf</div>
-          <div class="px-4 py-2 border border-zinc-800 rounded-full bg-zinc-900">Custom MCP Clients</div>
+    {/* POLICY ENGINE / SAFETY */}
+    <section class="py-24 px-6 border-t border-slate-200 relative z-10 bg-white">
+      <div class="max-w-6xl mx-auto flex flex-col lg:flex-row gap-16 items-center">
+        <div class="lg:w-1/2">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs mb-6 border border-emerald-200">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            Safety First
+          </div>
+          <h2 class="text-4xl font-bold tracking-tight mb-6 text-slate-900">
+            Trust the agent.<br/>Verify the action.
+          </h2>
+          <p class="text-lg text-slate-600 leading-relaxed mb-8">
+            Give your agents access to production, safely. Executor’s policy engine lets you define exactly what happens when an agent tries to take action.
+          </p>
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+              <div class="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 font-bold">✓</div>
+              <div><div class="font-bold text-slate-900">Auto-Approve</div><div class="text-sm text-slate-500">For safe read-only queries</div></div>
+            </div>
+            <div class="flex items-center gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+              <div class="w-10 h-10 rounded-full bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 font-bold">✕</div>
+              <div><div class="font-bold text-slate-900">Hard Block</div><div class="text-sm text-slate-500">For dangerous destructive actions</div></div>
+            </div>
+            <div class="flex items-center gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+              <div class="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 font-bold">!</div>
+              <div><div class="font-bold text-slate-900">Require Human</div><div class="text-sm text-slate-500">Pause execution and ask for permission via Slack or UI</div></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="lg:w-1/2 w-full relative">
+          <div class="bg-slate-900 rounded-2xl p-6 shadow-xl border border-slate-800 font-mono text-sm overflow-hidden text-slate-300">
+            <div class="flex gap-2 mb-6 border-b border-slate-800 pb-4">
+              <div class="text-xs font-bold text-slate-500 uppercase tracking-widest">Execution Log</div>
+            </div>
+            <div class="mb-4">
+              <span class="text-blue-400">Agent</span> requests <span class="text-white">github.repos.delete()</span>
+            </div>
+            <div class="mb-4">
+              <span class="text-emerald-400">System</span> Evaluating policy... <span class="text-amber-400">Match: "github.*.delete" -> Elicit</span>
+            </div>
+            <div class="mb-6 animate-pulse text-amber-400">
+              ⏸️ Execution paused. Awaiting human...
+            </div>
+            <div class="bg-white text-slate-900 p-5 rounded-xl shadow-2xl relative font-sans ml-4 border border-slate-200">
+              <div class="absolute top-0 left-0 w-1 h-full bg-amber-400 rounded-l-xl"></div>
+              <div class="font-bold text-base mb-1">Approval Request</div>
+              <div class="text-slate-600 text-sm mb-4">Agent wants to delete <code class="bg-slate-100 px-1 rounded border border-slate-200 text-rose-600">legacy-api</code></div>
+              <div class="flex gap-2">
+                <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm">Authorize</button>
+                <button class="bg-slate-50 border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors shadow-sm">Reject</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    {/* 7. BOTTOM CTA */}
-    <section class="py-32 px-6 bg-white text-black text-center">
+    {/* BOTTOM CTA */}
+    <section class="py-32 px-6 border-t border-slate-200 text-center bg-slate-50 relative z-10">
       <div class="max-w-3xl mx-auto">
-        <h2 class="text-4xl md:text-6xl font-bold tracking-tight mb-8 font-serif">Where your agents go<br/>to get work done.</h2>
+        <h2 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 mb-8">
+          Ready to supercharge your agents?
+        </h2>
+        <p class="text-xl text-slate-600 mb-12">
+          Executor is open-source and easy to deploy. Start routing your APIs directly to your team's LLM clients today.
+        </p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a href="/docs" class="bg-black text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-zinc-800 transition-colors w-full sm:w-auto">
-            Get Started
+          <a href="/docs" class="bg-blue-600 text-white px-8 py-4 rounded-xl text-lg font-bold shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:-translate-y-1 transition-all">
+            Get Started for Free
           </a>
-          <a href="https://github.com/executor-js/executor" class="bg-zinc-200 text-black px-8 py-4 rounded-lg text-lg font-semibold hover:bg-zinc-300 transition-colors w-full sm:w-auto">
-            View Documentation
+          <a href="https://github.com/executor-js/executor" class="px-8 py-4 rounded-xl bg-white border border-slate-200 text-slate-700 text-lg font-bold hover:bg-slate-50 transition-colors shadow-sm">
+            View on GitHub
           </a>
         </div>
       </div>
     </section>
 
-    {/* FOOTER */}
-    <footer class="bg-zinc-950 py-12 px-6 border-t border-zinc-900">
-      <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-        <div class="flex items-center gap-2 font-mono font-semibold text-lg tracking-tight text-white">
-          <div class="w-5 h-5 rounded bg-white"></div>
-          Executor
-        </div>
-        <div class="text-sm text-zinc-500">
-          &copy; {new Date().getFullYear()} Executor. All rights reserved.
-        </div>
-      </div>
+    <footer class="py-8 px-6 border-t border-slate-200 bg-white text-center text-sm font-medium text-slate-500 relative z-10">
+      &copy; {new Date().getFullYear()} Executor. All rights reserved.
     </footer>
 
-  </main>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const nodes = document.querySelectorAll('.bp-node');
+        const activeLine = document.getElementById('active-line') as any;
+        const info = document.getElementById('bp-info');
+        const hub = document.getElementById('bp-hub');
+        const agent1 = document.getElementById('bp-agent-1');
+        const agent2 = document.getElementById('bp-agent-2');
 
-  <style>
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(5px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .animate-fade-in {
-      animation: fadeIn 0.3s ease-out forwards;
-    }
-  </style>
+        nodes.forEach(node => {
+          node.addEventListener('click', () => {
+            const id = node.getAttribute('data-id');
+            const yPos = id === '1' ? '20%' : id === '2' ? '50%' : '80%';
+            const sourceName = node.querySelector('span').textContent;
+            
+            // Draw line to hub
+            activeLine.setAttribute('d', `M 15% ${yPos} L 50% 50%`);
+            info.style.opacity = '1';
+            info.innerHTML = `<span class="text-blue-600">Event:</span> Incoming schema translation from <strong>${sourceName}</strong>...`;
 
-  <script>
-    // Interactive Policy Demo Logic
-    document.addEventListener('DOMContentLoaded', () => {
-      const buttons = document.querySelectorAll('.policy-btn');
-      const outputs = document.querySelectorAll('.policy-output');
+            // Hub pulse
+            hub.classList.add('scale-110');
+            setTimeout(() => hub.classList.remove('scale-110'), 200);
 
-      buttons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          // Remove active state
-          buttons.forEach(b => {
-            b.classList.remove('bg-zinc-800', 'border-zinc-700');
-            b.classList.add('border-zinc-800');
+            setTimeout(() => {
+              const agentId = Math.random() > 0.5 ? 1 : 2;
+              const agentY = agentId === 1 ? '35%' : '65%';
+              const targetAgent = agentId === 1 ? agent1 : agent2;
+              const agentName = targetAgent.querySelector('span').textContent;
+              
+              // Extend line to agent
+              activeLine.setAttribute('d', `M 15% ${yPos} L 50% 50% L 85% ${agentY}`);
+              info.innerHTML = `<span class="text-emerald-600">Success:</span> Payload securely delivered to <strong>${agentName}</strong>.`;
+              
+              targetAgent.classList.remove('opacity-50');
+              targetAgent.classList.add('border-blue-500', 'ring-4', 'ring-blue-500/20');
+              
+              setTimeout(() => {
+                activeLine.setAttribute('d', '');
+                targetAgent.classList.add('opacity-50');
+                targetAgent.classList.remove('border-blue-500', 'ring-4', 'ring-blue-500/20');
+              }, 1500);
+            }, 500);
           });
-          
-          // Add active state to clicked
-          btn.classList.add('bg-zinc-800', 'border-zinc-700');
-          btn.classList.remove('border-zinc-800');
-
-          // Hide all outputs
-          outputs.forEach(out => out.classList.add('hidden'));
-
-          // Show target output
-          const target = btn.getAttribute('data-policy');
-          document.getElementById(`output-${target}`).classList.remove('hidden');
         });
       });
-    });
-  </script>
+    </script>
+  </main>
 </Layout>
