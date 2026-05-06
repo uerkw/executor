@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
-import { Effect, Exit, Option, Schema } from "effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { ConnectionId, ScopeId, SecretId } from "@executor-js/sdk/core";
 import { startOAuth } from "@executor-js/react/api/atoms";
@@ -81,33 +83,19 @@ import {
   type ServerVariable,
 } from "../sdk/types";
 
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+
+const errorMessageFromExit = (exit: Exit.Exit<unknown, unknown>, fallback: string): string =>
+  Option.match(
+    Option.flatMap(Exit.findErrorOption(exit), Schema.decodeUnknownOption(ErrorMessage)),
+    {
+      onNone: () => fallback,
+      onSome: ({ message }) => message,
+    },
+  );
+
 export const OPENAPI_OAUTH_POPUP_NAME = "openapi-oauth";
 export const OPENAPI_OAUTH_CALLBACK_PATH = "/api/oauth/callback";
-const PublicErrorMessage = Schema.Struct({
-  _tag: Schema.Literals(["OpenApiParseError", "OpenApiExtractionError", "OpenApiOAuthError"]),
-  message: Schema.String,
-});
-
-const messageFromExit = (exit: Exit.Exit<unknown, unknown>, fallback: string): string => {
-  const error = Exit.findErrorOption(exit);
-  if (Option.isNone(error)) return fallback;
-  const errorMessage = Schema.decodeUnknownOption(PublicErrorMessage)(error.value);
-  return Option.match(errorMessage, {
-    onNone: () => fallback,
-    onSome: (value) => value.message,
-  });
-};
-
-const failPromise = <A,>(message: string): Promise<A> => Effect.runPromise(Effect.fail(message));
-
-const parseUrlOption = (url: string, baseUrl?: string): URL | null => {
-  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: URL constructor is the platform URL parser
-  try {
-    return baseUrl === undefined ? new URL(url) : new URL(url, baseUrl);
-  } catch {
-    return null;
-  }
-};
 
 const substituteUrlVariables = (url: string, values: Record<string, string>): string => {
   let out = url;
@@ -134,15 +122,15 @@ export const openApiOAuthConnectionId = (
  */
 export function resolveOAuthUrl(url: string, baseUrl: string): string {
   if (!url) return url;
-  if (parseUrlOption(url)) {
+  if (URL.canParse(url)) {
     return url;
   }
-  if (!baseUrl) return url;
-  return parseUrlOption(url, baseUrl)?.toString() ?? url;
+  if (!baseUrl || !URL.canParse(url, baseUrl)) return url;
+  return new URL(url, baseUrl).toString();
 }
 
 export function inferOAuthIssuerUrl(authorizationUrl: string): string | null {
-  return parseUrlOption(authorizationUrl)?.origin ?? null;
+  return URL.canParse(authorizationUrl) ? new URL(authorizationUrl).origin : null;
 }
 
 type StrategySelection =
@@ -293,7 +281,7 @@ export default function AddOpenApiSource(props: {
     selectedServerIndex >= 0 ? (servers[selectedServerIndex] ?? null) : null;
 
   const serverVariables: Record<string, ServerVariable> = selectedServer
-    ? Option.getOrElse(selectedServer.variables, () => ({}) as Record<string, ServerVariable>)
+    ? Option.getOrElse(selectedServer.variables, () => ({}))
     : {};
   const serverVariableEntries: Array<[string, ServerVariable]> = Object.entries(serverVariables);
 
@@ -305,10 +293,7 @@ export default function AddOpenApiSource(props: {
   // Helper used by analyze + server selection: build a default selection map
   // from a server's variable defaults.
   const defaultSelectionsFor = (server: ServerInfo): Record<string, string> => {
-    const vars: Record<string, ServerVariable> = Option.getOrElse(
-      server.variables,
-      () => ({}) as Record<string, ServerVariable>,
-    );
+    const vars: Record<string, ServerVariable> = Option.getOrElse(server.variables, () => ({}));
     const out: Record<string, string> = {};
     for (const [name, v] of Object.entries(vars)) out[name] = v.default;
     return out;
@@ -387,19 +372,20 @@ export default function AddOpenApiSource(props: {
     setAnalyzeError(null);
     setAddError(null);
     const credentials = serializeHttpCredentials(specFetchCredentials);
-    const previewExit = await doPreview({
+    const exit = await doPreview({
       params: { scopeId },
       payload: {
         spec: specUrl,
         specFetchCredentials: credentials,
       },
     });
-    if (Exit.isFailure(previewExit)) {
-      setAnalyzeError(messageFromExit(previewExit, "Failed to parse spec"));
+    if (Exit.isFailure(exit)) {
+      setAnalyzeError(errorMessageFromExit(exit, "Failed to parse spec"));
       setAnalyzing(false);
       return;
     }
-    const result = previewExit.value;
+
+    const result = exit.value;
     setPreview(result);
 
     const firstServer = result.servers[0];
@@ -500,7 +486,7 @@ export default function AddOpenApiSource(props: {
       }
       setStartingOAuth(true);
       const connectionId = openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow);
-      const startExit = await doStartOAuth({
+      const startOAuthExit = await doStartOAuth({
         params: { scopeId },
         payload: {
           endpoint: tokenUrl,
@@ -519,11 +505,11 @@ export default function AddOpenApiSource(props: {
         },
       });
       setStartingOAuth(false);
-      if (Exit.isFailure(startExit)) {
-        setOauth2Error(messageFromExit(startExit, "Failed to start OAuth"));
+      if (Exit.isFailure(startOAuthExit)) {
+        setOauth2Error(errorMessageFromExit(startOAuthExit, "Failed to start OAuth"));
         return;
       }
-      const response = startExit.value;
+      const response = startOAuthExit.value;
       if (!response.completedConnection) {
         setOauth2Error("client_credentials flow did not mint a connection");
         return;
@@ -551,41 +537,41 @@ export default function AddOpenApiSource(props: {
       resolvedBaseUrl,
     );
     const issuerUrl = inferOAuthIssuerUrl(authorizationUrl);
+    const startOAuthExit = await doStartOAuth({
+      params: { scopeId },
+      payload: {
+        endpoint: authorizationUrl,
+        connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
+        tokenScope: scopeId,
+        redirectUrl: oauth2RedirectUrl,
+        strategy: {
+          kind: "authorization-code",
+          authorizationEndpoint: authorizationUrl,
+          tokenEndpoint: tokenUrl,
+          issuerUrl,
+          clientIdSecretId: oauth2ClientIdSecretId,
+          clientSecretSecretId: oauth2ClientSecretSecretId ?? null,
+          scopes: [...oauth2SelectedScopes],
+        },
+        pluginId: "openapi",
+        identityLabel: `${displayName} OAuth`,
+      },
+    });
+    if (Exit.isFailure(startOAuthExit)) {
+      setOauth2Error(errorMessageFromExit(startOAuthExit, "Failed to start OAuth"));
+      return;
+    }
+    const response = startOAuthExit.value;
+    if (response.authorizationUrl === null) {
+      setOauth2Error("Unexpected response flow from server");
+      return;
+    }
 
     await oauth.openAuthorization({
-      run: async () => {
-        const startExit = await doStartOAuth({
-          params: { scopeId },
-          payload: {
-            endpoint: authorizationUrl,
-            connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
-            tokenScope: scopeId,
-            redirectUrl: oauth2RedirectUrl,
-            strategy: {
-              kind: "authorization-code",
-              authorizationEndpoint: authorizationUrl,
-              tokenEndpoint: tokenUrl,
-              issuerUrl,
-              clientIdSecretId: oauth2ClientIdSecretId,
-              clientSecretSecretId: oauth2ClientSecretSecretId ?? null,
-              scopes: [...oauth2SelectedScopes],
-            },
-            pluginId: "openapi",
-            identityLabel: `${displayName} OAuth`,
-          },
-        });
-        if (Exit.isFailure(startExit)) {
-          return failPromise(messageFromExit(startExit, "Failed to start OAuth"));
-        }
-        const response = startExit.value;
-        if (response.authorizationUrl === null) {
-          return failPromise("Unexpected response flow from server");
-        }
-        return {
-          sessionId: response.sessionId,
-          authorizationUrl: response.authorizationUrl,
-        };
-      },
+      run: async () => ({
+        sessionId: response.sessionId,
+        authorizationUrl: response.authorizationUrl,
+      }),
       onSuccess: (result) => {
         setOauth2AuthState({
           fingerprint: selectedOAuth2Fingerprint,
@@ -641,7 +627,12 @@ export default function AddOpenApiSource(props: {
       kind: "openapi",
       url: resolvedBaseUrl || undefined,
     });
-    const addExit = await doAdd({
+    const failAdd = (message: string) => {
+      setAddError(message);
+      setAdding(false);
+      placeholder.done();
+    };
+    const resultExit = await doAdd({
       params: { scopeId },
       payload: {
         spec: specUrl,
@@ -657,14 +648,13 @@ export default function AddOpenApiSource(props: {
       },
       reactivityKeys: addSpecWriteKeys,
     });
-    if (Exit.isFailure(addExit)) {
-      placeholder.done();
-      setAddError(messageFromExit(addExit, "Failed to add source"));
-      setAdding(false);
+
+    if (Exit.isFailure(resultExit)) {
+      failAdd(errorMessageFromExit(resultExit, "Failed to add source"));
       return;
     }
 
-    const sourceId = addExit.value.namespace;
+    const sourceId = resultExit.value.namespace;
     const sourceScope = ScopeId.make(scopeId);
     const bindingScope = ScopeId.make(userScope);
 
@@ -684,15 +674,13 @@ export default function AddOpenApiSource(props: {
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {
-        placeholder.done();
-        setAddError(messageFromExit(bindingExit, "Failed to add source"));
-        setAdding(false);
+        failAdd(errorMessageFromExit(bindingExit, "Failed to add source"));
         return;
       }
     }
 
     if (configuredOAuth2 && oauth2ClientIdSecretId) {
-      const bindingExit = await doSetBinding({
+      const clientIdBindingExit = await doSetBinding({
         params: { scopeId },
         payload: {
           sourceId,
@@ -706,16 +694,14 @@ export default function AddOpenApiSource(props: {
         },
         reactivityKeys: bindingWriteKeys,
       });
-      if (Exit.isFailure(bindingExit)) {
-        placeholder.done();
-        setAddError(messageFromExit(bindingExit, "Failed to add source"));
-        setAdding(false);
+      if (Exit.isFailure(clientIdBindingExit)) {
+        failAdd(errorMessageFromExit(clientIdBindingExit, "Failed to add source"));
         return;
       }
     }
 
     if (configuredOAuth2?.clientSecretSlot && oauth2ClientSecretSecretId) {
-      const bindingExit = await doSetBinding({
+      const clientSecretBindingExit = await doSetBinding({
         params: { scopeId },
         payload: {
           sourceId,
@@ -729,16 +715,14 @@ export default function AddOpenApiSource(props: {
         },
         reactivityKeys: bindingWriteKeys,
       });
-      if (Exit.isFailure(bindingExit)) {
-        placeholder.done();
-        setAddError(messageFromExit(bindingExit, "Failed to add source"));
-        setAdding(false);
+      if (Exit.isFailure(clientSecretBindingExit)) {
+        failAdd(errorMessageFromExit(clientSecretBindingExit, "Failed to add source"));
         return;
       }
     }
 
     if (configuredOAuth2 && oauth2Auth) {
-      const bindingExit = await doSetBinding({
+      const connectionBindingExit = await doSetBinding({
         params: { scopeId },
         payload: {
           sourceId,
@@ -752,10 +736,8 @@ export default function AddOpenApiSource(props: {
         },
         reactivityKeys: bindingWriteKeys,
       });
-      if (Exit.isFailure(bindingExit)) {
-        placeholder.done();
-        setAddError(messageFromExit(bindingExit, "Failed to add source"));
-        setAdding(false);
+      if (Exit.isFailure(connectionBindingExit)) {
+        failAdd(errorMessageFromExit(connectionBindingExit, "Failed to add source"));
         return;
       }
     }
