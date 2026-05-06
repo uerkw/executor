@@ -35,7 +35,7 @@
 // every strategy because refresh semantics are strategy-independent.
 // ---------------------------------------------------------------------------
 
-import { Effect, Option, Predicate, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import type { DBAdapter, StorageFailure, TypedAdapter } from "@executor-js/storage-core";
 
@@ -83,6 +83,7 @@ import {
   createPkceCodeVerifier,
   exchangeAuthorizationCode,
   exchangeClientCredentials,
+  type OAuth2Error,
   refreshAccessToken,
 } from "./oauth-helpers";
 
@@ -94,8 +95,6 @@ import {
 
 const OAuthAuthorizationServerMetadataJson = Schema.Record(Schema.String, Schema.Unknown);
 const OAuthClientInformationJson = Schema.Record(Schema.String, Schema.Unknown);
-const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown);
-const JsonValueSchema = Schema.fromJsonString(Schema.Unknown);
 
 const DynamicDcrSessionPayload = Schema.Struct({
   kind: Schema.Literal("dynamic-dcr"),
@@ -140,22 +139,22 @@ const encodeSessionPayload = Schema.encodeSync(OAuthSessionPayload);
 
 const coerceJson = (value: unknown): unknown => {
   if (typeof value !== "string") return value;
-  const parsed = Schema.decodeUnknownOption(JsonValueSchema)(value);
-  return Option.isSome(parsed) ? parsed.value : value;
+  return Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))(value).pipe(
+    Option.getOrElse(() => value),
+  );
 };
 
 const stringArray = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((scope): scope is string => typeof scope === "string") : [];
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object";
+
 const originOrNull = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
-  return parseUrlOption(value)?.origin ?? null;
-};
-
-const parseUrlOption = (value: string): URL | null => {
-  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: URL constructor is the platform URL parser
+  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: URL constructor is the platform parser; invalid legacy issuer values decode to null
   try {
-    return new URL(value);
+    return new URL(value).origin;
   } catch {
     return null;
   }
@@ -163,8 +162,7 @@ const parseUrlOption = (value: string): URL | null => {
 
 const decodeProviderState = (value: unknown): OAuthProviderState => {
   const raw = coerceJson(value);
-  const decodedRecord = Schema.decodeUnknownOption(UnknownRecord)(raw);
-  const record = Option.isSome(decodedRecord) ? decodedRecord.value : null;
+  const record = isRecord(raw) ? raw : null;
 
   if (record && !("kind" in record) && "flow" in record && "tokenUrl" in record) {
     const flow = record.flow;
@@ -206,17 +204,9 @@ const decodeProviderState = (value: unknown): OAuthProviderState => {
   }
 
   if (record && !("kind" in record) && "clientInformation" in record && "endpoint" in record) {
-    const decodedClientInformation = Schema.decodeUnknownOption(UnknownRecord)(
-      record.clientInformation,
-    );
-    const clientInformation = Option.isSome(decodedClientInformation)
-      ? decodedClientInformation.value
-      : null;
-    const decodedAuthorizationServerMetadata = Schema.decodeUnknownOption(UnknownRecord)(
-      record.authorizationServerMetadata,
-    );
-    const authorizationServerMetadata = Option.isSome(decodedAuthorizationServerMetadata)
-      ? decodedAuthorizationServerMetadata.value
+    const clientInformation = isRecord(record.clientInformation) ? record.clientInformation : null;
+    const authorizationServerMetadata = isRecord(record.authorizationServerMetadata)
+      ? record.authorizationServerMetadata
       : null;
     return Schema.decodeUnknownSync(OAuthProviderStateSchema)({
       kind: "dynamic-dcr",
@@ -327,20 +317,25 @@ export const makeOAuth2Service = (
         resourceHeaders: input.headers,
         resourceQueryParams: input.queryParams,
       }).pipe(
-        Effect.catchTag("OAuthDiscoveryError", () =>
+        Effect.catchTag("OAuthDiscoveryError", ({ message }) =>
           Effect.fail(
             new OAuthProbeError({
-              message: "Protected resource metadata probe failed",
+              message: `Protected resource metadata probe failed: ${message}`,
             }),
           ),
         ),
       );
 
-      const authorizationServerUrl = (() => {
+      const authorizationServerUrl = yield* (() => {
         const fromResource = resource?.metadata.authorization_servers?.[0];
-        if (fromResource) return fromResource;
-        const u = parseUrlOption(input.endpoint);
-        return u ? `${u.protocol}//${u.host}` : null;
+        if (fromResource) return Effect.succeed(fromResource);
+        return Effect.try({
+          try: () => {
+            const u = new URL(input.endpoint);
+            return `${u.protocol}//${u.host}`;
+          },
+          catch: () => null,
+        }).pipe(Effect.catch(() => Effect.succeed(null)));
       })();
 
       const authServer = authorizationServerUrl
@@ -361,8 +356,9 @@ export const makeOAuth2Service = (
       // challenge").
       const isBearerChallengeEndpoint = yield* Effect.tryPromise({
         try: async (): Promise<boolean> => {
-          const probeUrl = parseUrlOption(input.endpoint);
-          if (!probeUrl) return false;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 6_000);
+          const probeUrl = new URL(input.endpoint);
           for (const [key, value] of Object.entries(input.queryParams ?? {})) {
             probeUrl.searchParams.set(key, value);
           }
@@ -383,8 +379,8 @@ export const makeOAuth2Service = (
                 clientInfo: { name: "executor-probe", version: "0" },
               },
             }),
-            signal: AbortSignal.timeout(6_000),
-          });
+            signal: controller.signal,
+          }).finally(() => clearTimeout(timer));
           if (response.status !== 401) return false;
           const wwwAuth =
             response.headers.get("www-authenticate") ?? response.headers.get("WWW-Authenticate");
@@ -425,10 +421,10 @@ export const makeOAuth2Service = (
           resourceQueryParams: input.queryParams,
         },
       ).pipe(
-        Effect.catchTag("OAuthDiscoveryError", () =>
+        Effect.catchTag("OAuthDiscoveryError", ({ message }) =>
           Effect.fail(
             new OAuthStartError({
-              message: "Dynamic authorization setup failed",
+              message: `Dynamic authorization setup failed: ${message}`,
             }),
           ),
         ),
@@ -573,9 +569,9 @@ export const makeOAuth2Service = (
         clientAuth: strategy.clientAuth ?? "body",
       }).pipe(
         Effect.mapError(
-          () =>
+          ({ message }: OAuth2Error) =>
             new OAuthStartError({
-              message: "Client credentials exchange failed",
+              message: `Client credentials exchange failed: ${message}`,
             }),
         ),
       );
@@ -616,12 +612,26 @@ export const makeOAuth2Service = (
           }),
         )
         .pipe(
-          Effect.mapError(
-            () =>
-              new OAuthStartError({
-                message: "Failed to mint connection",
-              }),
-          ),
+          Effect.catchTags({
+            ConnectionProviderNotRegisteredError: () =>
+              Effect.fail(
+                new OAuthStartError({
+                  message: "Failed to mint connection: ConnectionProviderNotRegisteredError",
+                }),
+              ),
+            StorageError: ({ message }) =>
+              Effect.fail(
+                new OAuthStartError({
+                  message: `Failed to mint connection: ${message}`,
+                }),
+              ),
+            UniqueViolationError: () =>
+              Effect.fail(
+                new OAuthStartError({
+                  message: "Failed to mint connection: UniqueViolationError",
+                }),
+              ),
+          }),
         );
 
       return {
@@ -741,8 +751,7 @@ export const makeOAuth2Service = (
 
       const dynamicClientSecretSecretId = yield* (() => {
         if (payload.kind !== "dynamic-dcr") return Effect.succeed(null);
-        const clientSecret = (payload.clientInformation as { client_secret?: unknown })
-          .client_secret;
+        const clientSecret = payload.clientInformation.client_secret;
         if (typeof clientSecret !== "string" || clientSecret.length === 0) {
           return Effect.succeed(null);
         }
@@ -758,12 +767,20 @@ export const makeOAuth2Service = (
           )
           .pipe(
             Effect.as(secretId),
-            Effect.mapError(
-              () =>
-                new OAuthCompleteError({
-                  message: "Failed to persist DCR client_secret",
-                }),
-            ),
+            Effect.catchTags({
+              StorageError: ({ message }) =>
+                Effect.fail(
+                  new OAuthCompleteError({
+                    message: `Failed to persist DCR client_secret: ${message}`,
+                  }),
+                ),
+              UniqueViolationError: () =>
+                Effect.fail(
+                  new OAuthCompleteError({
+                    message: "Failed to persist DCR client_secret: UniqueViolationError",
+                  }),
+                ),
+            }),
           );
       })();
 
@@ -837,12 +854,26 @@ export const makeOAuth2Service = (
           }),
         )
         .pipe(
-          Effect.mapError(
-            () =>
-              new OAuthCompleteError({
-                message: "Failed to mint connection",
-              }),
-          ),
+          Effect.catchTags({
+            ConnectionProviderNotRegisteredError: () =>
+              Effect.fail(
+                new OAuthCompleteError({
+                  message: "Failed to mint connection: ConnectionProviderNotRegisteredError",
+                }),
+              ),
+            StorageError: ({ message }) =>
+              Effect.fail(
+                new OAuthCompleteError({
+                  message: `Failed to mint connection: ${message}`,
+                }),
+              ),
+            UniqueViolationError: () =>
+              Effect.fail(
+                new OAuthCompleteError({
+                  message: "Failed to mint connection: UniqueViolationError",
+                }),
+              ),
+          }),
         );
 
       yield* deleteSession;
@@ -893,10 +924,10 @@ export const makeOAuth2Service = (
         clientAuth: ci.token_endpoint_auth_method === "client_secret_basic" ? "basic" : "body",
       }).pipe(
         Effect.mapError(
-          (err) =>
+          ({ message, error }: OAuth2Error) =>
             new OAuthCompleteError({
-              message: "Token exchange failed",
-              code: err.error,
+              message: `Token exchange failed: ${message}`,
+              code: error,
             }),
         ),
       );
@@ -938,10 +969,10 @@ export const makeOAuth2Service = (
         clientAuth: payload.clientAuth,
       }).pipe(
         Effect.mapError(
-          (err) =>
+          ({ message, error }: OAuth2Error) =>
             new OAuthCompleteError({
-              message: "Token exchange failed",
-              code: err.error,
+              message: `Token exchange failed: ${message}`,
+              code: error,
             }),
         ),
       );
@@ -1008,14 +1039,24 @@ export const makeOAuth2Service = (
               return Effect.gen(function* () {
                 const csec = state.clientSecretSecretId
                   ? yield* deps.secretsGet(state.clientSecretSecretId).pipe(
-                      Effect.mapError(
-                        (cause) =>
-                          new ConnectionRefreshError({
-                            connectionId: input.connectionId,
-                            message: "Failed to resolve DCR client_secret",
-                            cause,
-                          }),
-                      ),
+                      Effect.catchTags({
+                        StorageError: ({ message, cause }) =>
+                          Effect.fail(
+                            new ConnectionRefreshError({
+                              connectionId: input.connectionId,
+                              message: `Failed to resolve DCR client_secret: ${message}`,
+                              cause,
+                            }),
+                          ),
+                        UniqueViolationError: (cause) =>
+                          Effect.fail(
+                            new ConnectionRefreshError({
+                              connectionId: input.connectionId,
+                              message: "Failed to resolve DCR client_secret: UniqueViolationError",
+                              cause,
+                            }),
+                          ),
+                      }),
                     )
                   : null;
                 if (state.clientSecretSecretId && csec === null) {
@@ -1031,14 +1072,24 @@ export const makeOAuth2Service = (
             case "client-credentials":
               return Effect.gen(function* () {
                 const cid = yield* deps.secretsGet(state.clientIdSecretId).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new ConnectionRefreshError({
-                        connectionId: input.connectionId,
-                        message: "Failed to resolve client_id secret",
-                        cause,
-                      }),
-                  ),
+                  Effect.catchTags({
+                    StorageError: ({ message, cause }) =>
+                      Effect.fail(
+                        new ConnectionRefreshError({
+                          connectionId: input.connectionId,
+                          message: `Failed to resolve client_id secret: ${message}`,
+                          cause,
+                        }),
+                      ),
+                    UniqueViolationError: (cause) =>
+                      Effect.fail(
+                        new ConnectionRefreshError({
+                          connectionId: input.connectionId,
+                          message: "Failed to resolve client_id secret: UniqueViolationError",
+                          cause,
+                        }),
+                      ),
+                  }),
                 );
                 if (cid === null) {
                   return yield* new ConnectionRefreshError({
@@ -1049,14 +1100,24 @@ export const makeOAuth2Service = (
                 }
                 const csec = state.clientSecretSecretId
                   ? yield* deps.secretsGet(state.clientSecretSecretId).pipe(
-                      Effect.mapError(
-                        (cause) =>
-                          new ConnectionRefreshError({
-                            connectionId: input.connectionId,
-                            message: "Failed to resolve client_secret",
-                            cause,
-                          }),
-                      ),
+                      Effect.catchTags({
+                        StorageError: ({ message, cause }) =>
+                          Effect.fail(
+                            new ConnectionRefreshError({
+                              connectionId: input.connectionId,
+                              message: `Failed to resolve client_secret: ${message}`,
+                              cause,
+                            }),
+                          ),
+                        UniqueViolationError: (cause) =>
+                          Effect.fail(
+                            new ConnectionRefreshError({
+                              connectionId: input.connectionId,
+                              message: "Failed to resolve client_secret: UniqueViolationError",
+                              cause,
+                            }),
+                          ),
+                      }),
                     )
                   : null;
                 if (state.clientSecretSecretId && csec === null) {
@@ -1086,15 +1147,15 @@ export const makeOAuth2Service = (
                       }),
                     ),
               ),
-              Effect.mapError((cause) =>
-                Predicate.isTagged("ConnectionRefreshError")(cause)
-                  ? cause
-                  : new ConnectionRefreshError({
-                      connectionId: input.connectionId,
-                      message: "Failed to discover token endpoint for legacy MCP OAuth connection",
-                      reauthRequired: true,
-                      cause,
-                    }),
+              Effect.catchTag("OAuthDiscoveryError", (cause) =>
+                Effect.fail(
+                  new ConnectionRefreshError({
+                    connectionId: input.connectionId,
+                    message: "Failed to discover token endpoint for legacy MCP OAuth connection",
+                    reauthRequired: true,
+                    cause,
+                  }),
+                ),
               ),
             );
           }
@@ -1140,12 +1201,12 @@ export const makeOAuth2Service = (
               })
         ).pipe(
           Effect.mapError(
-            (err) =>
+            ({ message, error }: OAuth2Error) =>
               new ConnectionRefreshError({
                 connectionId: input.connectionId,
-                message: "OAuth refresh failed",
+                message: `OAuth refresh failed: ${message}`,
                 // Terminal RFC 6749 §5.2 errors mean retrying won't heal it.
-                reauthRequired: err.error ? terminalRefreshErrors.has(err.error) : false,
+                reauthRequired: error ? terminalRefreshErrors.has(error) : false,
               }),
           ),
         );
@@ -1175,5 +1236,10 @@ export const makeOAuth2Service = (
 
 const safeHostname = (value: string | null): string | null => {
   if (!value) return null;
-  return parseUrlOption(value)?.host ?? value;
+  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: URL constructor is the platform parser; non-URL labels remain display labels
+  try {
+    return new URL(value).host;
+  } catch {
+    return value;
+  }
 };
