@@ -40,25 +40,24 @@ import { Scope } from "./scope";
 // off a returned ref still gets the branded type for use as an opaque token.
 // ---------------------------------------------------------------------------
 
-type Unbrand<T> = T extends Brand.Brand<string>
-  ? string
-  : T extends readonly (infer U)[]
-    ? readonly Unbrand<U>[]
-    : T extends ReadonlyMap<infer K, infer V>
-      ? ReadonlyMap<Unbrand<K>, Unbrand<V>>
-      : T extends ReadonlySet<infer U>
-        ? ReadonlySet<Unbrand<U>>
-        : T extends Date
-          ? T
-          : T extends (...args: infer A) => infer R
-            ? (...args: { [I in keyof A]: Unbrand<A[I]> }) => Unbrand<R>
-            : T extends object
-              ? { readonly [K in keyof T]: Unbrand<T[K]> }
-              : T;
+type Unbrand<T> =
+  T extends Brand.Brand<string>
+    ? string
+    : T extends readonly (infer U)[]
+      ? readonly Unbrand<U>[]
+      : T extends ReadonlyMap<infer K, infer V>
+        ? ReadonlyMap<Unbrand<K>, Unbrand<V>>
+        : T extends ReadonlySet<infer U>
+          ? ReadonlySet<Unbrand<U>>
+          : T extends Date
+            ? T
+            : T extends (...args: infer A) => infer R
+              ? (...args: { [I in keyof A]: Unbrand<A[I]> }) => Unbrand<R>
+              : T extends object
+                ? { readonly [K in keyof T]: Unbrand<T[K]> }
+                : T;
 
-export type Promisified<T> = T extends (
-  ...args: infer A
-) => Effect.Effect<infer R, infer _E>
+export type Promisified<T> = T extends (...args: infer A) => Effect.Effect<infer R, infer _E>
   ? (...args: { [I in keyof A]: Unbrand<A[I]> }) => Promise<R>
   : T extends readonly unknown[]
     ? T
@@ -103,10 +102,7 @@ const isPlainObject = (v: unknown): v is Record<string | symbol, unknown> =>
 const promisifyDeep = <T>(value: T): Promisified<T> => {
   if (typeof value === "function") {
     return ((...args: unknown[]) => {
-      const result = (value as (...a: unknown[]) => unknown).apply(
-        undefined,
-        args,
-      );
+      const result = (value as (...a: unknown[]) => unknown).apply(undefined, args);
       if (Effect.isEffect(result)) {
         return Effect.runPromise(result as Effect.Effect<unknown, unknown>);
       }
@@ -121,10 +117,7 @@ const promisifyDeep = <T>(value: T): Promisified<T> => {
       const v = Reflect.get(target, prop, receiver);
       if (typeof v === "function") {
         return (...args: unknown[]) => {
-          const result = (v as (...a: unknown[]) => unknown).apply(
-            target,
-            args,
-          );
+          const result = (v as (...a: unknown[]) => unknown).apply(target, args);
           if (Effect.isEffect(result)) {
             return Effect.runPromise(result as Effect.Effect<unknown, unknown>);
           }
@@ -143,9 +136,7 @@ const promisifyDeep = <T>(value: T): Promisified<T> => {
 // construct an executor with just `{ plugins: [...] }`.
 // ---------------------------------------------------------------------------
 
-export const createExecutor = async <
-  const TPlugins extends readonly AnyPlugin[] = [],
->(
+export const createExecutor = async <const TPlugins extends readonly AnyPlugin[] = []>(
   config: ExecutorConfig<TPlugins>,
 ): Promise<Executor<TPlugins>> => {
   const plugins = (config?.plugins ?? []) as TPlugins;
@@ -183,9 +174,7 @@ export const createExecutor = async <
   // get the tagged error as the rejected value. See
   // notes/promise-sdk-typed-errors.md for the planned `runPromiseExit`
   // rewrite that exposes the full error union to consumers.
-  const effectExecutor = await Effect.runPromise(
-    createEffectExecutor(effectConfig),
-  );
+  const effectExecutor = await Effect.runPromise(createEffectExecutor(effectConfig));
 
   return promisifyDeep(effectExecutor) as Executor<TPlugins>;
 };

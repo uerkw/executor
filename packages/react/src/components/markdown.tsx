@@ -12,7 +12,9 @@ function extractText(node: ReactNode): string {
   return "";
 }
 
-function PreBlock(props: ComponentPropsWithoutRef<"pre"> & { children?: ReactNode; node?: unknown }) {
+function PreBlock(
+  props: ComponentPropsWithoutRef<"pre"> & { children?: ReactNode; node?: unknown },
+) {
   const child = Children.toArray(props.children)[0];
   if (
     isValidElement(child) &&

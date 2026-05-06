@@ -109,7 +109,10 @@ describe("buildAuthorizationUrl", () => {
 
   it("preserves pre-existing query params on the authorization URL", () => {
     const url = new URL(
-      buildAuthorizationUrl({ ...baseInput, authorizationUrl: "https://example.com/auth?tenant=acme" }),
+      buildAuthorizationUrl({
+        ...baseInput,
+        authorizationUrl: "https://example.com/auth?tenant=acme",
+      }),
     );
     expect(url.searchParams.get("tenant")).toBe("acme");
     expect(url.searchParams.get("client_id")).toBe("client-123");
@@ -124,12 +127,10 @@ type FetchArgs = { url: string; init: RequestInit };
 
 const captureFetch = (response: Response): { calls: FetchArgs[] } => {
   const calls: FetchArgs[] = [];
-  globalThis.fetch = vi
-    .fn()
-    .mockImplementation(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return response;
-    }) as typeof fetch;
+  globalThis.fetch = vi.fn().mockImplementation(async (url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    return response;
+  }) as typeof fetch;
   return { calls };
 };
 
@@ -138,10 +139,8 @@ const originalFetch = globalThis.fetch;
 const jwtPart = (value: unknown): string =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 
-const unsignedJwt = (
-  claims: Record<string, unknown>,
-  alg = "RS256",
-): string => `${jwtPart({ alg, typ: "JWT" })}.${jwtPart(claims)}.sig`;
+const unsignedJwt = (claims: Record<string, unknown>, alg = "RS256"): string =>
+  `${jwtPart({ alg, typ: "JWT" })}.${jwtPart(claims)}.sig`;
 
 describe("exchangeAuthorizationCode", () => {
   afterEach(() => {

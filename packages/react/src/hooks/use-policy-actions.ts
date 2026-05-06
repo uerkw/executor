@@ -52,12 +52,13 @@ export const usePolicyActions = (scopeId: ScopeId): PolicyAction => {
   // `position: ""` and sort to the very top — that's fine for lookup but
   // they're skipped when computing insert position.
   const sorted = useMemo(() => {
-    if (!AsyncResult.isSuccess(policies)) return [] as ReadonlyArray<{
-      readonly id: string;
-      readonly pattern: string;
-      readonly action: ToolPolicyAction;
-      readonly position: string;
-    }>;
+    if (!AsyncResult.isSuccess(policies))
+      return [] as ReadonlyArray<{
+        readonly id: string;
+        readonly pattern: string;
+        readonly action: ToolPolicyAction;
+        readonly position: string;
+      }>;
     return [...policies.value].sort((a, b) => {
       if (a.position < b.position) return -1;
       if (a.position > b.position) return 1;

@@ -1,12 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 import { Schema } from "effect";
 
-import {
-  ConnectionId,
-  ConnectionInUseError,
-  ScopeId,
-  Usage,
-} from "@executor-js/sdk";
+import { ConnectionId, ConnectionInUseError, ScopeId, Usage } from "@executor-js/sdk";
 
 import { InternalError } from "../observability";
 
@@ -54,13 +49,9 @@ export const ConnectionsApi = HttpApiGroup.make("connections")
     }),
   )
   .add(
-    HttpApiEndpoint.get(
-      "usages",
-      "/scopes/:scopeId/connections/:connectionId/usages",
-      {
-        params: ConnectionParams,
-        success: Schema.Array(Usage),
-        error: InternalError,
-      },
-    ),
+    HttpApiEndpoint.get("usages", "/scopes/:scopeId/connections/:connectionId/usages", {
+      params: ConnectionParams,
+      success: Schema.Array(Usage),
+      error: InternalError,
+    }),
   );

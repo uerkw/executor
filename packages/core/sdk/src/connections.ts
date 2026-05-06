@@ -87,9 +87,7 @@ export class CreateConnectionInput extends Schema.Class<CreateConnectionInput>(
 // the SDK rethrows it from `ctx.connections.accessToken` callers.
 // ---------------------------------------------------------------------------
 
-export class ConnectionRefreshError extends Data.TaggedError(
-  "ConnectionRefreshError",
-)<{
+export class ConnectionRefreshError extends Data.TaggedError("ConnectionRefreshError")<{
   readonly connectionId: ConnectionId;
   readonly message: string;
   /**

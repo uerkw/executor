@@ -56,10 +56,7 @@ const readJsoncPlugins = (path: string): readonly string[] => {
   }
 };
 
-const tryResolveClient = (
-  packageName: string,
-  fromDir: string,
-): string | null => {
+const tryResolveClient = (packageName: string, fromDir: string): string | null => {
   const require = createRequire(resolvePath(fromDir, "_anchor.js"));
   try {
     return require.resolve(`${packageName}/client`);
@@ -83,9 +80,7 @@ interface ExecutorVitePluginOptions {
   readonly jsoncPath?: string;
 }
 
-export default function executorVitePlugin(
-  options: ExecutorVitePluginOptions = {},
-): Plugin {
+export default function executorVitePlugin(options: ExecutorVitePluginOptions = {}): Plugin {
   let projectRoot: string = process.cwd();
   let resolvedConfigPath: string | null = null;
   let resolvedJsoncPath: string | null = null;
@@ -93,13 +88,9 @@ export default function executorVitePlugin(
 
   const resolveConfigPath = (): string | null => {
     if (resolvedConfigPath) return resolvedConfigPath;
-    const candidates = options.configPath
-      ? [options.configPath]
-      : DEFAULT_CONFIG_CANDIDATES;
+    const candidates = options.configPath ? [options.configPath] : DEFAULT_CONFIG_CANDIDATES;
     for (const candidate of candidates) {
-      const abs = isAbsolute(candidate)
-        ? candidate
-        : resolvePath(projectRoot, candidate);
+      const abs = isAbsolute(candidate) ? candidate : resolvePath(projectRoot, candidate);
       if (existsSync(abs)) {
         resolvedConfigPath = abs;
         return abs;
@@ -110,13 +101,9 @@ export default function executorVitePlugin(
 
   const resolveJsoncPath = (): string | null => {
     if (resolvedJsoncPath) return resolvedJsoncPath;
-    const candidates = options.jsoncPath
-      ? [options.jsoncPath]
-      : DEFAULT_JSONC_CANDIDATES;
+    const candidates = options.jsoncPath ? [options.jsoncPath] : DEFAULT_JSONC_CANDIDATES;
     for (const candidate of candidates) {
-      const abs = isAbsolute(candidate)
-        ? candidate
-        : resolvePath(projectRoot, candidate);
+      const abs = isAbsolute(candidate) ? candidate : resolvePath(projectRoot, candidate);
       if (existsSync(abs)) {
         resolvedJsoncPath = abs;
         return abs;
@@ -212,8 +199,7 @@ export default function executorVitePlugin(
     }
 
     cachedSource =
-      `${lines.join("\n")}\n` +
-      `export const plugins = [${exportExpressions.join(", ")}];\n`;
+      `${lines.join("\n")}\n` + `export const plugins = [${exportExpressions.join(", ")}];\n`;
     return cachedSource;
   };
 
@@ -235,8 +221,7 @@ export default function executorVitePlugin(
       const configPath = resolveConfigPath();
       const jsoncPath = resolveJsoncPath();
       const isWatched =
-        (configPath && ctx.file === configPath) ||
-        (jsoncPath && ctx.file === jsoncPath);
+        (configPath && ctx.file === configPath) || (jsoncPath && ctx.file === jsoncPath);
       if (!isWatched) return undefined;
       cachedSource = null;
       const mod = ctx.server.moduleGraph.getModuleById(RESOLVED_ID);

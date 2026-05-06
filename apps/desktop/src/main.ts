@@ -99,11 +99,7 @@ const installCli = (): void => {
   // Patch shell profiles with PATH
   if (process.platform === "win32") {
     // Add bin dir to the user PATH via registry so new terminals pick it up
-    const result = spawn(
-      "reg",
-      ["query", "HKCU\\Environment", "/v", "Path"],
-      { stdio: "pipe" },
-    );
+    const result = spawn("reg", ["query", "HKCU\\Environment", "/v", "Path"], { stdio: "pipe" });
     let out = "";
     result.stdout?.on("data", (d: Buffer) => (out += d.toString()));
     result.on("close", (code) => {
@@ -128,8 +124,15 @@ const installCli = (): void => {
       if (!current.toLowerCase().includes(CLI_BIN_DIR.toLowerCase())) {
         const updated = current ? `${current};${CLI_BIN_DIR}` : CLI_BIN_DIR;
         spawn("reg", [
-          "add", "HKCU\\Environment", "/v", "Path",
-          "/t", "REG_EXPAND_SZ", "/d", updated, "/f",
+          "add",
+          "HKCU\\Environment",
+          "/v",
+          "Path",
+          "/t",
+          "REG_EXPAND_SZ",
+          "/d",
+          updated,
+          "/f",
         ]);
       }
     });

@@ -35,12 +35,7 @@ export * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 export * as Atom from "effect/unstable/reactivity/Atom";
 export * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
 
-export {
-  useAtomValue,
-  useAtomSet,
-  useAtomMount,
-  useAtomRefresh,
-} from "@effect/atom-react";
+export { useAtomValue, useAtomSet, useAtomMount, useAtomRefresh } from "@effect/atom-react";
 
 // ---------------------------------------------------------------------------
 // defineClientPlugin — declarative spec for the frontend half of a plugin.
@@ -219,14 +214,11 @@ export const createPluginAtomClient = <
   const { baseUrl = "/api" } = options;
   const pluginId = group.identifier;
   const bundle = HttpApi.make(`plugin-${pluginId}`).add(group);
-  return AtomHttpApi.Service<`Plugin_${G["identifier"]}Client`>()(
-    `Plugin_${pluginId}Client`,
-    {
-      api: bundle,
-      httpClient: FetchHttpClient.layer,
-      baseUrl,
-    },
-  );
+  return AtomHttpApi.Service<`Plugin_${G["identifier"]}Client`>()(`Plugin_${pluginId}Client`, {
+    api: bundle,
+    httpClient: FetchHttpClient.layer,
+    baseUrl,
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -250,9 +242,7 @@ interface ExecutorPluginsContextValue {
   readonly secretProviderPlugins: readonly SecretProviderPlugin[];
 }
 
-const ExecutorPluginsContext = createContext<
-  ExecutorPluginsContextValue | null
->(null);
+const ExecutorPluginsContext = createContext<ExecutorPluginsContextValue | null>(null);
 ExecutorPluginsContext.displayName = "ExecutorPluginsContext";
 
 export interface ExecutorPluginsProviderProps {
@@ -286,9 +276,7 @@ const usePluginsCtx = (hookName: string): ExecutorPluginsContextValue => {
   const ctx = useContext(ExecutorPluginsContext);
   if (!ctx) {
     // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: React hook invariant
-    throw new Error(
-      `${hookName} must be called inside an <ExecutorPluginsProvider>.`,
-    );
+    throw new Error(`${hookName} must be called inside an <ExecutorPluginsProvider>.`);
   }
   return ctx;
 };

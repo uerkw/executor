@@ -61,11 +61,7 @@ const checkFile = (path: string): Violation[] => {
 };
 
 const targets = process.argv.slice(2);
-const defaultTarget = resolve(
-  import.meta.dir,
-  "..",
-  "apps/cli/release-notes/next.md",
-);
+const defaultTarget = resolve(import.meta.dir, "..", "apps/cli/release-notes/next.md");
 const paths = targets.length > 0 ? targets.map((p) => resolve(p)) : [defaultTarget];
 
 let failed = false;
@@ -90,8 +86,6 @@ if (failed) {
   console.error(
     `\nForbidden Thanks handles: ${FORBIDDEN_THANKS_HANDLES.map((h) => `@${h}`).join(", ")}`,
   );
-  console.error(
-    "Use a credited external GitHub username, or omit the attribution entirely.",
-  );
+  console.error("Use a credited external GitHub username, or omit the attribution entirely.");
   process.exit(1);
 }

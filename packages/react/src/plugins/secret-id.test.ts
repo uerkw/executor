@@ -1,10 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import {
-  getUniqueSecretId,
-  isSecretIdTaken,
-  slugifyForSecretId,
-} from "./secret-id";
+import { getUniqueSecretId, isSecretIdTaken, slugifyForSecretId } from "./secret-id";
 
 describe("secret id helpers", () => {
   it("slugifies display names into secret ids", () => {
@@ -18,9 +14,7 @@ describe("secret id helpers", () => {
 
   it("appends a numeric suffix when the base id already exists", () => {
     expect(getUniqueSecretId("GitHub PAT", ["github-pat"])).toBe("github-pat-2");
-    expect(getUniqueSecretId("GitHub PAT", ["github-pat", "github-pat-2"])).toBe(
-      "github-pat-3",
-    );
+    expect(getUniqueSecretId("GitHub PAT", ["github-pat", "github-pat-2"])).toBe("github-pat-3");
   });
 
   it("matches existing ids exactly after trimming", () => {

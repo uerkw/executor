@@ -36,9 +36,7 @@ const ProbePayload = Schema.Struct({
 const ProbeResponse = Schema.Struct({
   resourceMetadata: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
   resourceMetadataUrl: Schema.NullOr(Schema.String),
-  authorizationServerMetadata: Schema.NullOr(
-    Schema.Record(Schema.String, Schema.Unknown),
-  ),
+  authorizationServerMetadata: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
   authorizationServerMetadataUrl: Schema.NullOr(Schema.String),
   authorizationServerUrl: Schema.NullOr(Schema.String),
   supportsDynamicRegistration: Schema.Boolean,

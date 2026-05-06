@@ -25,18 +25,13 @@ import { SlackContactRoutesLive } from "./slack";
 // so tests can substitute a counting fake for `DbService.Live` and
 // assert per-request semantics — see
 // `apps/cloud/src/api.request-scope.node.test.ts`.
-export const makeApiLive = (
-  requestScopedLive: Layer.Layer<DbService | UserStoreService>,
-) =>
+export const makeApiLive = (requestScopedLive: Layer.Layer<DbService | UserStoreService>) =>
   Layer.mergeAll(
     makeNonProtectedApiLive(requestScopedLive),
     makeOrgApiLive(requestScopedLive),
     makeProtectedApiLive(requestScopedLive),
     AutumnRoutesLive,
     SlackContactRoutesLive,
-  ).pipe(
-    Layer.provideMerge(RouterConfig),
-    Layer.provideMerge(BootSharedServices),
-  );
+  ).pipe(Layer.provideMerge(RouterConfig), Layer.provideMerge(BootSharedServices));
 
 export const ApiLive = makeApiLive(RequestScopedServicesLive);

@@ -46,10 +46,10 @@ When the trace cannot resolve with the files at hand, drop the finding.
 
 ## Severity ladder
 
-| Level | Criteria |
-|-------|----------|
+| Level      | Criteria                                                                                                                                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **medium** | New optimistic-mutation code that bypasses `Atom.optimistic` / `Atom.optimisticFn` and rolls its own pending state. Or a mixed read/write where the read goes through the plain query atom and the write goes through the optimistic mutation. |
-| **low** | Subtle defects in an `Atom.optimisticFn` reducer that work today but degrade under racing (clock-based identity, missing `Atom.family` wrapper, computed-once captures of `scopeId`). |
+| **low**    | Subtle defects in an `Atom.optimisticFn` reducer that work today but degrade under racing (clock-based identity, missing `Atom.family` wrapper, computed-once captures of `scopeId`).                                                          |
 
 Do not invent `high`. Pick `low` when in doubt and explain why.
 
@@ -103,9 +103,7 @@ export const updateSecretOptimistic = Atom.family((scopeId: ScopeId) =>
     Atom.optimisticFn({
       reducer: (current, arg: { path: { secretId: SecretId }; payload: { value: string } }) =>
         Result.map(current, (rows) =>
-          rows.map((r) =>
-            r.id === arg.path.secretId ? { ...r, value: arg.payload.value } : r,
-          ),
+          rows.map((r) => (r.id === arg.path.secretId ? { ...r, value: arg.payload.value } : r)),
         ),
       fn: updateSecret,
     }),
@@ -136,8 +134,12 @@ export interface PendingSecret {
   readonly value: string;
 }
 
-export const useSecretsWithPending = (scopeId: ScopeId) => { /* ... */ };
-export const usePendingSecrets = () => { /* ... */ };
+export const useSecretsWithPending = (scopeId: ScopeId) => {
+  /* ... */
+};
+export const usePendingSecrets = () => {
+  /* ... */
+};
 ```
 
 Flag any new entry in `PendingResource` and any new `use<X>WithPending` / `usePending<X>` hook. The file is closed for new patterns.

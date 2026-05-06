@@ -179,14 +179,13 @@ export const McpGroup = HttpApiGroup.make("mcp")
       success: UpdateSourceResponse,
       error: [InternalError, McpConnectionError, McpToolDiscoveryError],
     }),
-  )
-  // Errors declared once at the group level — every endpoint inherits.
-  // Plugin domain errors carry their own HttpApiSchema status (4xx);
-  // `InternalError` is the shared opaque 500 translated at the HTTP
-  // edge by `withCapture`. We only list errors an MCP *group*
-  // endpoint can surface: `McpInvocationError` is thrown inside
-  // `invokeTool` which is reached via the core `tools.invoke`
-  // endpoint, not any MCP-group endpoint, so it doesn't belong here.
-  // OAuth errors live on the shared `/oauth/*` group in `@executor-js/api`
-  // now — the MCP group only declares its own plugin-domain errors.
-;
+  );
+// Errors declared once at the group level — every endpoint inherits.
+// Plugin domain errors carry their own HttpApiSchema status (4xx);
+// `InternalError` is the shared opaque 500 translated at the HTTP
+// edge by `withCapture`. We only list errors an MCP *group*
+// endpoint can surface: `McpInvocationError` is thrown inside
+// `invokeTool` which is reached via the core `tools.invoke`
+// endpoint, not any MCP-group endpoint, so it doesn't belong here.
+// OAuth errors live on the shared `/oauth/*` group in `@executor-js/api`
+// now — the MCP group only declares its own plugin-domain errors.

@@ -5,9 +5,6 @@
 // wrapper around @executor-js/storage-drizzle.
 // ---------------------------------------------------------------------------
 
-export {
-  makePostgresAdapter,
-  type MakePostgresAdapterOptions,
-} from "./adapter";
+export { makePostgresAdapter, type MakePostgresAdapterOptions } from "./adapter";
 
 export { makePostgresBlobStore, blobTable } from "./blob-store";

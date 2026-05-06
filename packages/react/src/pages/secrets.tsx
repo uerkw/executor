@@ -5,11 +5,7 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { toast } from "sonner";
-import {
-  removeSecretOptimistic,
-  secretsOptimisticAtom,
-  secretUsagesAtom,
-} from "../api/atoms";
+import { removeSecretOptimistic, secretsOptimisticAtom, secretUsagesAtom } from "../api/atoms";
 import { secretWriteKeys } from "../api/reactivity-keys";
 import { useSecretProviderPlugins } from "@executor-js/sdk/client";
 import { SecretId, SecretInUseError, type ScopeId } from "@executor-js/sdk";
@@ -139,10 +135,7 @@ function AddSecretDialogContent(props: {
 // don't get a noisy "Used by 0" line.
 // ---------------------------------------------------------------------------
 
-function SecretUsageFooter(props: {
-  scopeId: ScopeId;
-  secretId: SecretId;
-}) {
+function SecretUsageFooter(props: { scopeId: ScopeId; secretId: SecretId }) {
   const usages = useAtomValue(secretUsagesAtom(props.scopeId, props.secretId));
   return AsyncResult.match(usages, {
     onInitial: () => null,
@@ -191,10 +184,7 @@ function SecretRow(props: {
           </span>
         </CardStackEntryTitle>
         <Suspense fallback={null}>
-          <SecretUsageFooter
-            scopeId={props.scopeId}
-            secretId={SecretId.make(secret.id)}
-          />
+          <SecretUsageFooter scopeId={props.scopeId} secretId={SecretId.make(secret.id)} />
         </Suspense>
       </CardStackEntryContent>
       <CardStackEntryActions>

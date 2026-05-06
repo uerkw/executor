@@ -51,19 +51,16 @@ export interface ErrorCaptureShape {
    * can later look up. Implementations (Sentry, console, etc.) decide
    * how to persist it.
    */
-  readonly captureException: (
-    cause: Cause.Cause<unknown>,
-  ) => Effect.Effect<string>;
+  readonly captureException: (cause: Cause.Cause<unknown>) => Effect.Effect<string>;
 }
 
 export class ErrorCapture extends Context.Service<ErrorCapture, ErrorCaptureShape>()(
   "@executor-js/api/ErrorCapture",
 ) {
   /** No-op — used where capture isn't wired. Traces back as empty string. */
-  static readonly NoOp: Layer.Layer<ErrorCapture> = Layer.succeed(
-    ErrorCapture,
-    { captureException: () => Effect.succeed("") },
-  );
+  static readonly NoOp: Layer.Layer<ErrorCapture> = Layer.succeed(ErrorCapture, {
+    captureException: () => Effect.succeed(""),
+  });
 }
 
 // Resolve ErrorCapture with a no-op fallback. Keeps the caller's R channel
@@ -71,9 +68,7 @@ export class ErrorCapture extends Context.Service<ErrorCapture, ErrorCaptureShap
 // typecheck; if it's there, we use it; if not, trace ids are empty.
 const resolveCapture = Effect.serviceOption(ErrorCapture).pipe(
   Effect.map((opt) =>
-    Option.isSome(opt)
-      ? opt.value
-      : ({ captureException: () => Effect.succeed("") } as const),
+    Option.isSome(opt) ? opt.value : ({ captureException: () => Effect.succeed("") } as const),
   ),
 );
 
@@ -102,9 +97,7 @@ export const capture = <A, E, R>(
     Effect.catchTag("StorageError", (err) =>
       resolveCapture.pipe(
         Effect.flatMap((c) => c.captureException(Cause.fail(err))),
-        Effect.flatMap((traceId) =>
-          Effect.fail(new InternalError({ traceId })),
-        ),
+        Effect.flatMap((traceId) => Effect.fail(new InternalError({ traceId }))),
       ),
     ),
   ) as Effect.Effect<A, Exclude<E, StorageFailure> | InternalError, R>;
@@ -131,10 +124,8 @@ export const captureEngineError = <A, R>(
         ? Effect.fail(err)
         : resolveCapture.pipe(
             Effect.flatMap((c) => c.captureException(Cause.fail(err))),
-            Effect.flatMap((traceId) =>
-              Effect.fail(new InternalError({ traceId })),
-            ),
-        ),
+            Effect.flatMap((traceId) => Effect.fail(new InternalError({ traceId }))),
+          ),
     ),
   );
 
@@ -160,20 +151,18 @@ export class ObservabilityMiddleware extends HttpApiMiddleware.Service<Observabi
 export const observabilityMiddleware = <Id extends string, Groups extends HttpApiGroup.Any>(
   _api: HttpApi.HttpApi<Id, Groups>,
 ): Layer.Layer<ObservabilityMiddleware> =>
-  Layer.succeed(
-    ObservabilityMiddleware,
-    (httpApp) =>
-      Effect.catchCause(httpApp, (cause) =>
-        Effect.gen(function* () {
-          const defect = Cause.findDefect(cause);
-          if (Result.isFailure(defect)) {
-            return yield* Effect.failCause(cause);
-          }
-          const c = yield* resolveCapture;
-          const traceId = yield* c.captureException(cause);
-          return HttpServerResponse.jsonUnsafe(new InternalError({ traceId }), {
-            status: 500,
-          });
-        }),
-      ),
+  Layer.succeed(ObservabilityMiddleware, (httpApp) =>
+    Effect.catchCause(httpApp, (cause) =>
+      Effect.gen(function* () {
+        const defect = Cause.findDefect(cause);
+        if (Result.isFailure(defect)) {
+          return yield* Effect.failCause(cause);
+        }
+        const c = yield* resolveCapture;
+        const traceId = yield* c.captureException(cause);
+        return HttpServerResponse.jsonUnsafe(new InternalError({ traceId }), {
+          status: 500,
+        });
+      }),
+    ),
   );

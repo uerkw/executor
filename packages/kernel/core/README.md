@@ -17,11 +17,7 @@ npm install @executor-js/codemode-core
 Implement a runtime that satisfies `CodeExecutor`:
 
 ```ts
-import type {
-  CodeExecutor,
-  ExecuteResult,
-  SandboxToolInvoker,
-} from "@executor-js/codemode-core";
+import type { CodeExecutor, ExecuteResult, SandboxToolInvoker } from "@executor-js/codemode-core";
 import { Effect } from "effect";
 
 export const makeMyRuntime = (): CodeExecutor => ({

@@ -10,10 +10,7 @@
 // dynamic (runtime-registered) rows.
 // ---------------------------------------------------------------------------
 
-import type {
-  DBSchema,
-  InferDBFieldsOutput,
-} from "@executor-js/storage-core";
+import type { DBSchema, InferDBFieldsOutput } from "@executor-js/storage-core";
 
 export const coreSchema = {
   source: {
@@ -209,25 +206,18 @@ export type CoreSchema = typeof coreSchema;
 export type SourceRow = InferDBFieldsOutput<CoreSchema["source"]["fields"]> &
   Record<string, unknown>;
 
-export type ToolRow = InferDBFieldsOutput<CoreSchema["tool"]["fields"]> &
-  Record<string, unknown>;
+export type ToolRow = InferDBFieldsOutput<CoreSchema["tool"]["fields"]> & Record<string, unknown>;
 
-export type DefinitionRow = InferDBFieldsOutput<
-  CoreSchema["definition"]["fields"]
-> &
+export type DefinitionRow = InferDBFieldsOutput<CoreSchema["definition"]["fields"]> &
   Record<string, unknown>;
 
 export type SecretRow = InferDBFieldsOutput<CoreSchema["secret"]["fields"]> &
   Record<string, unknown>;
 
-export type ConnectionRow = InferDBFieldsOutput<
-  CoreSchema["connection"]["fields"]
-> &
+export type ConnectionRow = InferDBFieldsOutput<CoreSchema["connection"]["fields"]> &
   Record<string, unknown>;
 
-export type ToolPolicyRow = InferDBFieldsOutput<
-  CoreSchema["tool_policy"]["fields"]
-> &
+export type ToolPolicyRow = InferDBFieldsOutput<CoreSchema["tool_policy"]["fields"]> &
   Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
@@ -251,8 +241,7 @@ export const TOOL_POLICY_ACTIONS = [
 ] as const satisfies readonly ToolPolicyAction[];
 
 export const isToolPolicyAction = (value: unknown): value is ToolPolicyAction =>
-  typeof value === "string" &&
-  (TOOL_POLICY_ACTIONS as readonly string[]).includes(value);
+  typeof value === "string" && (TOOL_POLICY_ACTIONS as readonly string[]).includes(value);
 
 // ---------------------------------------------------------------------------
 // Tool annotations — default-policy metadata the executor consults

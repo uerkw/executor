@@ -401,29 +401,29 @@ export default function AddOpenApiSource(props: {
     const result = exit.value;
     setPreview(result);
 
-      const firstServer = result.servers[0];
-      if (firstServer) {
-        setSelectedServerIndex(0);
-        setVariableSelections(defaultSelectionsFor(firstServer));
-        setCustomBaseUrl("");
-      } else {
-        setSelectedServerIndex(-1);
-        setVariableSelections({});
-        setCustomBaseUrl("");
-      }
+    const firstServer = result.servers[0];
+    if (firstServer) {
+      setSelectedServerIndex(0);
+      setVariableSelections(defaultSelectionsFor(firstServer));
+      setCustomBaseUrl("");
+    } else {
+      setSelectedServerIndex(-1);
+      setVariableSelections({});
+      setCustomBaseUrl("");
+    }
 
-      const firstPreset = result.headerPresets[0];
-      if (firstPreset) {
-        setStrategy({ kind: "header", presetIndex: 0 });
-        setCustomHeaders(entriesFromSpecPreset(firstPreset));
-      } else {
-        // No header presets — default to "custom" so the headers editor is
-        // visible immediately. Specs with no `security` block (e.g. Microsoft
-        // Graph) would otherwise leave the user staring at just the
-        // Authentication heading with no way to add headers.
-        setStrategy({ kind: "custom" });
-        setCustomHeaders([]);
-      }
+    const firstPreset = result.headerPresets[0];
+    if (firstPreset) {
+      setStrategy({ kind: "header", presetIndex: 0 });
+      setCustomHeaders(entriesFromSpecPreset(firstPreset));
+    } else {
+      // No header presets — default to "custom" so the headers editor is
+      // visible immediately. Specs with no `security` block (e.g. Microsoft
+      // Graph) would otherwise leave the user staring at just the
+      // Authentication heading with no way to add headers.
+      setStrategy({ kind: "custom" });
+      setCustomHeaders([]);
+    }
     setAnalyzing(false);
   };
 
@@ -490,59 +490,59 @@ export default function AddOpenApiSource(props: {
     const tokenUrl = resolveOAuthUrl(selectedOAuth2Preset.tokenUrl, resolvedBaseUrl);
 
     if (selectedOAuth2Preset.flow === "clientCredentials") {
-        // RFC 6749 §4.4: no user-interactive consent step. The client_secret
-        // is mandatory; the backend exchanges tokens inline and returns a
-        // completed OAuth2Auth we can attach to the source directly.
-        if (!oauth2ClientSecretSecretId) {
-          setOauth2Error("client_credentials requires a client secret");
-          return;
-        }
-        setStartingOAuth(true);
-        const connectionId = openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow);
-        const exit = await doStartOAuth({
-          params: { scopeId },
-          payload: {
-            endpoint: tokenUrl,
-            redirectUrl: tokenUrl,
-            connectionId,
-            tokenScope: scopeId,
-            strategy: {
-              kind: "client-credentials",
-              tokenEndpoint: tokenUrl,
-              clientIdSecretId: oauth2ClientIdSecretId,
-              clientSecretSecretId: oauth2ClientSecretSecretId,
-              scopes: [...oauth2SelectedScopes],
-            },
-            pluginId: "openapi",
-            identityLabel: `${displayName} OAuth`,
-          },
-        });
-        setStartingOAuth(false);
-        if (Exit.isFailure(exit)) {
-          setOauth2Error(errorMessageFromExit(exit, "Failed to start OAuth"));
-          return;
-        }
-        const response = exit.value;
-        if (!response.completedConnection) {
-          setOauth2Error("client_credentials flow did not mint a connection");
-          return;
-        }
-        setOauth2AuthState({
-          fingerprint: selectedOAuth2Fingerprint,
-          auth: new OAuth2Auth({
-            kind: "oauth2",
-            connectionId: response.completedConnection.connectionId,
-            securitySchemeName: selectedOAuth2Preset.securitySchemeName,
-            flow: "clientCredentials",
-            tokenUrl,
-            authorizationUrl: null,
+      // RFC 6749 §4.4: no user-interactive consent step. The client_secret
+      // is mandatory; the backend exchanges tokens inline and returns a
+      // completed OAuth2Auth we can attach to the source directly.
+      if (!oauth2ClientSecretSecretId) {
+        setOauth2Error("client_credentials requires a client secret");
+        return;
+      }
+      setStartingOAuth(true);
+      const connectionId = openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow);
+      const exit = await doStartOAuth({
+        params: { scopeId },
+        payload: {
+          endpoint: tokenUrl,
+          redirectUrl: tokenUrl,
+          connectionId,
+          tokenScope: scopeId,
+          strategy: {
+            kind: "client-credentials",
+            tokenEndpoint: tokenUrl,
             clientIdSecretId: oauth2ClientIdSecretId,
             clientSecretSecretId: oauth2ClientSecretSecretId,
             scopes: [...oauth2SelectedScopes],
-          }),
-        });
-        setOauth2Error(null);
+          },
+          pluginId: "openapi",
+          identityLabel: `${displayName} OAuth`,
+        },
+      });
+      setStartingOAuth(false);
+      if (Exit.isFailure(exit)) {
+        setOauth2Error(errorMessageFromExit(exit, "Failed to start OAuth"));
         return;
+      }
+      const response = exit.value;
+      if (!response.completedConnection) {
+        setOauth2Error("client_credentials flow did not mint a connection");
+        return;
+      }
+      setOauth2AuthState({
+        fingerprint: selectedOAuth2Fingerprint,
+        auth: new OAuth2Auth({
+          kind: "oauth2",
+          connectionId: response.completedConnection.connectionId,
+          securitySchemeName: selectedOAuth2Preset.securitySchemeName,
+          flow: "clientCredentials",
+          tokenUrl,
+          authorizationUrl: null,
+          clientIdSecretId: oauth2ClientIdSecretId,
+          clientSecretSecretId: oauth2ClientSecretSecretId,
+          scopes: [...oauth2SelectedScopes],
+        }),
+      });
+      setOauth2Error(null);
+      return;
     }
 
     const authorizationUrl = resolveOAuthUrl(
@@ -552,26 +552,26 @@ export default function AddOpenApiSource(props: {
     const issuerUrl = inferOAuthIssuerUrl(authorizationUrl);
 
     await oauth.openAuthorization({
-        run: async () => {
-          const exit = await doStartOAuth({
-            params: { scopeId },
-            payload: {
-              endpoint: authorizationUrl,
-              connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
-              tokenScope: scopeId,
-              redirectUrl: oauth2RedirectUrl,
-              strategy: {
-                kind: "authorization-code",
-                authorizationEndpoint: authorizationUrl,
-                tokenEndpoint: tokenUrl,
-                issuerUrl,
-                clientIdSecretId: oauth2ClientIdSecretId,
-                clientSecretSecretId: oauth2ClientSecretSecretId ?? null,
-                scopes: [...oauth2SelectedScopes],
-              },
-              pluginId: "openapi",
-              identityLabel: `${displayName} OAuth`,
+      run: async () => {
+        const exit = await doStartOAuth({
+          params: { scopeId },
+          payload: {
+            endpoint: authorizationUrl,
+            connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
+            tokenScope: scopeId,
+            redirectUrl: oauth2RedirectUrl,
+            strategy: {
+              kind: "authorization-code",
+              authorizationEndpoint: authorizationUrl,
+              tokenEndpoint: tokenUrl,
+              issuerUrl,
+              clientIdSecretId: oauth2ClientIdSecretId,
+              clientSecretSecretId: oauth2ClientSecretSecretId ?? null,
+              scopes: [...oauth2SelectedScopes],
             },
+            pluginId: "openapi",
+            identityLabel: `${displayName} OAuth`,
+          },
         });
         if (Exit.isFailure(exit)) {
           // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: OAuth popup API represents start failure by rejecting run()
@@ -582,34 +582,34 @@ export default function AddOpenApiSource(props: {
           // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: OAuth popup API represents start failure by rejecting run()
           throw new Error("Unexpected response flow from server");
         }
-          return {
-            sessionId: response.sessionId,
-            authorizationUrl: response.authorizationUrl,
-          };
-        },
-        onSuccess: (result) => {
-          setOauth2AuthState({
-            fingerprint: selectedOAuth2Fingerprint,
-            auth: new OAuth2Auth({
-              kind: "oauth2",
-              connectionId: result.connectionId,
-              securitySchemeName: selectedOAuth2Preset.securitySchemeName,
-              flow: "authorizationCode",
-              tokenUrl,
-              authorizationUrl,
-              issuerUrl,
-              clientIdSecretId: oauth2ClientIdSecretId,
-              clientSecretSecretId: oauth2ClientSecretSecretId,
-              scopes: [...oauth2SelectedScopes],
-            }),
-          });
-          setOauth2Error(null);
-        },
-        onError: (message) => {
-          setStartingOAuth(false);
-          setOauth2Error(message);
-        },
-      });
+        return {
+          sessionId: response.sessionId,
+          authorizationUrl: response.authorizationUrl,
+        };
+      },
+      onSuccess: (result) => {
+        setOauth2AuthState({
+          fingerprint: selectedOAuth2Fingerprint,
+          auth: new OAuth2Auth({
+            kind: "oauth2",
+            connectionId: result.connectionId,
+            securitySchemeName: selectedOAuth2Preset.securitySchemeName,
+            flow: "authorizationCode",
+            tokenUrl,
+            authorizationUrl,
+            issuerUrl,
+            clientIdSecretId: oauth2ClientIdSecretId,
+            clientSecretSecretId: oauth2ClientSecretSecretId,
+            scopes: [...oauth2SelectedScopes],
+          }),
+        });
+        setOauth2Error(null);
+      },
+      onError: (message) => {
+        setStartingOAuth(false);
+        setOauth2Error(message);
+      },
+    });
   }, [
     selectedOAuth2Preset,
     oauth2ClientIdSecretId,

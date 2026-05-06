@@ -10,7 +10,13 @@
 
 import { afterEach, expect, layer } from "@effect/vitest";
 import { Data, Effect, Layer, Predicate, Schema } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiBuilder,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  OpenApi,
+} from "effect/unstable/httpapi";
 import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
@@ -79,35 +85,38 @@ const TestLayer = HttpRouter.serve(ApiLive, { disableListenLog: true, disableLog
 const originalFetch = globalThis.fetch;
 
 const mockTokenFetch = (tokenByCode: Record<string, string>) => {
-  globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof _input === "string" ? _input : _input.toString();
-    if (!url.includes("token.example.com")) {
-      return originalFetch(_input, init);
-    }
-    const bodyText =
-      init?.body instanceof URLSearchParams
-        ? init.body.toString()
-        : typeof init?.body === "string"
-          ? init.body
-          : "";
-    const params = new URLSearchParams(bodyText);
-    const code = params.get("code") ?? "";
-    const token = tokenByCode[code];
-    if (!token) {
-      return new Response(JSON.stringify({ error: "invalid_grant", code }), {
-        status: 400,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response(
-      JSON.stringify({
-        access_token: token,
-        token_type: "Bearer",
-        refresh_token: `${token}-refresh`,
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-  }, { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof _input === "string" ? _input : _input.toString();
+      if (!url.includes("token.example.com")) {
+        return originalFetch(_input, init);
+      }
+      const bodyText =
+        init?.body instanceof URLSearchParams
+          ? init.body.toString()
+          : typeof init?.body === "string"
+            ? init.body
+            : "";
+      const params = new URLSearchParams(bodyText);
+      const code = params.get("code") ?? "";
+      const token = tokenByCode[code];
+      if (!token) {
+        return new Response(JSON.stringify({ error: "invalid_grant", code }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          access_token: token,
+          token_type: "Bearer",
+          refresh_token: `${token}-refresh`,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+    { preconnect: originalFetch.preconnect },
+  );
 };
 
 afterEach(() => {
@@ -263,10 +272,14 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       );
       const bobStart = yield* startAuthorizationCode(bobExec, startInputFor("bob", bobScope.id));
       if (aliceStart.authorizationUrl === null) {
-        return yield* new TestInvariantError({ message: "expected authorizationCode flow for alice" });
+        return yield* new TestInvariantError({
+          message: "expected authorizationCode flow for alice",
+        });
       }
       if (bobStart.authorizationUrl === null) {
-        return yield* new TestInvariantError({ message: "expected authorizationCode flow for bob" });
+        return yield* new TestInvariantError({
+          message: "expected authorizationCode flow for bob",
+        });
       }
 
       const aliceAuth = yield* aliceExec.oauth.complete({
@@ -367,9 +380,7 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       //    Alice only sees the org client creds; her access / refresh
       //    tokens are hidden behind the Connection primitive.
       // -------------------------------------------------------------
-      const aliceSecretIds = new Set(
-        (yield* aliceExec.secrets.list()).map((s) => String(s.id)),
-      );
+      const aliceSecretIds = new Set((yield* aliceExec.secrets.list()).map((s) => String(s.id)));
       expect(aliceSecretIds).toContain("petstore_client_id");
       expect(aliceSecretIds).toContain("petstore_client_secret");
       expect(aliceSecretIds).not.toContain(`${aliceAuth.connectionId}.access_token`);
@@ -507,28 +518,31 @@ layer(TestLayer)("OpenAPI multi-scope OAuth", (it) => {
       // user's row ends up with a token minted from *their own*
       // credential resolution.
       const tokenCalls: string[] = [];
-      globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof _input === "string" ? _input : _input.toString();
-        if (!url.includes("token.example.com")) {
-          return originalFetch(_input, init);
-        }
-        const bodyText =
-          init?.body instanceof URLSearchParams
-            ? init.body.toString()
-            : typeof init?.body === "string"
-              ? init.body
-              : "";
-        const params = new URLSearchParams(bodyText);
-        const clientId = params.get("client_id") ?? "unknown";
-        tokenCalls.push(clientId);
-        return new Response(
-          JSON.stringify({
-            access_token: `token-for-${clientId}`,
-            token_type: "Bearer",
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }, { preconnect: originalFetch.preconnect });
+      globalThis.fetch = Object.assign(
+        async (_input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof _input === "string" ? _input : _input.toString();
+          if (!url.includes("token.example.com")) {
+            return originalFetch(_input, init);
+          }
+          const bodyText =
+            init?.body instanceof URLSearchParams
+              ? init.body.toString()
+              : typeof init?.body === "string"
+                ? init.body
+                : "";
+          const params = new URLSearchParams(bodyText);
+          const clientId = params.get("client_id") ?? "unknown";
+          tokenCalls.push(clientId);
+          return new Response(
+            JSON.stringify({
+              access_token: `token-for-${clientId}`,
+              token_type: "Bearer",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        },
+        { preconnect: originalFetch.preconnect },
+      );
 
       const startInput = {
         connectionId: "shared-petstore-oauth",

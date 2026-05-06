@@ -40,8 +40,9 @@ import { CoreExecutorApi } from "./api";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ExtractServiceId<S> = S extends Context.Service<infer Id, any> ? Id : never;
 
-export type PluginExtensionServices<TPlugins extends readonly AnyPlugin[]> =
-  ExtractServiceId<NonNullable<TPlugins[number]["extensionService"]>>;
+export type PluginExtensionServices<TPlugins extends readonly AnyPlugin[]> = ExtractServiceId<
+  NonNullable<TPlugins[number]["extensionService"]>
+>;
 
 /** Extract the precise `HttpApiGroup` type carried by a plugin's
  *  `routes()` field. Plugins without a `routes()` field contribute
@@ -52,8 +53,9 @@ type ExtractPluginGroup<P> = P extends { readonly routes?: () => infer G }
 
 /** Union of every plugin's contributed group — combined with the core
  *  executor groups to type `composePluginApi(plugins)` precisely. */
-export type PluginGroups<TPlugins extends readonly AnyPlugin[]> =
-  ExtractPluginGroup<TPlugins[number]>;
+export type PluginGroups<TPlugins extends readonly AnyPlugin[]> = ExtractPluginGroup<
+  TPlugins[number]
+>;
 
 /** Group identities baked into `CoreExecutorApi` (tools, sources, secrets,
  *  …). Extracted via inference so adding a core group flows through
@@ -64,8 +66,10 @@ type CoreGroups =
 
 /** Result of `composePluginApi(plugins)` — the core API extended with
  *  every plugin group from `TPlugins`. */
-export type ComposedExecutorApi<TPlugins extends readonly AnyPlugin[]> =
-  HttpApi.HttpApi<"executor", CoreGroups | PluginGroups<TPlugins>>;
+export type ComposedExecutorApi<TPlugins extends readonly AnyPlugin[]> = HttpApi.HttpApi<
+  "executor",
+  CoreGroups | PluginGroups<TPlugins>
+>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLayer = Layer.Layer<any, any, any>;
@@ -73,18 +77,18 @@ type AnyLayer = Layer.Layer<any, any, any>;
 // Use the field accessor + NonNullable rather than `extends { handlers: ... }`
 // because the spec marks `handlers` optional (`handlers?:`); the conditional
 // form would fail the match because the field type includes `undefined`.
-type ExtractHandlerLayer<P> = NonNullable<
-  P extends { readonly handlers?: infer F } ? F : never
-> extends () => infer L
-  ? L
-  : never;
+type ExtractHandlerLayer<P> =
+  NonNullable<P extends { readonly handlers?: infer F } ? F : never> extends () => infer L
+    ? L
+    : never;
 
 // Compute the union of every plugin's handler-Layer type. Each plugin's
 // `handlers()` returns a specific `Layer<Group, never, ExtensionService>`;
 // we union them so `Layer.mergeAll(...)`'s output type can be extracted
 // without erasing per-plugin requirements.
-type PluginHandlerLayers<TPlugins extends readonly AnyPlugin[]> =
-  ExtractHandlerLayer<TPlugins[number]>;
+type PluginHandlerLayers<TPlugins extends readonly AnyPlugin[]> = ExtractHandlerLayer<
+  TPlugins[number]
+>;
 
 // Distribute over the union of handler layers to extract each channel
 // individually, then re-pack into a single `Layer<UnionROut, UnionE,
@@ -174,9 +178,7 @@ export const composePluginHandlers = <TPlugins extends readonly AnyPlugin[]>(
  * `*ExtensionService` Tags) so the host's `HttpRouter.middleware`
  * recognises them as per-request requires.
  */
-export const composePluginHandlerLayer = <
-  TPlugins extends readonly AnyPlugin[],
->(
+export const composePluginHandlerLayer = <TPlugins extends readonly AnyPlugin[]>(
   plugins: TPlugins,
 ): MergedHandlerLayer<TPlugins> => {
   const layers = plugins.flatMap((p) => (p.handlers ? [p.handlers()] : []));

@@ -64,13 +64,7 @@ Do not make this workflow-specific. Model the generic thing as an artifact
 project, with workflows as the first consumer.
 
 ```ts
-type ArtifactKind =
-  | "workflow"
-  | "component"
-  | "ui"
-  | "template"
-  | "connector"
-  | "document";
+type ArtifactKind = "workflow" | "component" | "ui" | "template" | "connector" | "document";
 
 type ArtifactProject = {
   id: string;
@@ -171,18 +165,13 @@ export interface ArtifactStore {
     input: CreateArtifactProjectInput,
   ) => Effect.Effect<ArtifactProject, ArtifactError>;
 
-  readonly readFile: (
-    ref: ArtifactRef,
-    path: string,
-  ) => Effect.Effect<Uint8Array, ArtifactError>;
+  readonly readFile: (ref: ArtifactRef, path: string) => Effect.Effect<Uint8Array, ArtifactError>;
 
   readonly writeFiles: (
     input: WriteArtifactFilesInput,
   ) => Effect.Effect<ArtifactCommit, ArtifactError>;
 
-  readonly diff: (
-    input: ArtifactDiffInput,
-  ) => Effect.Effect<ArtifactDiff, ArtifactError>;
+  readonly diff: (input: ArtifactDiffInput) => Effect.Effect<ArtifactDiff, ArtifactError>;
 
   readonly forkProject: (
     input: ForkArtifactProjectInput,
@@ -365,10 +354,7 @@ export interface ArtifactStore {
     name: string;
   }) => Effect.Effect<ArtifactProject, ArtifactError>;
 
-  readonly readFile: (
-    ref: ArtifactRef,
-    path: string,
-  ) => Effect.Effect<Uint8Array, ArtifactError>;
+  readonly readFile: (ref: ArtifactRef, path: string) => Effect.Effect<Uint8Array, ArtifactError>;
 
   readonly writeFiles: (input: {
     projectId: string;
@@ -422,10 +408,7 @@ Feature plugin:
 ```ts
 // @executor/workflows
 import { definePlugin, type PluginCtx } from "@executor/sdk";
-import {
-  ArtifactStoreProtocol,
-  type ArtifactsProtocolCtx,
-} from "@executor/artifacts";
+import { ArtifactStoreProtocol, type ArtifactsProtocolCtx } from "@executor/artifacts";
 
 type WorkflowCtx<TStore> = PluginCtx<TStore, ArtifactsProtocolCtx>;
 
@@ -546,56 +529,47 @@ export async function summarizeTicket(input: SupportEmail) {
 E2E flow:
 
 ```ts
-it.effect(
-  "creates a code-first workflow artifact and indexes a visual graph",
-  () =>
-    Effect.gen(function* () {
-      const executor = yield* createExecutor({
-        scopes: [testScope],
-        adapter,
-        blobs,
-        plugins: [
-          artifactsLocalGitPlugin({ rootDir: tempDir }),
-          workflowsPlugin(),
-        ] as const,
-        protocols: {
-          "executor.artifacts.store": "artifacts-local-git",
+it.effect("creates a code-first workflow artifact and indexes a visual graph", () =>
+  Effect.gen(function* () {
+    const executor = yield* createExecutor({
+      scopes: [testScope],
+      adapter,
+      blobs,
+      plugins: [artifactsLocalGitPlugin({ rootDir: tempDir }), workflowsPlugin()] as const,
+      protocols: {
+        "executor.artifacts.store": "artifacts-local-git",
+      },
+    });
+
+    const created = yield* executor.workflows.create({
+      name: "Support triage",
+      files: [
+        {
+          type: "put",
+          path: "artifact.json",
+          contents: JSON.stringify({
+            schemaVersion: 1,
+            kind: "workflow",
+            entrypoints: ["src/workflows/support-triage.workflow.ts"],
+          }),
         },
-      });
+        {
+          type: "put",
+          path: "src/workflows/support-triage.workflow.ts",
+          contents: supportTriageWorkflowSource,
+        },
+      ],
+    });
 
-      const created = yield* executor.workflows.create({
-        name: "Support triage",
-        files: [
-          {
-            type: "put",
-            path: "artifact.json",
-            contents: JSON.stringify({
-              schemaVersion: 1,
-              kind: "workflow",
-              entrypoints: ["src/workflows/support-triage.workflow.ts"],
-            }),
-          },
-          {
-            type: "put",
-            path: "src/workflows/support-triage.workflow.ts",
-            contents: supportTriageWorkflowSource,
-          },
-        ],
-      });
+    const source = yield* executor.artifacts.readFile(
+      { projectId: created.project.id, ref: created.commit.id },
+      "src/workflows/support-triage.workflow.ts",
+    );
+    expect(new TextDecoder().decode(source)).toContain('"use workflow"');
 
-      const source = yield* executor.artifacts.readFile(
-        { projectId: created.project.id, ref: created.commit.id },
-        "src/workflows/support-triage.workflow.ts",
-      );
-      expect(new TextDecoder().decode(source)).toContain('"use workflow"');
-
-      expect(created.manifest.entrypoints).toEqual([
-        "src/workflows/support-triage.workflow.ts",
-      ]);
-      expect(created.manifest.graph.nodes.map((node) => node.kind)).toContain(
-        "step",
-      );
-    }),
+    expect(created.manifest.entrypoints).toEqual(["src/workflows/support-triage.workflow.ts"]);
+    expect(created.manifest.graph.nodes.map((node) => node.kind)).toContain("step");
+  }),
 );
 ```
 

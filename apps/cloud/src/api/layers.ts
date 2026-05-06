@@ -18,11 +18,7 @@ import { CoreSharedServices } from "./core-shared-services";
 import { ProtectedCloudApi, RouterConfig } from "./protected-layers";
 import { requestScopedMiddleware } from "./request-scoped";
 
-export {
-  CoreSharedServices,
-  ProtectedCloudApi,
-  RouterConfig,
-};
+export { CoreSharedServices, ProtectedCloudApi, RouterConfig };
 
 const DbLive = DbService.Live;
 const UserStoreLive = UserStoreService.Live.pipe(Layer.provide(DbLive));
@@ -51,9 +47,7 @@ export const BootSharedServices = Layer.mergeAll(
 // without per-request scoping the postgres.js socket pins to the worker's
 // boot scope and Cloudflare Workers' I/O isolation kills the second
 // request.
-export const makeNonProtectedApiLive = (
-  rsLive: Layer.Layer<DbService | UserStoreService>,
-) =>
+export const makeNonProtectedApiLive = (rsLive: Layer.Layer<DbService | UserStoreService>) =>
   HttpApiBuilder.layer(NonProtectedApi).pipe(
     Layer.provide(Layer.mergeAll(CloudAuthPublicHandlers, CloudSessionAuthHandlers)),
     Layer.provide(requestScopedMiddleware(rsLive).layer),
@@ -62,9 +56,7 @@ export const makeNonProtectedApiLive = (
 
 // Routes scoped to a specific org (membership management, switching, etc.).
 // Auth is enforced by `OrgAuth` middleware declared on `OrgHttpApi`.
-export const makeOrgApiLive = (
-  rsLive: Layer.Layer<DbService | UserStoreService>,
-) =>
+export const makeOrgApiLive = (rsLive: Layer.Layer<DbService | UserStoreService>) =>
   HttpApiBuilder.layer(OrgHttpApi).pipe(
     Layer.provide(OrgHandlers),
     Layer.provide(requestScopedMiddleware(rsLive).layer),
@@ -74,7 +66,5 @@ export const makeOrgApiLive = (
 // Default exports use the production per-request layer. Existing callers
 // that import `NonProtectedApiLive`/`OrgApiLive` continue to work; the
 // `make*` factories exist for tests that need to swap in a fake.
-export const NonProtectedApiLive = makeNonProtectedApiLive(
-  RequestScopedServicesLive,
-);
+export const NonProtectedApiLive = makeNonProtectedApiLive(RequestScopedServicesLive);
 export const OrgApiLive = makeOrgApiLive(RequestScopedServicesLive);

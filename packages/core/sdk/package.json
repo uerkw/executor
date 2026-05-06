@@ -53,8 +53,18 @@
   "dependencies": {
     "@executor-js/storage-core": "workspace:*",
     "effect": "catalog:",
-    "oauth4webapi": "^3.8.5",
-    "fractional-indexing": "^3.2.0"
+    "fractional-indexing": "^3.2.0",
+    "oauth4webapi": "^3.8.5"
+  },
+  "devDependencies": {
+    "@effect/atom-react": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "react": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "@effect/atom-react": "catalog:",
@@ -67,15 +77,5 @@
     "react": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@effect/atom-react": "catalog:",
-    "@effect/vitest": "catalog:",
-    "@types/node": "catalog:",
-    "@types/react": "catalog:",
-    "react": "catalog:",
-    "tsup": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
   }
 }

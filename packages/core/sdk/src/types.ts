@@ -65,9 +65,7 @@ export class ToolSchema extends Schema.Class<ToolSchema>("ToolSchema")({
   outputSchema: Schema.optional(Schema.Unknown),
   inputTypeScript: Schema.optional(Schema.String),
   outputTypeScript: Schema.optional(Schema.String),
-  typeScriptDefinitions: Schema.optional(
-    Schema.Record(Schema.String, Schema.String),
-  ),
+  typeScriptDefinitions: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }) {}
 
 // ---------------------------------------------------------------------------

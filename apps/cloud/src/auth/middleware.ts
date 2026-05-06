@@ -23,8 +23,9 @@ export type Session = {
   readonly refreshedSession: string | null;
 };
 
-export class SessionContext extends Context.Service<SessionContext, Session
->()("@executor-js/cloud/Session") {}
+export class SessionContext extends Context.Service<SessionContext, Session>()(
+  "@executor-js/cloud/Session",
+) {}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -71,12 +72,12 @@ export class AuthContext extends Context.Service<
   }
 >()("@executor-js/cloud/AuthContext") {}
 
-export class OrgAuth extends HttpApiMiddleware.Service<
-  OrgAuth,
-  { provides: AuthContext }
->()("OrgAuth", {
-  error: [Unauthorized, NoOrganization],
-  security: {
-    cookie: HttpApiSecurity.apiKey({ in: "cookie", key: "wos-session" }),
+export class OrgAuth extends HttpApiMiddleware.Service<OrgAuth, { provides: AuthContext }>()(
+  "OrgAuth",
+  {
+    error: [Unauthorized, NoOrganization],
+    security: {
+      cookie: HttpApiSecurity.apiKey({ in: "cookie", key: "wos-session" }),
+    },
   },
-}) {}
+) {}

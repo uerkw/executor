@@ -25,9 +25,7 @@ interface FixturePlugin {
   readonly __optionsReceived: Record<string, unknown> | null;
 }
 
-const asFixturePlugins = (
-  plugins: readonly AnyPlugin[] | null,
-): readonly FixturePlugin[] => {
+const asFixturePlugins = (plugins: readonly AnyPlugin[] | null): readonly FixturePlugin[] => {
   // Fixture servers return shapes wider than AnyPlugin (they carry
   // __optionsReceived for test assertions); narrow once here.
   // oxlint-disable-next-line executor/no-double-cast
@@ -71,9 +69,7 @@ describe("loadPluginsFromJsonc", () => {
 
   it("throws on JSONC parse errors", async () => {
     const file = writeJsonc("parse-error", `{ "plugins": [`);
-    await expect(loadPluginsFromJsonc({ path: file })).rejects.toThrow(
-      /failed to parse/i,
-    );
+    await expect(loadPluginsFromJsonc({ path: file })).rejects.toThrow(/failed to parse/i);
   });
 
   it("throws with a helpful message when the package can't be resolved", async () => {

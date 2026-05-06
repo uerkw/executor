@@ -37,9 +37,10 @@ export interface WorkOSVaultPluginOptions {
   readonly contextForScope?: WorkOSVaultContextForScope;
 }
 
-const makeWorkOSVaultExtension = () => ({
-  providerKey: WORKOS_VAULT_PROVIDER_KEY,
-} as const);
+const makeWorkOSVaultExtension = () =>
+  ({
+    providerKey: WORKOS_VAULT_PROVIDER_KEY,
+  }) as const;
 
 export type WorkOSVaultExtension = ReturnType<typeof makeWorkOSVaultExtension>;
 
@@ -63,29 +64,27 @@ const buildClient = (
   );
 };
 
-export const workosVaultPlugin = definePlugin(
-  (options?: WorkOSVaultPluginOptions) => ({
-    id: "workosVault" as const,
-    packageName: "@executor-js/plugin-workos-vault",
-    schema: workosVaultSchema,
-    storage: (deps): WorkosVaultPluginStore => makeWorkosVaultStore(deps),
+export const workosVaultPlugin = definePlugin((options?: WorkOSVaultPluginOptions) => ({
+  id: "workosVault" as const,
+  packageName: "@executor-js/plugin-workos-vault",
+  schema: workosVaultSchema,
+  storage: (deps): WorkosVaultPluginStore => makeWorkosVaultStore(deps),
 
-    extension: makeWorkOSVaultExtension,
+  extension: makeWorkOSVaultExtension,
 
-    secretProviders: (ctx) => {
-      // Build (or accept) the WorkOS client once at startup. If
-      // credentials are bad this throws synchronously via Effect.runSync,
-      // which is what we want — the executor fails to start rather
-      // than surfacing bad credentials on first secret access.
-      const client = Effect.runSync(buildClient(options));
-      return [
-        makeWorkOSVaultSecretProvider({
-          client,
-          store: ctx.storage,
-          objectPrefix: options?.objectPrefix,
-          contextForScope: options?.contextForScope,
-        }),
-      ];
-    },
-  }),
-);
+  secretProviders: (ctx) => {
+    // Build (or accept) the WorkOS client once at startup. If
+    // credentials are bad this throws synchronously via Effect.runSync,
+    // which is what we want — the executor fails to start rather
+    // than surfacing bad credentials on first secret access.
+    const client = Effect.runSync(buildClient(options));
+    return [
+      makeWorkOSVaultSecretProvider({
+        client,
+        store: ctx.storage,
+        objectPrefix: options?.objectPrefix,
+        contextForScope: options?.contextForScope,
+      }),
+    ];
+  },
+}));

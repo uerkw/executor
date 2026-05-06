@@ -11,11 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
-import {
-  defineClientPlugin,
-  createPluginAtomClient,
-  useAtomSet,
-} from "@executor-js/sdk/client";
+import { defineClientPlugin, createPluginAtomClient, useAtomSet } from "@executor-js/sdk/client";
 
 import { ExampleApi } from "./shared";
 
@@ -68,9 +64,7 @@ function ExamplePage() {
         </button>
       </div>
       {result && (
-        <pre style={{ marginTop: "1rem", padding: "0.5rem", background: "#f5f5f5" }}>
-          {result}
-        </pre>
+        <pre style={{ marginTop: "1rem", padding: "0.5rem", background: "#f5f5f5" }}>{result}</pre>
       )}
     </div>
   );

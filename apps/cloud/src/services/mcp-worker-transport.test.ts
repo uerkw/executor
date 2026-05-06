@@ -58,9 +58,7 @@ describe("JsonRpcRequestIdQueue", () => {
       queue
         .run(jsonRpcRequest({ jsonrpc: "2.0", id: 2, method: "tools/call" }), async () => "done")
         .then((v) => ({ kind: "settled" as const, v })),
-      new Promise<{ kind: "blocked" }>((r) =>
-        setTimeout(() => r({ kind: "blocked" }), 200),
-      ),
+      new Promise<{ kind: "blocked" }>((r) => setTimeout(() => r({ kind: "blocked" }), 200)),
     ]);
 
     expect(otherDone.kind).toBe("settled");

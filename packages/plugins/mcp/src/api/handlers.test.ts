@@ -69,25 +69,23 @@ const McpConnectionErrorResponse = Schema.Struct({
 });
 
 describe("McpHandlers", () => {
-  it.effect(
-    "defect-returning methods produce an opaque InternalError, no leakage",
-    () =>
-      Effect.gen(function* () {
-        const web = yield* WebHandler;
-        const response = yield* Effect.promise(() =>
-          (web.handler as (request: Request) => Promise<Response>)(
-            new Request("http://localhost/scopes/scope_1/mcp/probe", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ endpoint: "https://example.com/mcp" }),
-            }),
-          ),
-        );
+  it.effect("defect-returning methods produce an opaque InternalError, no leakage", () =>
+    Effect.gen(function* () {
+      const web = yield* WebHandler;
+      const response = yield* Effect.promise(() =>
+        (web.handler as (request: Request) => Promise<Response>)(
+          new Request("http://localhost/scopes/scope_1/mcp/probe", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ endpoint: "https://example.com/mcp" }),
+          }),
+        ),
+      );
 
-        expect(response.status).toBe(500);
-        const body = yield* Effect.promise(() => response.text());
-        expect(body).not.toContain("Not implemented");
-      }),
+      expect(response.status).toBe(500);
+      const body = yield* Effect.promise(() => response.text());
+      expect(body).not.toContain("Not implemented");
+    }),
   );
 
   it.effect("domain MCP connection errors are encoded as 400 responses", () =>

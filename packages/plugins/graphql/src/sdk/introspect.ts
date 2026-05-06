@@ -226,9 +226,7 @@ export const introspect = Effect.fn("GraphQL.introspect")(function* (
   }
 
   const raw = yield* response.json.pipe(
-    Effect.tapCause((cause) =>
-      Effect.logError("graphql introspection JSON parse failed", cause),
-    ),
+    Effect.tapCause((cause) => Effect.logError("graphql introspection JSON parse failed", cause)),
     Effect.mapError(
       () =>
         new GraphqlIntrospectionError({

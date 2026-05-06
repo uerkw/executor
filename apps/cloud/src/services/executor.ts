@@ -10,16 +10,8 @@
 
 import { Effect } from "effect";
 
-import {
-  Scope,
-  ScopeId,
-  collectSchemas,
-  createExecutor,
-} from "@executor-js/sdk";
-import {
-  makePostgresAdapter,
-  makePostgresBlobStore,
-} from "@executor-js/storage-postgres";
+import { Scope, ScopeId, collectSchemas, createExecutor } from "@executor-js/sdk";
+import { makePostgresAdapter, makePostgresBlobStore } from "@executor-js/storage-postgres";
 
 import { env } from "cloudflare:workers";
 import executorConfig from "../../executor.config";

@@ -16,7 +16,7 @@ sources/connections.
 
 - A list query atom (`Atom.optimistic` wraps the query)
 - Plus one or more mutation atoms that change rows in that list (create / update / delete)
-- And you want the UI to reflect the change *immediately* on click, before the server roundtrip
+- And you want the UI to reflect the change _immediately_ on click, before the server roundtrip
 
 If you only need the UI to be "eventually consistent" (i.e. you're fine waiting
 ~200ms for the server response and the existing reactivity refetch), skip
@@ -109,10 +109,7 @@ existing `reactivityKeys` plumbing still applies — pass them in the call.
 ```typescript
 import { useAtomValue, useAtomSet } from "@effect-atom/atom-react";
 
-import {
-  policiesOptimisticAtom,
-  updatePolicyOptimistic,
-} from "../api/atoms";
+import { policiesOptimisticAtom, updatePolicyOptimistic } from "../api/atoms";
 import { policyWriteKeys } from "../api/reactivity-keys";
 
 export function PoliciesPage() {
@@ -203,10 +200,7 @@ export const removePolicyOptimistic = Atom.family((scopeId: ScopeId) =>
           path: { scopeId: ScopeId; policyId: PolicyId };
           reactivityKeys?: ReadonlyArray<unknown>;
         },
-      ) =>
-        Result.map(current, (rows) =>
-          rows.filter((r) => r.id !== arg.path.policyId),
-        ),
+      ) => Result.map(current, (rows) => rows.filter((r) => r.id !== arg.path.policyId)),
       fn: removePolicy,
     }),
   ),
@@ -244,7 +238,7 @@ read, optimistic create/update/remove, no custom state.
 
 ## When you must NOT use this
 
-- The mutation has cross-cutting effects on data that *isn't* in the same list
+- The mutation has cross-cutting effects on data that _isn't_ in the same list
   (e.g. a single mutation invalidates `tools` AND `policies`). Reactivity keys
   still handle that — optimistic only paints the list-local change.
 - You need to show transient UI state that isn't a row property (toasts,

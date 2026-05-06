@@ -1,18 +1,10 @@
 import { env } from "cloudflare:workers";
 import { Cause, Effect } from "effect";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { autumnHandler } from "autumn-js/backend";
 
 import { WorkOSAuth } from "../auth/workos";
-import {
-  HttpResponseError,
-  isServerError,
-  toErrorServerResponse,
-} from "./error-response";
+import { HttpResponseError, isServerError, toErrorServerResponse } from "./error-response";
 
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;

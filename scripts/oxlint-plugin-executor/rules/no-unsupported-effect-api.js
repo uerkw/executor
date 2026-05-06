@@ -15,8 +15,7 @@ const unsupported = new Map([
   ],
 ]);
 
-const message = (name) =>
-  `${unsupported.get(name)} Skill: wrdn-effect-typed-errors.`;
+const message = (name) => `${unsupported.get(name)} Skill: wrdn-effect-typed-errors.`;
 
 export default {
   meta: {

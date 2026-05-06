@@ -31,9 +31,7 @@ const ToolSchemaResponse = Schema.Struct({
   id: ToolId,
   inputTypeScript: Schema.optional(Schema.String),
   outputTypeScript: Schema.optional(Schema.String),
-  typeScriptDefinitions: Schema.optional(
-    Schema.Record(Schema.String, Schema.String),
-  ),
+  typeScriptDefinitions: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   inputSchema: Schema.optional(Schema.Unknown),
   outputSchema: Schema.optional(Schema.Unknown),
 });

@@ -25,8 +25,4 @@ export {
 } from "./write";
 
 export type { ConfigFileSink, ConfigFileSinkOptions } from "./sink";
-export {
-  makeFileConfigSink,
-  headerToConfigValue,
-  headersToConfigValues,
-} from "./sink";
+export { makeFileConfigSink, headerToConfigValue, headersToConfigValues } from "./sink";

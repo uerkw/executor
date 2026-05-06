@@ -24,7 +24,7 @@ export const ErrorCaptureLive: Layer.Layer<ErrorCapture> = Layer.succeed(
         console.error(
           `[executor ${traceId}]`,
           // oxlint-disable-next-line executor/no-instanceof-error -- boundary: console logger preserves native Error stack output
-          squashed instanceof Error ? squashed.stack ?? squashed : squashed,
+          squashed instanceof Error ? (squashed.stack ?? squashed) : squashed,
         );
         console.error(`[executor ${traceId}] cause:`, Cause.pretty(cause));
         return traceId;

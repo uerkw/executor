@@ -44,9 +44,7 @@ const PUBLIC_PACKAGE_DIRS = [
   "packages/plugins/openapi",
 ] as const;
 
-const parseArgs = (
-  argv: ReadonlyArray<string>,
-): { dryRun: boolean; prepareOnly: boolean } => {
+const parseArgs = (argv: ReadonlyArray<string>): { dryRun: boolean; prepareOnly: boolean } => {
   let dryRun = false;
   let prepareOnly = false;
   for (const arg of argv) {
@@ -151,9 +149,7 @@ const applyWorkspaceVersions = async (
    * `@effect-atom/*`, etc.) are real npm packages and pass through
    * unchanged.
    */
-  const renamePeerDepBlock = (
-    block: DependencyBlock | undefined,
-  ): DependencyBlock | undefined => {
+  const renamePeerDepBlock = (block: DependencyBlock | undefined): DependencyBlock | undefined => {
     if (!block) return block;
     const next: DependencyBlock = {};
     let mutated = false;

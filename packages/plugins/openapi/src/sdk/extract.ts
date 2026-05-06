@@ -124,9 +124,7 @@ const extractRequestBody = (
         contentType: mediaType,
         schema: Option.fromNullishOr(media.schema),
         encoding: Option.fromNullishOr(
-          buildEncodingRecord(
-            (media as { encoding?: Record<string, unknown> }).encoding,
-          ),
+          buildEncodingRecord((media as { encoding?: Record<string, unknown> }).encoding),
         ),
       }),
   );
@@ -246,9 +244,7 @@ const extractServers = (doc: ParsedDocument): ServerInfo[] =>
                 new ServerVariable({
                   default: String(v.default),
                   enum:
-                    enumValues && enumValues.length > 0
-                      ? Option.some(enumValues)
-                      : Option.none(),
+                    enumValues && enumValues.length > 0 ? Option.some(enumValues) : Option.none(),
                   description: Option.fromNullishOr(v.description),
                 }),
               ],

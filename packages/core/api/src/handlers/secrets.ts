@@ -17,45 +17,55 @@ const refToResponse = (ref: SecretRef) => ({
 export const SecretsHandlers = HttpApiBuilder.group(ExecutorApi, "secrets", (handlers) =>
   handlers
     .handle("list", () =>
-      capture(Effect.gen(function* () {
-        const executor = yield* ExecutorService;
-        const refs = yield* executor.secrets.list();
-        return refs.map(refToResponse);
-      })),
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          const refs = yield* executor.secrets.list();
+          return refs.map(refToResponse);
+        }),
+      ),
     )
     .handle("status", ({ params: path }) =>
-      capture(Effect.gen(function* () {
-        const executor = yield* ExecutorService;
-        const status = yield* executor.secrets.status(path.secretId);
-        return { secretId: path.secretId, status };
-      })),
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          const status = yield* executor.secrets.status(path.secretId);
+          return { secretId: path.secretId, status };
+        }),
+      ),
     )
     .handle("set", ({ params: path, payload }) =>
-      capture(Effect.gen(function* () {
-        const executor = yield* ExecutorService;
-        const ref = yield* executor.secrets.set(
-          new SetSecretInput({
-            id: payload.id,
-            scope: path.scopeId,
-            name: payload.name,
-            value: payload.value,
-            provider: payload.provider,
-          }),
-        );
-        return refToResponse(ref);
-      })),
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          const ref = yield* executor.secrets.set(
+            new SetSecretInput({
+              id: payload.id,
+              scope: path.scopeId,
+              name: payload.name,
+              value: payload.value,
+              provider: payload.provider,
+            }),
+          );
+          return refToResponse(ref);
+        }),
+      ),
     )
     .handle("remove", ({ params: path }) =>
-      capture(Effect.gen(function* () {
-        const executor = yield* ExecutorService;
-        yield* executor.secrets.remove(path.secretId);
-        return { removed: true };
-      })),
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          yield* executor.secrets.remove(path.secretId);
+          return { removed: true };
+        }),
+      ),
     )
     .handle("usages", ({ params: path }) =>
-      capture(Effect.gen(function* () {
-        const executor = yield* ExecutorService;
-        return yield* executor.secrets.usages(path.secretId);
-      })),
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          return yield* executor.secrets.usages(path.secretId);
+        }),
+      ),
     ),
 );

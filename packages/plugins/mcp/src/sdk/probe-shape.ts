@@ -133,8 +133,7 @@ export const probeMcpEndpointShape = (
             }
             return {
               kind: "not-mcp",
-              reason:
-                "401 without Bearer WWW-Authenticate — not an MCP auth challenge",
+              reason: "401 without Bearer WWW-Authenticate — not an MCP auth challenge",
             } as const;
           }
 

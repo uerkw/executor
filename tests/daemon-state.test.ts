@@ -46,7 +46,8 @@ const fileSystemLayer = FileSystem.layerNoop({
     }),
   remove: (path, options) =>
     Effect.tryPromise({
-      try: () => rm(path, { recursive: options?.recursive ?? false, force: options?.force ?? false }),
+      try: () =>
+        rm(path, { recursive: options?.recursive ?? false, force: options?.force ?? false }),
       catch: (cause) => fileSystemError("remove", cause),
     }),
 });

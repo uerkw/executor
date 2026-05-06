@@ -381,69 +381,69 @@ function SlackContactCta() {
               <span aria-hidden>→</span>
             </Button>
           </DialogTrigger>
-        <DialogContent>
-          {inviteUrl ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Check your inbox</DialogTitle>
-                <DialogDescription>
-                  We've created a private Slack channel and emailed you an invite. You can also
-                  open it directly:
-                </DialogDescription>
-              </DialogHeader>
-              <a
-                href={inviteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <SlackMark className="size-4" />
-                Open Slack invite
-              </a>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline">
-                    Done
-                  </Button>
-                </DialogClose>
-              </DialogFooter>
-            </>
-          ) : (
-            <form onSubmit={onSubmit}>
-              <DialogHeader>
-                <DialogTitle>Get in touch on Slack</DialogTitle>
-                <DialogDescription>
-                  We'll create a private Slack Connect channel between you and the Executor team.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="slack-contact-email">Work email</Label>
-                  <Input
-                    id="slack-contact-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.currentTarget.value)}
-                    placeholder="you@company.com"
-                  />
+          <DialogContent>
+            {inviteUrl ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Check your inbox</DialogTitle>
+                  <DialogDescription>
+                    We've created a private Slack channel and emailed you an invite. You can also
+                    open it directly:
+                  </DialogDescription>
+                </DialogHeader>
+                <a
+                  href={inviteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <SlackMark className="size-4" />
+                  Open Slack invite
+                </a>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">
+                      Done
+                    </Button>
+                  </DialogClose>
+                </DialogFooter>
+              </>
+            ) : (
+              <form onSubmit={onSubmit}>
+                <DialogHeader>
+                  <DialogTitle>Get in touch on Slack</DialogTitle>
+                  <DialogDescription>
+                    We'll create a private Slack Connect channel between you and the Executor team.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="slack-contact-email">Work email</Label>
+                    <Input
+                      id="slack-contact-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.currentTarget.value)}
+                      placeholder="you@company.com"
+                    />
+                  </div>
+                  {error && <p className="text-sm text-destructive">{error}</p>}
                 </div>
-                {error && <p className="text-sm text-destructive">{error}</p>}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" disabled={submitting}>
-                    Cancel
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline" disabled={submitting}>
+                      Cancel
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit" disabled={submitting || !email}>
+                    {submitting ? "Sending…" : "Send invite"}
                   </Button>
-                </DialogClose>
-                <Button type="submit" disabled={submitting || !email}>
-                  {submitting ? "Sending…" : "Send invite"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
+                </DialogFooter>
+              </form>
+            )}
+          </DialogContent>
         </Dialog>
         <span className="text-muted-foreground/60" aria-hidden>
           ·
@@ -463,8 +463,19 @@ function SlackContactCta() {
 
 function MailIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className} aria-hidden>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className={className}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 7l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+      />
     </svg>
   );
 }

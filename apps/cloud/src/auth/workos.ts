@@ -8,8 +8,7 @@ import { GeneratePortalLinkIntent, WorkOS } from "@workos-inc/node/worker";
 import { WorkOSError, tryPromiseService, withServiceLogging } from "./errors";
 
 const COOKIE_NAME = "wos-session";
-const INVALID_COOKIE_PASSWORD_MESSAGE =
-  "WORKOS_COOKIE_PASSWORD must be at least 32 characters";
+const INVALID_COOKIE_PASSWORD_MESSAGE = "WORKOS_COOKIE_PASSWORD must be at least 32 characters";
 
 class WorkOSAuthConfigurationError extends Data.TaggedError("WorkOSAuthConfigurationError")<{
   readonly message: string;
@@ -247,10 +246,9 @@ const make = Effect.gen(function* () {
 
 export type WorkOSAuthService = Effect.Success<typeof make>;
 
-export class WorkOSAuth extends Context.Service<
-  WorkOSAuth,
-  WorkOSAuthService
->()("@executor-js/cloud/WorkOSAuth") {
+export class WorkOSAuth extends Context.Service<WorkOSAuth, WorkOSAuthService>()(
+  "@executor-js/cloud/WorkOSAuth",
+) {
   static Default = Layer.effect(this)(make).pipe(
     Layer.withSpan("WorkOSAuth", { attributes: { module: "WorkOSAuth" } }),
   );

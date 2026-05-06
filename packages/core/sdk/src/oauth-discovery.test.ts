@@ -15,23 +15,19 @@ const DcrRequestBody = Schema.Struct({
   redirect_uris: Schema.Array(Schema.String),
   token_endpoint_auth_method: Schema.String,
 });
-const decodeDcrRequestBody = Schema.decodeUnknownSync(
-  Schema.fromJsonString(DcrRequestBody),
-);
+const decodeDcrRequestBody = Schema.decodeUnknownSync(Schema.fromJsonString(DcrRequestBody));
 
 const installFetchRouter = (
   handlers: readonly { match: (url: string) => boolean; handle: Handler }[],
 ): { calls: Array<{ url: string; init: RequestInit }> } => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
-  globalThis.fetch = vi
-    .fn()
-    .mockImplementation(async (url: string, init: RequestInit = {}) => {
-      calls.push({ url, init });
-      for (const h of handlers) {
-        if (h.match(url)) return h.handle(url, init);
-      }
-      return new Response(null, { status: 404 });
-    }) as typeof fetch;
+  globalThis.fetch = vi.fn().mockImplementation(async (url: string, init: RequestInit = {}) => {
+    calls.push({ url, init });
+    for (const h of handlers) {
+      if (h.match(url)) return h.handle(url, init);
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
   return { calls };
 };
 
@@ -45,14 +41,11 @@ describe("discoverProtectedResourceMetadata", () => {
   it("fetches RFC 9728 well-known metadata on the resource's origin", async () => {
     installFetchRouter([
       {
-        match: (u) =>
-          u ===
-          "https://api.example.com/.well-known/oauth-protected-resource/graphql",
+        match: (u) => u === "https://api.example.com/.well-known/oauth-protected-resource/graphql",
         handle: () => new Response(null, { status: 404 }),
       },
       {
-        match: (u) =>
-          u === "https://api.example.com/.well-known/oauth-protected-resource",
+        match: (u) => u === "https://api.example.com/.well-known/oauth-protected-resource",
         handle: () =>
           new Response(
             JSON.stringify({
@@ -69,18 +62,14 @@ describe("discoverProtectedResourceMetadata", () => {
       discoverProtectedResourceMetadata("https://api.example.com/graphql"),
     );
     expect(result).not.toBeNull();
-    expect(result!.metadata.authorization_servers?.[0]).toBe(
-      "https://api.example.com",
-    );
+    expect(result!.metadata.authorization_servers?.[0]).toBe("https://api.example.com");
     expect(result!.metadataUrl).toBe(
       "https://api.example.com/.well-known/oauth-protected-resource",
     );
   });
 
   it("returns null when every well-known candidate 404s", async () => {
-    installFetchRouter([
-      { match: () => true, handle: () => new Response(null, { status: 404 }) },
-    ]);
+    installFetchRouter([{ match: () => true, handle: () => new Response(null, { status: 404 }) }]);
 
     const result = await Effect.runPromise(
       discoverProtectedResourceMetadata("https://api.example.com/graphql"),
@@ -117,13 +106,11 @@ describe("discoverAuthorizationServerMetadata", () => {
   it("falls back to openid-configuration when oauth-authorization-server is absent", async () => {
     installFetchRouter([
       {
-        match: (u) =>
-          u === "https://as.example.com/.well-known/oauth-authorization-server",
+        match: (u) => u === "https://as.example.com/.well-known/oauth-authorization-server",
         handle: () => new Response(null, { status: 404 }),
       },
       {
-        match: (u) =>
-          u === "https://as.example.com/.well-known/openid-configuration",
+        match: (u) => u === "https://as.example.com/.well-known/openid-configuration",
         handle: () =>
           new Response(
             JSON.stringify({
@@ -142,9 +129,7 @@ describe("discoverAuthorizationServerMetadata", () => {
       discoverAuthorizationServerMetadata("https://as.example.com"),
     );
     expect(result).not.toBeNull();
-    expect(result!.metadata.token_endpoint).toBe(
-      "https://as.example.com/token",
-    );
+    expect(result!.metadata.token_endpoint).toBe("https://as.example.com/token");
     expect(result!.metadataUrl.endsWith("openid-configuration")).toBe(true);
   });
 
@@ -159,9 +144,7 @@ describe("discoverAuthorizationServerMetadata", () => {
           }),
       },
     ]);
-    const exit = await Effect.runPromiseExit(
-      discoverAuthorizationServerMetadata("https://as"),
-    );
+    const exit = await Effect.runPromiseExit(discoverAuthorizationServerMetadata("https://as"));
     expect(Exit.isFailure(exit)).toBe(true);
   });
 });
@@ -260,11 +243,13 @@ describe("registerDynamicClient", () => {
     if (!Exit.isFailure(exit)) return;
     const reason = exit.cause.reasons.find(Cause.isFailReason);
     const error = reason?.error;
-    expect(error).toEqual(expect.objectContaining({
-      _tag: "OAuthDiscoveryError",
-      status: 400,
-      message: expect.stringMatching(/invalid_client_metadata/),
-    }));
+    expect(error).toEqual(
+      expect.objectContaining({
+        _tag: "OAuthDiscoveryError",
+        status: 400,
+        message: expect.stringMatching(/invalid_client_metadata/),
+      }),
+    );
   });
 });
 
@@ -279,14 +264,11 @@ describe("beginDynamicAuthorization", () => {
     installFetchRouter([
       {
         match: (u) =>
-          u ===
-          "https://backboard.railway.com/.well-known/oauth-protected-resource/graphql/v2",
+          u === "https://backboard.railway.com/.well-known/oauth-protected-resource/graphql/v2",
         handle: () => new Response(null, { status: 404 }),
       },
       {
-        match: (u) =>
-          u ===
-          "https://backboard.railway.com/.well-known/oauth-protected-resource",
+        match: (u) => u === "https://backboard.railway.com/.well-known/oauth-protected-resource",
         handle: () =>
           new Response(
             JSON.stringify({
@@ -304,18 +286,14 @@ describe("beginDynamicAuthorization", () => {
           ),
       },
       {
-        match: (u) =>
-          u ===
-          "https://backboard.railway.com/.well-known/oauth-authorization-server",
+        match: (u) => u === "https://backboard.railway.com/.well-known/oauth-authorization-server",
         handle: () =>
           new Response(
             JSON.stringify({
               issuer: "https://backboard.railway.com",
-              authorization_endpoint:
-                "https://backboard.railway.com/oauth/auth",
+              authorization_endpoint: "https://backboard.railway.com/oauth/auth",
               token_endpoint: "https://backboard.railway.com/oauth/token",
-              registration_endpoint:
-                "https://backboard.railway.com/oauth/register",
+              registration_endpoint: "https://backboard.railway.com/oauth/register",
               scopes_supported: [
                 "openid",
                 "profile",
@@ -356,27 +334,19 @@ describe("beginDynamicAuthorization", () => {
     );
 
     const url = new URL(result.authorizationUrl);
-    expect(url.origin + url.pathname).toBe(
-      "https://backboard.railway.com/oauth/auth",
-    );
+    expect(url.origin + url.pathname).toBe("https://backboard.railway.com/oauth/auth");
     expect(url.searchParams.get("client_id")).toBe("dyn-client-42");
-    expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://app.example/cb",
-    );
+    expect(url.searchParams.get("redirect_uri")).toBe("https://app.example/cb");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
     expect(url.searchParams.get("state")).toBe("state-xyz");
     expect(result.codeVerifier.length).toBeGreaterThanOrEqual(43);
-    expect(result.state.authorizationServerUrl).toBe(
-      "https://backboard.railway.com",
-    );
+    expect(result.state.authorizationServerUrl).toBe("https://backboard.railway.com");
     expect(result.state.authorizationServerMetadata.token_endpoint).toBe(
       "https://backboard.railway.com/oauth/token",
     );
     expect(result.state.clientInformation.client_id).toBe("dyn-client-42");
-    expect(result.state.resourceMetadata?.resource).toBe(
-      "https://backboard.railway.com",
-    );
+    expect(result.state.resourceMetadata?.resource).toBe("https://backboard.railway.com");
   });
 
   it("skips discovery + DCR when previousState is provided", async () => {
@@ -422,8 +392,7 @@ describe("beginDynamicAuthorization", () => {
           new Response(
             JSON.stringify({
               issuer: "https://legacy.example.com",
-              authorization_endpoint:
-                "https://legacy.example.com/authorize",
+              authorization_endpoint: "https://legacy.example.com/authorize",
               token_endpoint: "https://legacy.example.com/token",
               code_challenge_methods_supported: ["plain"],
               response_types_supported: ["code"],
@@ -454,8 +423,7 @@ describe("beginDynamicAuthorization", () => {
           new Response(
             JSON.stringify({
               issuer: "https://static.example.com",
-              authorization_endpoint:
-                "https://static.example.com/authorize",
+              authorization_endpoint: "https://static.example.com/authorize",
               token_endpoint: "https://static.example.com/token",
               code_challenge_methods_supported: ["S256"],
               response_types_supported: ["code"],

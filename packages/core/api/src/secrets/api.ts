@@ -48,12 +48,8 @@ const SetSecretPayload = Schema.Struct({
 // ---------------------------------------------------------------------------
 
 const SecretNotFound = SecretNotFoundError.annotate({ httpApiStatus: 404 });
-const SecretResolution = SecretResolutionError.annotate(
-  { httpApiStatus: 500 },
-);
-const SecretOwnedByConnection = SecretOwnedByConnectionError.annotate(
-  { httpApiStatus: 409 },
-);
+const SecretResolution = SecretResolutionError.annotate({ httpApiStatus: 500 });
+const SecretOwnedByConnection = SecretOwnedByConnectionError.annotate({ httpApiStatus: 409 });
 const SecretInUse = SecretInUseError.annotate({ httpApiStatus: 409 });
 
 // ---------------------------------------------------------------------------

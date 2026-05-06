@@ -68,8 +68,7 @@ const platformName = (t: Target) => (t.os === "win32" ? "windows" : t.os);
 /** Per-platform suffix used in dist directory names, npm dist-tags, and the
  *  semver prerelease segment of variant package versions. e.g. "linux-x64",
  *  "linux-x64-musl", "darwin-arm64". */
-const platformTag = (t: Target) =>
-  [platformName(t), t.arch, t.abi].filter(Boolean).join("-");
+const platformTag = (t: Target) => [platformName(t), t.arch, t.abi].filter(Boolean).join("-");
 
 /** Dist directory name (e.g. dist/executor-linux-x64). Only used as a build
  *  artifact convention; the actual npm package name inside is `executor`. */
@@ -126,7 +125,10 @@ const resolveKeyringNative = (t: Target): string | null => {
   const platformMap: Record<string, { pkg: string; node: string }> = {
     "darwin-arm64": { pkg: "@napi-rs/keyring-darwin-arm64", node: "keyring.darwin-arm64.node" },
     "darwin-x64": { pkg: "@napi-rs/keyring-darwin-x64", node: "keyring.darwin-x64.node" },
-    "linux-arm64": { pkg: "@napi-rs/keyring-linux-arm64-gnu", node: "keyring.linux-arm64-gnu.node" },
+    "linux-arm64": {
+      pkg: "@napi-rs/keyring-linux-arm64-gnu",
+      node: "keyring.linux-arm64-gnu.node",
+    },
     "linux-x64": { pkg: "@napi-rs/keyring-linux-x64-gnu", node: "keyring.linux-x64-gnu.node" },
     "linux-arm64-musl": {
       pkg: "@napi-rs/keyring-linux-arm64-musl",
@@ -146,9 +148,7 @@ const resolveKeyringNative = (t: Target): string | null => {
   const entry = platformMap[key];
   if (!entry) return null;
   try {
-    const req = createRequire(
-      join(repoRoot, "node_modules", "@napi-rs/keyring", "package.json"),
-    );
+    const req = createRequire(join(repoRoot, "node_modules", "@napi-rs/keyring", "package.json"));
     const pkgJson = req.resolve(`${entry.pkg}/package.json`);
     return join(dirname(pkgJson), entry.node);
   } catch {
@@ -455,7 +455,10 @@ const buildPreviewTarballs = async (binaries: Record<string, string>) => {
 
 const resolveTargetsFromEnv = (env: string | undefined): Target[] => {
   if (!env) throw new Error("EXECUTOR_PREVIEW_TARGETS must be set (comma-separated package names)");
-  const names = env.split(",").map((s) => s.trim()).filter(Boolean);
+  const names = env
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const resolved = names.map((name) => {
     const match = ALL_TARGETS.find((t) => targetPackageName(t) === name);
     if (!match) throw new Error(`Unknown preview target: ${name}`);
@@ -482,10 +485,7 @@ const buildPreviewWrapperPackage = async (targets: Target[]) => {
   await writeFile(join(binDir, "executor"), NODE_SHIM);
   await chmod(join(binDir, "executor"), 0o755);
 
-  const postinstall = PREVIEW_POSTINSTALL_SCRIPT.replaceAll(
-    "__CDN_BASE_URL__",
-    `${cdnUrl}/${sha}`,
-  );
+  const postinstall = PREVIEW_POSTINSTALL_SCRIPT.replaceAll("__CDN_BASE_URL__", `${cdnUrl}/${sha}`);
   await writeFile(join(wrapperDir, "postinstall.cjs"), postinstall);
 
   // Restrict os/cpu to platforms we actually built this run so npm refuses
@@ -565,11 +565,10 @@ const publishPackedPackage = async (pkgDir: string, channel: string) => {
   await $`bun pm pack`.cwd(pkgDir);
 
   const provenance = process.env.GITHUB_ACTIONS === "true" ? ["--provenance"] : [];
-  const result =
-    await $`npm publish *.tgz --access public --tag ${channel} ${provenance}`
-      .cwd(pkgDir)
-      .nothrow()
-      .quiet();
+  const result = await $`npm publish *.tgz --access public --tag ${channel} ${provenance}`
+    .cwd(pkgDir)
+    .nothrow()
+    .quiet();
 
   const stdout = result.stdout.toString();
   const stderr = result.stderr.toString();

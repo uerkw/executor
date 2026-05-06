@@ -33,15 +33,9 @@ export const effectiveBindingForScope = (
 ): BindingRowForCredentialStatus | null =>
   rows
     .filter(
-      (row) =>
-        row.slot === slot &&
-        scopeRank(ranks, row.scopeId) >= scopeRank(ranks, targetScope),
+      (row) => row.slot === slot && scopeRank(ranks, row.scopeId) >= scopeRank(ranks, targetScope),
     )
-    .sort(
-      (a, b) =>
-        scopeRank(ranks, a.scopeId) -
-        scopeRank(ranks, b.scopeId),
-    )[0] ?? null;
+    .sort((a, b) => scopeRank(ranks, a.scopeId) - scopeRank(ranks, b.scopeId))[0] ?? null;
 
 const hasSecretBinding = (
   rows: readonly BindingRowForCredentialStatus[],
@@ -59,9 +53,7 @@ const hasConnectionBinding = (
 ) => {
   const binding = effectiveBindingForScope(rows, slot, targetScope, ranks);
   if (binding?.value.kind !== "connection") return false;
-  return liveConnectionIds
-    ? liveConnectionIds.has(binding.value.connectionId)
-    : true;
+  return liveConnectionIds ? liveConnectionIds.has(binding.value.connectionId) : true;
 };
 
 const effectiveClientSecretSlot = (oauth2: {
@@ -106,17 +98,9 @@ export function missingCredentialLabels(
   }
 
   if (
-    !hasConnectionBinding(
-      bindings,
-      oauth2.connectionSlot,
-      targetScope,
-      ranks,
-      liveConnectionIds,
-    )
+    !hasConnectionBinding(bindings, oauth2.connectionSlot, targetScope, ranks, liveConnectionIds)
   ) {
-    missing.push(
-      oauth2.flow === "clientCredentials" ? "OAuth client connection" : "OAuth sign-in",
-    );
+    missing.push(oauth2.flow === "clientCredentials" ? "OAuth client connection" : "OAuth sign-in");
   }
 
   return missing;

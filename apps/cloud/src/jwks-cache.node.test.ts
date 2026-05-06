@@ -102,9 +102,7 @@ describe("createCachedRemoteJWKSet", () => {
     const jwks = createCachedRemoteJWKSet(jwksUrl, { fetch });
     const token = await sign(kp);
 
-    const verifies = Array.from({ length: 10 }, () =>
-      jwtVerify(token, jwks, { issuer, audience }),
-    );
+    const verifies = Array.from({ length: 10 }, () => jwtVerify(token, jwks, { issuer, audience }));
     // Let microtasks settle so all 10 calls hit the cache miss path.
     await new Promise((r) => setTimeout(r, 10));
     resolveFetch();

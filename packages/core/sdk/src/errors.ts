@@ -32,13 +32,10 @@ export class PluginNotLoadedError extends Schema.TaggedErrorClass<PluginNotLoade
  *  the plugin only declares static tools and this one's id matched
  *  dynamically somehow. Shouldn't happen in practice; guards against
  *  programmer error. */
-export class NoHandlerError extends Schema.TaggedErrorClass<NoHandlerError>()(
-  "NoHandlerError",
-  {
-    toolId: ToolId,
-    pluginId: Schema.String,
-  },
-) {}
+export class NoHandlerError extends Schema.TaggedErrorClass<NoHandlerError>()("NoHandlerError", {
+  toolId: ToolId,
+  pluginId: Schema.String,
+}) {}
 
 /** Tool invocation was rejected because a workspace `tool_policy` rule
  *  with `action: "block"` matched. `pattern` is the matched policy

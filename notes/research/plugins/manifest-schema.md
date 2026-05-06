@@ -72,24 +72,24 @@ The manifest should likely be a JSON-serializable object with these top-level se
 
 ```ts
 type PluginManifest = {
-  schemaVersion: string
-  id: string
-  name: string
-  version: string
-  description?: string
-  publisher?: PluginPublisher
-  license?: string
-  homepage?: string
-  repository?: string
-  categories?: PluginCategory[]
-  compatibility: PluginCompatibility
-  entrypoints: PluginEntrypoints
-  capabilities?: PluginCapabilities
-  extensions?: PluginExtensions
-  storage?: PluginStorageDeclaration
-  package?: PluginPackageDeclaration
-  metadata?: Record<string, unknown>
-}
+  schemaVersion: string;
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  publisher?: PluginPublisher;
+  license?: string;
+  homepage?: string;
+  repository?: string;
+  categories?: PluginCategory[];
+  compatibility: PluginCompatibility;
+  entrypoints: PluginEntrypoints;
+  capabilities?: PluginCapabilities;
+  extensions?: PluginExtensions;
+  storage?: PluginStorageDeclaration;
+  package?: PluginPackageDeclaration;
+  metadata?: Record<string, unknown>;
+};
 ```
 
 This is a planning type, not a final API.
@@ -135,9 +135,7 @@ The install surface should support package sources rather than assuming one cust
 User-facing install config can stay simple:
 
 ```ts
-type PluginInstallSpec =
-  | string
-  | [string, Record<string, unknown>]
+type PluginInstallSpec = string | [string, Record<string, unknown>];
 ```
 
 The string identifies the package source. Examples might include `@executor/openapi`, `github:owner/repo`, `https://github.com/owner/repo.git`, or `./plugins/my-plugin`. Tuple options are installation configuration, not manifest data.
@@ -146,10 +144,10 @@ Resolved install metadata should be stored separately from the manifest. It shou
 
 ```ts
 type PluginPackageDeclaration = {
-  source?: "npm" | "git" | "github" | "local" | "registry"
-  packageName?: string
-  repository?: string
-}
+  source?: "npm" | "git" | "github" | "local" | "registry";
+  packageName?: string;
+  repository?: string;
+};
 ```
 
 This `package` block is optional planning shape, not final schema. For npm packages, standard `package.json` fields may already provide most of this information.
@@ -160,12 +158,12 @@ Compatibility should be explicit and checked before plugin code is loaded.
 
 ```ts
 type PluginCompatibility = {
-  executor: string
-  runtimeApi?: string
-  platforms?: PluginPlatform[]
-}
+  executor: string;
+  runtimeApi?: string;
+  platforms?: PluginPlatform[];
+};
 
-type PluginPlatform = "local" | "cloud"
+type PluginPlatform = "local" | "cloud";
 ```
 
 `executor` should probably be a semver range for supported Executor versions.
@@ -182,27 +180,27 @@ Entrypoints describe executable code or assets the host may load.
 
 ```ts
 type PluginEntrypoints = {
-  main?: PluginCodeEntrypoint
-  sdk?: PluginCodeEntrypoint
-  source?: PluginCodeEntrypoint
-  secretStore?: PluginCodeEntrypoint
-  apiGroup?: PluginCodeEntrypoint
-  apiHandlers?: PluginCodeEntrypoint
-  routeHandlers?: Record<string, PluginCodeEntrypoint>
-  backgroundServices?: Record<string, PluginCodeEntrypoint>
-  reactSource?: PluginUiEntrypoint
-  reactSecretProvider?: PluginUiEntrypoint
-  ui?: PluginUiEntrypoint
-  adminUi?: PluginUiEntrypoint
-}
+  main?: PluginCodeEntrypoint;
+  sdk?: PluginCodeEntrypoint;
+  source?: PluginCodeEntrypoint;
+  secretStore?: PluginCodeEntrypoint;
+  apiGroup?: PluginCodeEntrypoint;
+  apiHandlers?: PluginCodeEntrypoint;
+  routeHandlers?: Record<string, PluginCodeEntrypoint>;
+  backgroundServices?: Record<string, PluginCodeEntrypoint>;
+  reactSource?: PluginUiEntrypoint;
+  reactSecretProvider?: PluginUiEntrypoint;
+  ui?: PluginUiEntrypoint;
+  adminUi?: PluginUiEntrypoint;
+};
 
 type PluginCodeEntrypoint = {
-  module: string
-  export?: string
-  runtime?: PluginRuntimeTarget
-}
+  module: string;
+  export?: string;
+  runtime?: PluginRuntimeTarget;
+};
 
-type PluginRuntimeTarget = "worker" | "isolate" | "host-trusted"
+type PluginRuntimeTarget = "worker" | "isolate" | "host-trusted";
 ```
 
 The exact shape may change, but the manifest should avoid requiring the host to import a plugin just to discover what code exists.
@@ -237,21 +235,21 @@ Example planning shape:
 ```ts
 type PluginLayerDeclaration = {
   sdk?: {
-    pluginId: string
-    entrypoint: keyof PluginEntrypoints
-  }
+    pluginId: string;
+    entrypoint: keyof PluginEntrypoints;
+  };
   api?: {
-    requiresSdkPlugin: string
-    groupEntrypoint?: keyof PluginEntrypoints
-    handlersEntrypoint?: keyof PluginEntrypoints
-  }
+    requiresSdkPlugin: string;
+    groupEntrypoint?: keyof PluginEntrypoints;
+    handlersEntrypoint?: keyof PluginEntrypoints;
+  };
   react?: Array<{
-    kind: "source" | "secret-provider" | "settings" | "admin"
-    requiresSdkPlugin?: string
-    requiresApi?: boolean
-    entrypoint: keyof PluginEntrypoints
-  }>
-}
+    kind: "source" | "secret-provider" | "settings" | "admin";
+    requiresSdkPlugin?: string;
+    requiresApi?: boolean;
+    entrypoint: keyof PluginEntrypoints;
+  }>;
+};
 ```
 
 This is planning shape, not final schema. The important requirement is that hosts can opt into layers independently while still validating that the selected layers are compatible.
@@ -264,13 +262,13 @@ Extensions declare what the plugin contributes at a product level.
 
 ```ts
 type PluginExtensions = {
-  sources?: SourceExtensionDeclaration[]
-  secretStores?: SecretStoreExtensionDeclaration[]
-  tools?: ToolExtensionDeclaration[]
-  routes?: RouteExtensionDeclaration[]
-  uiSurfaces?: UiSurfaceDeclaration[]
-  backgroundServices?: BackgroundServiceDeclaration[]
-}
+  sources?: SourceExtensionDeclaration[];
+  secretStores?: SecretStoreExtensionDeclaration[];
+  tools?: ToolExtensionDeclaration[];
+  routes?: RouteExtensionDeclaration[];
+  uiSurfaces?: UiSurfaceDeclaration[];
+  backgroundServices?: BackgroundServiceDeclaration[];
+};
 ```
 
 Some extension declarations may be fully static. Others may be partial declarations that are completed by plugin registration at load time.
@@ -283,16 +281,16 @@ Capabilities declare requested access. Grants are separate host state.
 
 ```ts
 type PluginCapabilities = {
-  tools?: ToolCapabilityDeclaration[]
-  sources?: SourceCapabilityDeclaration[]
-  secrets?: SecretCapabilityDeclaration[]
-  network?: NetworkCapabilityDeclaration[]
-  storage?: StorageCapabilityDeclaration[]
-  scopes?: ScopeCapabilityDeclaration[]
-  filesystem?: FilesystemCapabilityDeclaration[]
-  execution?: ExecutionCapabilityDeclaration[]
-  host?: HostCapabilityDeclaration[]
-}
+  tools?: ToolCapabilityDeclaration[];
+  sources?: SourceCapabilityDeclaration[];
+  secrets?: SecretCapabilityDeclaration[];
+  network?: NetworkCapabilityDeclaration[];
+  storage?: StorageCapabilityDeclaration[];
+  scopes?: ScopeCapabilityDeclaration[];
+  filesystem?: FilesystemCapabilityDeclaration[];
+  execution?: ExecutionCapabilityDeclaration[];
+  host?: HostCapabilityDeclaration[];
+};
 ```
 
 Capabilities should be deny-by-default. If a capability is missing, the runtime should deny that access.
@@ -344,11 +342,11 @@ The manifest should let plugins declare storage needs separately from storage gr
 ```ts
 type PluginStorageDeclaration = {
   collections?: Array<{
-    name: string
-    kind: "kv" | "document" | "sql"
-    description?: string
-  }>
-}
+    name: string;
+    kind: "kv" | "document" | "sql";
+    description?: string;
+  }>;
+};
 ```
 
 Storage declarations help the host pre-create, migrate, display, or approve plugin storage.
@@ -364,18 +362,18 @@ Executor does not need a custom publishing flow immediately. npm, GitHub/git, an
 ```ts
 type PluginArtifacts = {
   files?: Array<{
-    path: string
-    size?: number
-    sha256?: string
-    kind?: "code" | "asset" | "manifest" | "source-map"
-  }>
+    path: string;
+    size?: number;
+    sha256?: string;
+    kind?: "code" | "asset" | "manifest" | "source-map";
+  }>;
   bundle?: {
-    format: "esm"
-    main: string
-    size?: number
-    sha256?: string
-  }
-}
+    format: "esm";
+    main: string;
+    size?: number;
+    sha256?: string;
+  };
+};
 ```
 
 Cloud and local do not need to store cached artifacts the same way, but they should agree on immutable identity and verification where possible.

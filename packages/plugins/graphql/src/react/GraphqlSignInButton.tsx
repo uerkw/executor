@@ -25,7 +25,8 @@ export default function GraphqlSignInButton(props: { sourceId: string }) {
     popupName: "graphql-oauth",
   });
 
-  const source = AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
+  const source =
+    AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
   const oauth2 = source?.auth.kind === "oauth2" ? source.auth : null;
   const connections = AsyncResult.isSuccess(connectionsResult) ? connectionsResult.value : null;
   const isConnected =

@@ -14,10 +14,7 @@ export class SlackError extends Data.TaggedError("SlackError")<{
 }> {}
 
 export type ISlackService = Readonly<{
-  createConnectInvite: (input: {
-    email: string;
-    organization?: string;
-  }) => Effect.Effect<
+  createConnectInvite: (input: { email: string; organization?: string }) => Effect.Effect<
     {
       channel: { id: string; name: string };
       invite: { invite_id: string; url: string };
@@ -46,9 +43,7 @@ const make = Effect.sync(() => {
 
   if (!token) {
     const notConfigured = (method: string) =>
-      Effect.fail(
-        new SlackError({ method, error: "SLACK_BOT_TOKEN is not configured" }),
-      );
+      Effect.fail(new SlackError({ method, error: "SLACK_BOT_TOKEN is not configured" }));
     return {
       createConnectInvite: () => notConfigured("createConnectInvite"),
     } satisfies ISlackService;
@@ -83,20 +78,17 @@ const make = Effect.sync(() => {
       Effect.withSpan(`slack.${method}`),
     );
 
-  const createConnectInvite: ISlackService["createConnectInvite"] = ({
-    email,
-    organization,
-  }) =>
+  const createConnectInvite: ISlackService["createConnectInvite"] = ({ email, organization }) =>
     Effect.gen(function* () {
       // Slack channel names: lowercase, no spaces, max 80 chars, unique per
       // workspace. Use the org name when available; fall back to the email
       // local-part for unauthenticated submissions.
       const baseName = slugify(organization ?? email).slice(0, 80) || "contact";
       const tryCreate = (n: string) =>
-        call<SlackResponse & { channel: { id: string; name: string } }>(
-          "conversations.create",
-          { name: n, is_private: false },
-        );
+        call<SlackResponse & { channel: { id: string; name: string } }>("conversations.create", {
+          name: n,
+          is_private: false,
+        });
 
       const created = yield* tryCreate(baseName).pipe(
         Effect.catchTag("SlackError", (err) =>
@@ -125,9 +117,7 @@ const make = Effect.sync(() => {
         channel: { id: channel.id, name: channel.name },
         invite: { invite_id: invite.invite_id, url: invite.url },
       };
-    }).pipe(
-      Effect.withSpan("slack.createConnectInvite", { attributes: { "slack.email": email } }),
-    );
+    }).pipe(Effect.withSpan("slack.createConnectInvite", { attributes: { "slack.email": email } }));
 
   return { createConnectInvite } satisfies ISlackService;
 });

@@ -172,10 +172,12 @@ describe("runOAuthCallback", () => {
     class DomainError extends Data.TaggedError("DomainError")<{
       readonly message: string;
     }> {}
-    const isDomainError = Schema.is(Schema.Struct({
-      _tag: Schema.Literal("DomainError"),
-      message: Schema.String,
-    }));
+    const isDomainError = Schema.is(
+      Schema.Struct({
+        _tag: Schema.Literal("DomainError"),
+        message: Schema.String,
+      }),
+    );
     const html = await Effect.runPromise(
       runOAuthCallback<GoogleAuth, DomainError, never>({
         complete: () => Effect.fail(new DomainError({ message: "Code expired" })),

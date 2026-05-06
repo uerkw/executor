@@ -93,9 +93,7 @@ const TestProtectedGate = HttpRouter.middleware()((httpEffect) =>
       );
     }
     if (testState.mode === "error") {
-      return Effect.succeed(
-        HttpServerResponse.jsonUnsafe({ error: "boom" }, { status: 500 }),
-      );
+      return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "boom" }, { status: 500 }));
     }
     if (testState.mode === "bad-status") {
       return Effect.succeed(
@@ -130,10 +128,7 @@ const TestApiLive = Layer.mergeAll(
   AuthTestLive,
   ProtectedTestLive,
   AutumnTestRoutesLive,
-).pipe(
-  Layer.provideMerge(RouterConfig),
-  Layer.provideMerge(HttpServer.layerServices),
-);
+).pipe(Layer.provideMerge(RouterConfig), Layer.provideMerge(HttpServer.layerServices));
 
 const requestHandler = HttpRouter.toWebHandler(TestApiLive, { disableLogger: true }).handler;
 

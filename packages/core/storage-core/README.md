@@ -42,11 +42,7 @@ Or grab typed query helpers for an existing schema — purely a type-level
 view, no runtime cost:
 
 ```ts
-import {
-  typedAdapter,
-  type DBAdapter,
-  type DBSchema,
-} from "@executor-js/storage-core";
+import { typedAdapter, type DBAdapter, type DBSchema } from "@executor-js/storage-core";
 
 const schema = {
   secrets: {

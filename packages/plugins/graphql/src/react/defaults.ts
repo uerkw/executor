@@ -3,5 +3,4 @@ import {
   type HttpCredentialsState,
 } from "@executor-js/react/plugins/http-credentials";
 
-export const initialGraphqlCredentials = (): HttpCredentialsState =>
-  emptyHttpCredentials();
+export const initialGraphqlCredentials = (): HttpCredentialsState => emptyHttpCredentials();

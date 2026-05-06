@@ -45,10 +45,11 @@ const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 const SESSION_META_KEY = "session-meta";
 const LAST_ACTIVITY_KEY = "last-activity-ms";
 
-const doRuntimeControls = (instance: unknown): {
+const doRuntimeControls = (
+  instance: unknown,
+): {
   closeRuntime: () => Effect.Effect<void>;
-} =>
-  instance as { closeRuntime: () => Effect.Effect<void> };
+} => instance as { closeRuntime: () => Effect.Effect<void> };
 
 const doActivityState = (instance: unknown): { lastActivityMs: number } =>
   instance as { lastActivityMs: number };
@@ -340,9 +341,7 @@ describe("/mcp session restore", () => {
     const ns = env.MCP_SESSION;
     const stub = ns.get(ns.idFromString(sessionId!));
     await runInDurableObject(stub, async (instance) => {
-      await Effect.runPromise(
-        doRuntimeControls(instance).closeRuntime(),
-      );
+      await Effect.runPromise(doRuntimeControls(instance).closeRuntime());
     });
 
     const response = await mcpPost({
@@ -376,9 +375,7 @@ describe("/mcp session restore", () => {
     const ns = env.MCP_SESSION;
     const stub = ns.get(ns.idFromString(sessionId!));
     await runInDurableObject(stub, async (instance) => {
-      await Effect.runPromise(
-        doRuntimeControls(instance).closeRuntime(),
-      );
+      await Effect.runPromise(doRuntimeControls(instance).closeRuntime());
     });
 
     const getResponse = await mcpGet({ bearer, sessionId: sessionId! });
@@ -438,9 +435,7 @@ describe("/mcp session restore", () => {
     const ns = env.MCP_SESSION;
     const stub = ns.get(ns.idFromString(sessionId!));
     await runInDurableObject(stub, async (instance) => {
-      await Effect.runPromise(
-        doRuntimeControls(instance).closeRuntime(),
-      );
+      await Effect.runPromise(doRuntimeControls(instance).closeRuntime());
     });
 
     const response = await mcpPost({

@@ -1,10 +1,6 @@
 import { Effect } from "effect";
 
-import {
-  definePlugin,
-  type PluginCtx,
-  type SecretProvider,
-} from "@executor-js/sdk/core";
+import { definePlugin, type PluginCtx, type SecretProvider } from "@executor-js/sdk/core";
 
 import {
   deletePassword,
@@ -59,8 +55,7 @@ export type KeychainExtension = ReturnType<typeof makeKeychainExtension>;
 const scopedServiceName = (
   ctx: PluginCtx<unknown>,
   options: KeychainPluginConfig | undefined,
-): string =>
-  `${resolveServiceName(options?.serviceName)}/${ctx.scopes[0]!.id}`;
+): string => `${resolveServiceName(options?.serviceName)}/${ctx.scopes[0]!.id}`;
 
 const makeKeychainExtension = (
   ctx: PluginCtx<unknown>,
@@ -83,34 +78,26 @@ const makeKeychainExtension = (
   };
 };
 
-export const keychainPlugin = definePlugin(
-  (options?: KeychainPluginConfig) => ({
-    id: "keychain" as const,
-    storage: () => ({}),
+export const keychainPlugin = definePlugin((options?: KeychainPluginConfig) => ({
+  id: "keychain" as const,
+  storage: () => ({}),
 
-    extension: (ctx): KeychainExtension => makeKeychainExtension(ctx, options),
+  extension: (ctx): KeychainExtension => makeKeychainExtension(ctx, options),
 
-    secretProviders: (ctx): Effect.Effect<readonly SecretProvider[]> =>
-      Effect.gen(function* () {
-        const serviceName = scopedServiceName(ctx, options);
-        const reachable = yield* setPassword(
-          serviceName,
-          PROBE_ACCOUNT,
-          PROBE_VALUE,
-        ).pipe(
-          Effect.andThen(
-            deletePassword(serviceName, PROBE_ACCOUNT).pipe(
-              Effect.catch(() => Effect.void),
-            ),
+  secretProviders: (ctx): Effect.Effect<readonly SecretProvider[]> =>
+    Effect.gen(function* () {
+      const serviceName = scopedServiceName(ctx, options);
+      const reachable = yield* setPassword(serviceName, PROBE_ACCOUNT, PROBE_VALUE).pipe(
+        Effect.andThen(
+          deletePassword(serviceName, PROBE_ACCOUNT).pipe(Effect.catch(() => Effect.void)),
+        ),
+        Effect.as(true),
+        Effect.catch(() =>
+          Effect.logWarning("keychain unavailable, skipping provider registration").pipe(
+            Effect.as(false),
           ),
-          Effect.as(true),
-          Effect.catch(() =>
-            Effect.logWarning(
-              "keychain unavailable, skipping provider registration",
-            ).pipe(Effect.as(false)),
-          ),
-        );
-        return reachable ? [makeKeychainProvider(serviceName)] : [];
-      }),
-  }),
-);
+        ),
+      );
+      return reachable ? [makeKeychainProvider(serviceName)] : [];
+    }),
+}));

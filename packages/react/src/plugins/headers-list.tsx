@@ -74,9 +74,7 @@ export function HeadersList({
       presetKey?: string;
     }>,
   ) => {
-    onHeadersChange(
-      headers.map((entry, i) => (i === index ? { ...entry, ...update } : entry)),
-    );
+    onHeadersChange(headers.map((entry, i) => (i === index ? { ...entry, ...update } : entry)));
   };
 
   const removeHeader = (index: number) => {

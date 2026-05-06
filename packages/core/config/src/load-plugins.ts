@@ -66,8 +66,7 @@ export interface LoadPluginsFromJsoncOptions {
  */
 export const loadPluginsFromJsonc = async (
   options: LoadPluginsFromJsoncOptions,
-): Promise<readonly AnyPlugin[] | null> =>
-  Effect.runPromise(loadPluginsFromJsoncEffect(options));
+): Promise<readonly AnyPlugin[] | null> => Effect.runPromise(loadPluginsFromJsoncEffect(options));
 
 const loadPluginsFromJsoncEffect = (
   options: LoadPluginsFromJsoncOptions,
@@ -122,9 +121,7 @@ const loadPluginsFromJsoncEffect = (
     // require.resolve is anchored to the jsonc's directory so plugin
     // packages resolve from the host app's `node_modules` regardless of
     // CWD.
-    const require = createRequire(
-      isAbsolute(path) ? path : resolvePath(fromDir, "_anchor.js"),
-    );
+    const require = createRequire(isAbsolute(path) ? path : resolvePath(fromDir, "_anchor.js"));
 
     const loaded: AnyPlugin[] = [];
     for (const entry of entries) {
@@ -146,9 +143,7 @@ const loadPluginsFromJsoncEffect = (
             message: `[load-plugins] failed to import "${serverEntry}" from ${resolved}.`,
             cause,
           }),
-      })) as
-        | { default?: LooseConfiguredPlugin }
-        | LooseConfiguredPlugin;
+      })) as { default?: LooseConfiguredPlugin } | LooseConfiguredPlugin;
       const factory = (
         typeof mod === "function" ? mod : (mod.default ?? null)
       ) as LooseConfiguredPlugin | null;

@@ -75,9 +75,7 @@ describe("pluginBlobStore", () => {
     Effect.gen(function* () {
       const store = makeInMemoryBlobStore();
       const plugin = pluginBlobStore(store, ["inner", "outer"], "my-plugin");
-      const err = yield* plugin
-        .put("k", "v", { scope: "not-in-stack" })
-        .pipe(Effect.flip);
+      const err = yield* plugin.put("k", "v", { scope: "not-in-stack" }).pipe(Effect.flip);
       expect(err).toBeInstanceOf(StorageError);
       expect(err).toMatchObject({
         message: expect.stringContaining("not in the"),
@@ -91,9 +89,7 @@ describe("pluginBlobStore", () => {
     Effect.gen(function* () {
       const store = makeInMemoryBlobStore();
       const plugin = pluginBlobStore(store, ["inner"], "my-plugin");
-      const err = yield* plugin
-        .delete("k", { scope: "not-in-stack" })
-        .pipe(Effect.flip);
+      const err = yield* plugin.delete("k", { scope: "not-in-stack" }).pipe(Effect.flip);
       expect(err).toBeInstanceOf(StorageError);
     }),
   );

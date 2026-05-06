@@ -133,9 +133,7 @@ const errorPlugin = definePlugin(() => ({
 }));
 
 const makeSearchExecutor = () =>
-  createExecutor(
-    makeTestConfig({ plugins: [githubPlugin(), crmPlugin()] as const }),
-  );
+  createExecutor(makeTestConfig({ plugins: [githubPlugin(), crmPlugin()] as const }));
 
 describe("tool discovery", () => {
   it.effect("ranks matches using ids, namespaces, camelCase names, and descriptions", () =>
@@ -155,9 +153,7 @@ describe("tool discovery", () => {
 
       const crmMatches = yield* searchTools(executor, "crm create contact", 5);
       expect(crmMatches.items[0]?.path).toBe("crm.createContact");
-      expect(crmMatches.items[0]?.score ?? 0).toBeGreaterThan(
-        crmMatches.items[1]?.score ?? 0,
-      );
+      expect(crmMatches.items[0]?.score ?? 0).toBeGreaterThan(crmMatches.items[1]?.score ?? 0);
     }),
   );
 
@@ -218,9 +214,7 @@ describe("tool discovery", () => {
       const githubOnly = yield* searchTools(executor, "list", 5, {
         namespace: "github",
       });
-      expect(githubOnly.items.map((match) => match.path)).toEqual([
-        "github.listRepositoryIssues",
-      ]);
+      expect(githubOnly.items.map((match) => match.path)).toEqual(["github.listRepositoryIssues"]);
 
       const crmOnly = yield* searchTools(executor, "list", 5, {
         namespace: "crm",
@@ -426,16 +420,12 @@ describe("tool discovery", () => {
 
   it.effect("converts message-bearing tool error results into execution errors", () =>
     Effect.gen(function* () {
-      const executor = yield* createExecutor(
-        makeTestConfig({ plugins: [errorPlugin()] as const }),
-      );
+      const executor = yield* createExecutor(makeTestConfig({ plugins: [errorPlugin()] as const }));
       const invoker = makeExecutorToolInvoker(executor, {
         invokeOptions: { onElicitation: acceptAll },
       });
 
-      const error = yield* Effect.flip(
-        invoker.invoke({ path: "records.queryRows", args: {} }),
-      );
+      const error = yield* Effect.flip(invoker.invoke({ path: "records.queryRows", args: {} }));
 
       expect(error).toEqual(
         expect.objectContaining({
@@ -552,10 +542,11 @@ describe("pause/resume with multiple elicitations", () => {
 
     // `execution.fiber` is on `InternalPausedExecution`; the exported
     // `PausedExecution` type doesn't carry it. Cast to read.
-    const pausedWithFiber = (value: unknown): {
+    const pausedWithFiber = (
+      value: unknown,
+    ): {
       readonly fiber: Fiber.Fiber<unknown, unknown>;
-    } =>
-      value as { readonly fiber: Fiber.Fiber<unknown, unknown> };
+    } => value as { readonly fiber: Fiber.Fiber<unknown, unknown> };
     const sandboxFiber = pausedWithFiber(paused1.execution).fiber;
     const exitProbe = await Effect.runPromise(
       Effect.race(

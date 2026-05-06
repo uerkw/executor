@@ -67,7 +67,8 @@ export function hasObjectProperty(node, name) {
 
 export function getStringValue(node) {
   const expression = unwrapExpression(node);
-  if (expression?.type === "Literal" && typeof expression.value === "string") return expression.value;
+  if (expression?.type === "Literal" && typeof expression.value === "string")
+    return expression.value;
   if (expression?.type === "StringLiteral") return expression.value;
   return undefined;
 }
@@ -78,8 +79,7 @@ export function isIdentifier(node, name) {
 
 export function isStringLiteral(node) {
   return (
-    (node?.type === "Literal" && typeof node.value === "string") ||
-    node?.type === "StringLiteral"
+    (node?.type === "Literal" && typeof node.value === "string") || node?.type === "StringLiteral"
   );
 }
 

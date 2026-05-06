@@ -53,6 +53,12 @@
     "@standard-schema/spec": "^1.0.0",
     "effect": "catalog:"
   },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
   "peerDependencies": {
     "@effect/vitest": "catalog:",
     "vitest": "catalog:"
@@ -64,11 +70,5 @@
     "vitest": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@effect/vitest": "catalog:",
-    "tsup": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
   }
 }

@@ -69,15 +69,12 @@ export const OAuthAuthorizationCodeStrategy = Schema.Struct({
   scopeSeparator: Schema.optional(Schema.String),
   /** Provider-specific params injected at authorization URL build time
    *  (Google's `access_type=offline`, `prompt=consent`, ...). */
-  extraAuthorizationParams: Schema.optional(
-    Schema.Record(Schema.String, Schema.String),
-  ),
+  extraAuthorizationParams: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** `"body"` (default) sends client creds in the form body; `"basic"`
    *  uses HTTP Basic auth. Stripe-style servers require basic. */
   clientAuth: Schema.optional(Schema.Literals(["body", "basic"])),
 });
-export type OAuthAuthorizationCodeStrategy =
-  typeof OAuthAuthorizationCodeStrategy.Type;
+export type OAuthAuthorizationCodeStrategy = typeof OAuthAuthorizationCodeStrategy.Type;
 
 /** RFC 6749 §4.4 client credentials — no user redirect, no PKCE. Used
  *  for server-to-server integrations where the plugin has both
@@ -92,8 +89,7 @@ export const OAuthClientCredentialsStrategy = Schema.Struct({
   scopeSeparator: Schema.optional(Schema.String),
   clientAuth: Schema.optional(Schema.Literals(["body", "basic"])),
 });
-export type OAuthClientCredentialsStrategy =
-  typeof OAuthClientCredentialsStrategy.Type;
+export type OAuthClientCredentialsStrategy = typeof OAuthClientCredentialsStrategy.Type;
 
 /** Tagged union of every start-time strategy shape. A new strategy (e.g.
  *  device-code) is added here; the service's start/complete routes on
@@ -121,9 +117,7 @@ export const OAuthProviderState = Schema.Union([
     issuerUrl: Schema.optional(Schema.NullOr(Schema.String)),
     authorizationServerUrl: Schema.optional(Schema.NullOr(Schema.String)),
     authorizationServerMetadataUrl: Schema.NullOr(Schema.String),
-    idTokenSigningAlgValuesSupported: Schema.optional(
-      Schema.Array(Schema.String),
-    ),
+    idTokenSigningAlgValuesSupported: Schema.optional(Schema.Array(Schema.String)),
     /** DCR-minted client_id. Embedded inline (not a secret) — DCR
      *  clients are public-ish by design; the secret part (if the AS
      *  issued one) is a separate secret row. */
@@ -266,21 +260,15 @@ export interface OAuthCompleteResult {
 // capable plugin group `.addError(OAuthStartError)` etc. and the HTTP
 // edge renders them with the annotated status.
 
-export class OAuthProbeError extends Schema.TaggedErrorClass<OAuthProbeError>()(
-  "OAuthProbeError",
-  {
-    message: Schema.String,
-  },
-) {
+export class OAuthProbeError extends Schema.TaggedErrorClass<OAuthProbeError>()("OAuthProbeError", {
+  message: Schema.String,
+}) {
   static annotations = { httpApiStatus: 400 };
 }
 
-export class OAuthStartError extends Schema.TaggedErrorClass<OAuthStartError>()(
-  "OAuthStartError",
-  {
-    message: Schema.String,
-  },
-) {
+export class OAuthStartError extends Schema.TaggedErrorClass<OAuthStartError>()("OAuthStartError", {
+  message: Schema.String,
+}) {
   static annotations = { httpApiStatus: 400 };
 }
 
@@ -312,9 +300,7 @@ export class OAuthSessionNotFoundError extends Schema.TaggedErrorClass<OAuthSess
 // ---------------------------------------------------------------------------
 
 export interface OAuthService {
-  readonly probe: (
-    input: OAuthProbeInput,
-  ) => Effect.Effect<OAuthProbeResult, OAuthProbeError>;
+  readonly probe: (input: OAuthProbeInput) => Effect.Effect<OAuthProbeResult, OAuthProbeError>;
   readonly start: (
     input: OAuthStartInput,
   ) => Effect.Effect<OAuthStartResult, OAuthStartError | StorageFailure>;
@@ -326,10 +312,7 @@ export interface OAuthService {
   >;
   /** Drop an in-flight session without completing — used when the
    *  user cancels the popup or the source is deleted mid-onboarding. */
-  readonly cancel: (
-    sessionId: string,
-    tokenScope?: string,
-  ) => Effect.Effect<void, StorageFailure>;
+  readonly cancel: (sessionId: string, tokenScope?: string) => Effect.Effect<void, StorageFailure>;
 }
 
 // ---------------------------------------------------------------------------

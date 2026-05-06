@@ -44,9 +44,6 @@
     "jiti": "^2.6.1",
     "jsonc-parser": "^3.3.1"
   },
-  "peerDependencies": {
-    "vite": "catalog:"
-  },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
@@ -54,5 +51,8 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "vite": "catalog:"
   }
 }

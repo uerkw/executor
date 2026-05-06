@@ -129,10 +129,9 @@ describe("probeMcpEndpointShape", () => {
         }),
         { status: 400, headers: { "content-type": "application/json" } },
       );
-      const result = yield* probeMcpEndpointShape(
-        "https://backboard.railway.com/graphql/v2",
-        { fetch: stubFetch(response) },
-      );
+      const result = yield* probeMcpEndpointShape("https://backboard.railway.com/graphql/v2", {
+        fetch: stubFetch(response),
+      });
       expect(result.kind).toBe("not-mcp");
     }),
   );

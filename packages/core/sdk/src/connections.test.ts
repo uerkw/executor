@@ -162,9 +162,7 @@ describe("connections", () => {
           }),
         )
         .pipe(Effect.flip);
-      expect(
-        Predicate.isTagged(err, "ConnectionProviderNotRegisteredError"),
-      ).toBe(true);
+      expect(Predicate.isTagged(err, "ConnectionProviderNotRegisteredError")).toBe(true);
     }),
   );
 
@@ -200,54 +198,52 @@ describe("connections", () => {
     }),
   );
 
-  it.effect(
-    "secrets.list hides connection-owned secrets but surfaces bare ones",
-    () =>
-      Effect.gen(function* () {
-        const { provider } = makeConnectionProvider({ key: "spotify" });
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
-          }),
-        );
+  it.effect("secrets.list hides connection-owned secrets but surfaces bare ones", () =>
+    Effect.gen(function* () {
+      const { provider } = makeConnectionProvider({ key: "spotify" });
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
+        }),
+      );
 
-        yield* executor.secrets.set(
-          new SetSecretInput({
-            id: sid("bare-api"),
-            scope: scpid("test-scope"),
-            name: "bare API key",
-            value: "bare",
-          }),
-        );
+      yield* executor.secrets.set(
+        new SetSecretInput({
+          id: sid("bare-api"),
+          scope: scpid("test-scope"),
+          name: "bare API key",
+          value: "bare",
+        }),
+      );
 
-        yield* executor.connections.create(
-          new CreateConnectionInput({
-            id: cid("conn-1"),
-            scope: scpid("test-scope"),
-            provider: "spotify",
-            identityLabel: null,
-            accessToken: new TokenMaterial({
-              secretId: sid("conn-1.access"),
-              name: "access",
-              value: "a",
-            }),
-            refreshToken: new TokenMaterial({
-              secretId: sid("conn-1.refresh"),
-              name: "refresh",
-              value: "r",
-            }),
-            expiresAt: null,
-            oauthScope: null,
-            providerState: null,
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: cid("conn-1"),
+          scope: scpid("test-scope"),
+          provider: "spotify",
+          identityLabel: null,
+          accessToken: new TokenMaterial({
+            secretId: sid("conn-1.access"),
+            name: "access",
+            value: "a",
           }),
-        );
+          refreshToken: new TokenMaterial({
+            secretId: sid("conn-1.refresh"),
+            name: "refresh",
+            value: "r",
+          }),
+          expiresAt: null,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
 
-        const list = yield* executor.secrets.list();
-        const ids = list.map((s) => String(s.id));
-        expect(ids).toContain("bare-api");
-        expect(ids).not.toContain("conn-1.access");
-        expect(ids).not.toContain("conn-1.refresh");
-      }),
+      const list = yield* executor.secrets.list();
+      const ids = list.map((s) => String(s.id));
+      expect(ids).toContain("bare-api");
+      expect(ids).not.toContain("conn-1.access");
+      expect(ids).not.toContain("conn-1.refresh");
+    }),
   );
 
   it.effect(
@@ -279,72 +275,55 @@ describe("connections", () => {
           }),
         );
 
-        const err = yield* executor.secrets
-          .remove("conn-1.access")
-          .pipe(Effect.flip);
-        expect(Predicate.isTagged(err, "SecretOwnedByConnectionError")).toBe(
-          true,
-        );
+        const err = yield* executor.secrets.remove("conn-1.access").pipe(Effect.flip);
+        expect(Predicate.isTagged(err, "SecretOwnedByConnectionError")).toBe(true);
       }),
   );
 
-  it.effect(
-    "connections.remove cascades through providers and deletes the core row",
-    () =>
-      Effect.gen(function* () {
-        const secretProvider = makeMemoryProvider();
-        const { provider } = makeConnectionProvider({ key: "spotify" });
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [
-              memorySecretsPlugin(secretProvider),
-              connPlugin(provider),
-            ] as const,
+  it.effect("connections.remove cascades through providers and deletes the core row", () =>
+    Effect.gen(function* () {
+      const secretProvider = makeMemoryProvider();
+      const { provider } = makeConnectionProvider({ key: "spotify" });
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(secretProvider), connPlugin(provider)] as const,
+        }),
+      );
+
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: cid("conn-1"),
+          scope: scpid("test-scope"),
+          provider: "spotify",
+          identityLabel: null,
+          accessToken: new TokenMaterial({
+            secretId: sid("conn-1.access"),
+            name: "access",
+            value: "access-v1",
           }),
-        );
-
-        yield* executor.connections.create(
-          new CreateConnectionInput({
-            id: cid("conn-1"),
-            scope: scpid("test-scope"),
-            provider: "spotify",
-            identityLabel: null,
-            accessToken: new TokenMaterial({
-              secretId: sid("conn-1.access"),
-              name: "access",
-              value: "access-v1",
-            }),
-            refreshToken: new TokenMaterial({
-              secretId: sid("conn-1.refresh"),
-              name: "refresh",
-              value: "refresh-v1",
-            }),
-            expiresAt: null,
-            oauthScope: null,
-            providerState: null,
+          refreshToken: new TokenMaterial({
+            secretId: sid("conn-1.refresh"),
+            name: "refresh",
+            value: "refresh-v1",
           }),
-        );
+          expiresAt: null,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
 
-        // Pre-check: backing provider holds the tokens.
-        expect(
-          yield* secretProvider.get!("conn-1.access", "test-scope"),
-        ).toBe("access-v1");
-        expect(
-          yield* secretProvider.get!("conn-1.refresh", "test-scope"),
-        ).toBe("refresh-v1");
+      // Pre-check: backing provider holds the tokens.
+      expect(yield* secretProvider.get!("conn-1.access", "test-scope")).toBe("access-v1");
+      expect(yield* secretProvider.get!("conn-1.refresh", "test-scope")).toBe("refresh-v1");
 
-        yield* executor.connections.remove("conn-1");
+      yield* executor.connections.remove("conn-1");
 
-        // Connection row gone.
-        expect(yield* executor.connections.get("conn-1")).toBeNull();
-        // Backing secret values gone from the provider.
-        expect(
-          yield* secretProvider.get!("conn-1.access", "test-scope"),
-        ).toBeNull();
-        expect(
-          yield* secretProvider.get!("conn-1.refresh", "test-scope"),
-        ).toBeNull();
-      }),
+      // Connection row gone.
+      expect(yield* executor.connections.get("conn-1")).toBeNull();
+      // Backing secret values gone from the provider.
+      expect(yield* secretProvider.get!("conn-1.access", "test-scope")).toBeNull();
+      expect(yield* secretProvider.get!("conn-1.refresh", "test-scope")).toBeNull();
+    }),
   );
 
   it.effect("accessToken returns the stored value when not near expiry", () =>
@@ -407,10 +386,7 @@ describe("connections", () => {
         });
         const executor = yield* createExecutor(
           makeTestConfig({
-            plugins: [
-              memorySecretsPlugin(secretProvider),
-              connPlugin(provider),
-            ] as const,
+            plugins: [memorySecretsPlugin(secretProvider), connPlugin(provider)] as const,
           }),
         );
 
@@ -445,12 +421,10 @@ describe("connections", () => {
         expect(calls[0]!.providerState).toEqual({ rotation: "fresh" });
 
         // Backing secrets got rewritten at the same ids.
-        expect(
-          yield* secretProvider.get!("conn-1.access", "test-scope"),
-        ).toBe("rotated-refresh-v1");
-        expect(
-          yield* secretProvider.get!("conn-1.refresh", "test-scope"),
-        ).toBe("refresh-v2");
+        expect(yield* secretProvider.get!("conn-1.access", "test-scope")).toBe(
+          "rotated-refresh-v1",
+        );
+        expect(yield* secretProvider.get!("conn-1.refresh", "test-scope")).toBe("refresh-v2");
 
         const got = yield* executor.connections.get("conn-1");
         expect(got?.providerState).toEqual({ rotation: "bumped" });
@@ -458,110 +432,105 @@ describe("connections", () => {
       }),
   );
 
-  it.effect(
-    "accessToken dedupes concurrent refreshes into a single provider call",
-    () =>
-      Effect.gen(function* () {
-        // A gated refresh provider. Every concurrent caller that lands
-        // inside the skew window must converge on the single pending
-        // refresh instead of hitting the token endpoint N times. The
-        // `entered` Deferred signals that the leader fiber is parked
-        // inside `refresh`; we only release the `gate` once every
-        // caller has had a chance to register.
-        const gate = yield* Deferred.make<void>();
-        const entered = yield* Deferred.make<void>();
-        const calls: ConnectionRefreshInput[] = [];
-        let responseCounter = 0;
-        const provider: ConnectionProvider = {
-          key: "spotify",
-          refresh: (
-            input,
-          ): Effect.Effect<ConnectionRefreshResult, ConnectionRefreshError> =>
-            Effect.gen(function* () {
-              calls.push(input);
-              const n = ++responseCounter;
-              yield* Deferred.succeed(entered, undefined as void);
-              // Block the leader inside `refresh` until the test
-              // releases the gate. Any other fiber that concurrently
-              // calls `accessToken` must observe the in-flight
-              // Deferred instead of entering this handler.
-              yield* Deferred.await(gate);
-              return {
-                accessToken: `rotated-${n}`,
-                refreshToken: `refresh-${n}`,
-                expiresAt: Date.now() + 3_600_000,
-                oauthScope: "user-read",
-                providerState: null,
-              };
-            }),
-        };
-
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
+  it.effect("accessToken dedupes concurrent refreshes into a single provider call", () =>
+    Effect.gen(function* () {
+      // A gated refresh provider. Every concurrent caller that lands
+      // inside the skew window must converge on the single pending
+      // refresh instead of hitting the token endpoint N times. The
+      // `entered` Deferred signals that the leader fiber is parked
+      // inside `refresh`; we only release the `gate` once every
+      // caller has had a chance to register.
+      const gate = yield* Deferred.make<void>();
+      const entered = yield* Deferred.make<void>();
+      const calls: ConnectionRefreshInput[] = [];
+      let responseCounter = 0;
+      const provider: ConnectionProvider = {
+        key: "spotify",
+        refresh: (input): Effect.Effect<ConnectionRefreshResult, ConnectionRefreshError> =>
+          Effect.gen(function* () {
+            calls.push(input);
+            const n = ++responseCounter;
+            yield* Deferred.succeed(entered, undefined as void);
+            // Block the leader inside `refresh` until the test
+            // releases the gate. Any other fiber that concurrently
+            // calls `accessToken` must observe the in-flight
+            // Deferred instead of entering this handler.
+            yield* Deferred.await(gate);
+            return {
+              accessToken: `rotated-${n}`,
+              refreshToken: `refresh-${n}`,
+              expiresAt: Date.now() + 3_600_000,
+              oauthScope: "user-read",
+              providerState: null,
+            };
           }),
-        );
+      };
 
-        yield* executor.connections.create(
-          new CreateConnectionInput({
-            id: cid("conn-1"),
-            scope: scpid("test-scope"),
-            provider: "spotify",
-            identityLabel: null,
-            accessToken: new TokenMaterial({
-              secretId: sid("conn-1.access"),
-              name: "access",
-              value: "stale",
-            }),
-            refreshToken: new TokenMaterial({
-              secretId: sid("conn-1.refresh"),
-              name: "refresh",
-              value: "refresh-v1",
-            }),
-            // Expired so every caller enters the refresh branch.
-            expiresAt: Date.now() - 1_000,
-            oauthScope: null,
-            providerState: null,
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
+        }),
+      );
+
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: cid("conn-1"),
+          scope: scpid("test-scope"),
+          provider: "spotify",
+          identityLabel: null,
+          accessToken: new TokenMaterial({
+            secretId: sid("conn-1.access"),
+            name: "access",
+            value: "stale",
           }),
-        );
+          refreshToken: new TokenMaterial({
+            secretId: sid("conn-1.refresh"),
+            name: "refresh",
+            value: "refresh-v1",
+          }),
+          // Expired so every caller enters the refresh branch.
+          expiresAt: Date.now() - 1_000,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
 
-        // Kick off the leader first and wait for it to park inside
-        // `refresh`. Any subsequent caller is guaranteed to see the
-        // in-flight Deferred the leader just registered.
-        const leaderFiber = yield* Effect.forkDetach(
-          executor.connections.accessToken("conn-1"),
-          { startImmediately: true },
-        );
-        yield* Deferred.await(entered);
+      // Kick off the leader first and wait for it to park inside
+      // `refresh`. Any subsequent caller is guaranteed to see the
+      // in-flight Deferred the leader just registered.
+      const leaderFiber = yield* Effect.forkDetach(executor.connections.accessToken("conn-1"), {
+        startImmediately: true,
+      });
+      yield* Deferred.await(entered);
 
-        const followerFibers = yield* Effect.forEach(
-          [1, 2, 3, 4],
-          () =>
-            Effect.forkDetach(executor.connections.accessToken("conn-1"), {
-              startImmediately: true,
-            }),
-          { concurrency: "unbounded" },
-        );
-        yield* Effect.forEach([1, 2, 3, 4], () => Effect.yieldNow);
+      const followerFibers = yield* Effect.forEach(
+        [1, 2, 3, 4],
+        () =>
+          Effect.forkDetach(executor.connections.accessToken("conn-1"), {
+            startImmediately: true,
+          }),
+        { concurrency: "unbounded" },
+      );
+      yield* Effect.forEach([1, 2, 3, 4], () => Effect.yieldNow);
 
-        // Every follower is queued on the leader's Deferred. Release
-        // the gate — the leader resolves, waiters wake up with the
-        // same token, no extra `refresh` is invoked.
-        yield* Deferred.succeed(gate, undefined as void);
+      // Every follower is queued on the leader's Deferred. Release
+      // the gate — the leader resolves, waiters wake up with the
+      // same token, no extra `refresh` is invoked.
+      yield* Deferred.succeed(gate, undefined as void);
 
-        const leaderResult = yield* Fiber.join(leaderFiber);
-        const followerResults = yield* Effect.all(
-          followerFibers.map((f) => Fiber.await(f)),
-          { concurrency: "unbounded" },
-        );
-        expect(leaderResult).toBe("rotated-1");
-        for (const result of followerResults) {
-          expect(Exit.isSuccess(result)).toBe(true);
-          if (!Exit.isSuccess(result)) continue;
-          expect(result.value).toBe("rotated-1");
-        }
-        expect(calls).toHaveLength(1);
-      }),
+      const leaderResult = yield* Fiber.join(leaderFiber);
+      const followerResults = yield* Effect.all(
+        followerFibers.map((f) => Fiber.await(f)),
+        { concurrency: "unbounded" },
+      );
+      expect(leaderResult).toBe("rotated-1");
+      for (const result of followerResults) {
+        expect(Exit.isSuccess(result)).toBe(true);
+        if (!Exit.isSuccess(result)) continue;
+        expect(result.value).toBe("rotated-1");
+      }
+      expect(calls).toHaveLength(1);
+    }),
   );
 
   it.effect(
@@ -609,12 +578,8 @@ describe("connections", () => {
           }),
         );
 
-        const flipped = yield* executor.connections
-          .accessToken("conn-1")
-          .pipe(Effect.flip);
-        expect(
-          Predicate.isTagged(flipped, "ConnectionReauthRequiredError"),
-        ).toBe(true);
+        const flipped = yield* executor.connections.accessToken("conn-1").pipe(Effect.flip);
+        expect(Predicate.isTagged(flipped, "ConnectionReauthRequiredError")).toBe(true);
         if (!Predicate.isTagged(flipped, "ConnectionReauthRequiredError")) {
           return;
         }
@@ -623,57 +588,53 @@ describe("connections", () => {
       }),
   );
 
-  it.effect(
-    "accessToken preserves ConnectionRefreshError for non-reauth failures",
-    () =>
-      Effect.gen(function* () {
-        // Transient failure path — the provider failed but not with a
-        // terminal RFC 6749 code. The SDK must keep it as-is so
-        // callers can tell "retry later" from "prompt for sign-in".
-        const provider: ConnectionProvider = {
-          key: "spotify",
-          refresh: (input) =>
-            Effect.fail(
-              new ConnectionRefreshError({
-                connectionId: input.connectionId,
-                message: "network flake",
-              }),
-            ),
-        };
-
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
-          }),
-        );
-
-        yield* executor.connections.create(
-          new CreateConnectionInput({
-            id: cid("conn-1"),
-            scope: scpid("test-scope"),
-            provider: "spotify",
-            identityLabel: null,
-            accessToken: new TokenMaterial({
-              secretId: sid("conn-1.access"),
-              name: "access",
-              value: "stale",
+  it.effect("accessToken preserves ConnectionRefreshError for non-reauth failures", () =>
+    Effect.gen(function* () {
+      // Transient failure path — the provider failed but not with a
+      // terminal RFC 6749 code. The SDK must keep it as-is so
+      // callers can tell "retry later" from "prompt for sign-in".
+      const provider: ConnectionProvider = {
+        key: "spotify",
+        refresh: (input) =>
+          Effect.fail(
+            new ConnectionRefreshError({
+              connectionId: input.connectionId,
+              message: "network flake",
             }),
-            refreshToken: new TokenMaterial({
-              secretId: sid("conn-1.refresh"),
-              name: "refresh",
-              value: "refresh-v1",
-            }),
-            expiresAt: Date.now() - 1_000,
-            oauthScope: null,
-            providerState: null,
-          }),
-        );
+          ),
+      };
 
-        const err = yield* executor.connections
-          .accessToken("conn-1")
-          .pipe(Effect.flip);
-        expect(Predicate.isTagged(err, "ConnectionRefreshError")).toBe(true);
-      }),
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
+        }),
+      );
+
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: cid("conn-1"),
+          scope: scpid("test-scope"),
+          provider: "spotify",
+          identityLabel: null,
+          accessToken: new TokenMaterial({
+            secretId: sid("conn-1.access"),
+            name: "access",
+            value: "stale",
+          }),
+          refreshToken: new TokenMaterial({
+            secretId: sid("conn-1.refresh"),
+            name: "refresh",
+            value: "refresh-v1",
+          }),
+          expiresAt: Date.now() - 1_000,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
+
+      const err = yield* executor.connections.accessToken("conn-1").pipe(Effect.flip);
+      expect(Predicate.isTagged(err, "ConnectionRefreshError")).toBe(true);
+    }),
   );
 
   it.effect(
@@ -705,116 +666,97 @@ describe("connections", () => {
           }),
         );
 
-        const err = yield* executor.connections
-          .accessToken("conn-1")
-          .pipe(Effect.flip);
-        expect(
-          Predicate.isTagged(err, "ConnectionRefreshNotSupportedError"),
-        ).toBe(true);
+        const err = yield* executor.connections.accessToken("conn-1").pipe(Effect.flip);
+        expect(Predicate.isTagged(err, "ConnectionRefreshNotSupportedError")).toBe(true);
       }),
   );
 
-  it.effect(
-    "accessToken fails with ConnectionNotFoundError for an unknown id",
-    () =>
-      Effect.gen(function* () {
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin()] as const,
-          }),
-        );
+  it.effect("accessToken fails with ConnectionNotFoundError for an unknown id", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin()] as const,
+        }),
+      );
 
-        const err = yield* executor.connections
-          .accessToken("does-not-exist")
-          .pipe(Effect.flip);
-        expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
-      }),
+      const err = yield* executor.connections.accessToken("does-not-exist").pipe(Effect.flip);
+      expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
+    }),
   );
 
-  it.effect(
-    "updateTokens writes new values but does not rotate secret ids",
-    () =>
-      Effect.gen(function* () {
-        const secretProvider = makeMemoryProvider();
-        const { provider } = makeConnectionProvider({ key: "spotify" });
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [
-              memorySecretsPlugin(secretProvider),
-              connPlugin(provider),
-            ] as const,
-          }),
-        );
+  it.effect("updateTokens writes new values but does not rotate secret ids", () =>
+    Effect.gen(function* () {
+      const secretProvider = makeMemoryProvider();
+      const { provider } = makeConnectionProvider({ key: "spotify" });
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(secretProvider), connPlugin(provider)] as const,
+        }),
+      );
 
-        yield* executor.connections.create(
-          new CreateConnectionInput({
-            id: cid("conn-1"),
-            scope: scpid("test-scope"),
-            provider: "spotify",
-            identityLabel: null,
-            accessToken: new TokenMaterial({
-              secretId: sid("conn-1.access"),
-              name: "access",
-              value: "v1",
-            }),
-            refreshToken: new TokenMaterial({
-              secretId: sid("conn-1.refresh"),
-              name: "refresh",
-              value: "r1",
-            }),
-            expiresAt: null,
-            oauthScope: null,
-            providerState: null,
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: cid("conn-1"),
+          scope: scpid("test-scope"),
+          provider: "spotify",
+          identityLabel: null,
+          accessToken: new TokenMaterial({
+            secretId: sid("conn-1.access"),
+            name: "access",
+            value: "v1",
           }),
-        );
+          refreshToken: new TokenMaterial({
+            secretId: sid("conn-1.refresh"),
+            name: "refresh",
+            value: "r1",
+          }),
+          expiresAt: null,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
 
-        const updated = yield* executor.connections.updateTokens(
+      const updated = yield* executor.connections.updateTokens(
+        new UpdateConnectionTokensInput({
+          id: cid("conn-1"),
+          accessToken: "v2",
+          refreshToken: "r2",
+          expiresAt: 1_700_000_000_000,
+          oauthScope: "new-scope",
+          providerState: { rotation: "next" },
+        }),
+      );
+
+      expect(updated.accessTokenSecretId).toBe(sid("conn-1.access"));
+      expect(updated.refreshTokenSecretId).toBe(sid("conn-1.refresh"));
+      expect(updated.expiresAt).toBe(1_700_000_000_000);
+      expect(updated.oauthScope).toBe("new-scope");
+      expect(updated.providerState).toEqual({ rotation: "next" });
+
+      expect(yield* secretProvider.get!("conn-1.access", "test-scope")).toBe("v2");
+      expect(yield* secretProvider.get!("conn-1.refresh", "test-scope")).toBe("r2");
+    }),
+  );
+
+  it.effect("updateTokens fails with ConnectionNotFoundError for unknown id", () =>
+    Effect.gen(function* () {
+      const { provider } = makeConnectionProvider({ key: "spotify" });
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
+        }),
+      );
+
+      const err = yield* executor.connections
+        .updateTokens(
           new UpdateConnectionTokensInput({
-            id: cid("conn-1"),
-            accessToken: "v2",
-            refreshToken: "r2",
-            expiresAt: 1_700_000_000_000,
-            oauthScope: "new-scope",
-            providerState: { rotation: "next" },
+            id: cid("nope"),
+            accessToken: "x",
           }),
-        );
-
-        expect(updated.accessTokenSecretId).toBe(sid("conn-1.access"));
-        expect(updated.refreshTokenSecretId).toBe(sid("conn-1.refresh"));
-        expect(updated.expiresAt).toBe(1_700_000_000_000);
-        expect(updated.oauthScope).toBe("new-scope");
-        expect(updated.providerState).toEqual({ rotation: "next" });
-
-        expect(
-          yield* secretProvider.get!("conn-1.access", "test-scope"),
-        ).toBe("v2");
-        expect(
-          yield* secretProvider.get!("conn-1.refresh", "test-scope"),
-        ).toBe("r2");
-      }),
-  );
-
-  it.effect(
-    "updateTokens fails with ConnectionNotFoundError for unknown id",
-    () =>
-      Effect.gen(function* () {
-        const { provider } = makeConnectionProvider({ key: "spotify" });
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin(), connPlugin(provider)] as const,
-          }),
-        );
-
-        const err = yield* executor.connections
-          .updateTokens(
-            new UpdateConnectionTokensInput({
-              id: cid("nope"),
-              accessToken: "x",
-            }),
-          )
-          .pipe(Effect.flip);
-        expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
-      }),
+        )
+        .pipe(Effect.flip);
+      expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
+    }),
   );
 
   it.effect("setIdentityLabel updates the label", () =>
@@ -850,21 +792,19 @@ describe("connections", () => {
     }),
   );
 
-  it.effect(
-    "setIdentityLabel fails with ConnectionNotFoundError for unknown id",
-    () =>
-      Effect.gen(function* () {
-        const executor = yield* createExecutor(
-          makeTestConfig({
-            plugins: [memorySecretsPlugin()] as const,
-          }),
-        );
+  it.effect("setIdentityLabel fails with ConnectionNotFoundError for unknown id", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [memorySecretsPlugin()] as const,
+        }),
+      );
 
-        const err = yield* executor.connections
-          .setIdentityLabel("does-not-exist", "x")
-          .pipe(Effect.flip);
-        expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
-      }),
+      const err = yield* executor.connections
+        .setIdentityLabel("does-not-exist", "x")
+        .pipe(Effect.flip);
+      expect(Predicate.isTagged(err, "ConnectionNotFoundError")).toBe(true);
+    }),
   );
 
   it.effect("providers() returns every registered connection provider key", () =>
@@ -936,8 +876,7 @@ const makeLayeredConnExecutors = () =>
 describe("connections — multi-scope behaviour", () => {
   it.effect("get picks the innermost-scope row when the same id exists at two scopes", () =>
     Effect.gen(function* () {
-      const { execOuter, execInner, outerId, innerId } =
-        yield* makeLayeredConnExecutors();
+      const { execOuter, execInner, outerId, innerId } = yield* makeLayeredConnExecutors();
 
       yield* execOuter.connections.create(
         new CreateConnectionInput({
@@ -991,52 +930,49 @@ describe("connections — multi-scope behaviour", () => {
     }),
   );
 
-  it.effect(
-    "remove at the inner scope does not wipe the outer-scope connection",
-    () =>
-      Effect.gen(function* () {
-        const { execOuter, execInner, outerId, innerId } =
-          yield* makeLayeredConnExecutors();
+  it.effect("remove at the inner scope does not wipe the outer-scope connection", () =>
+    Effect.gen(function* () {
+      const { execOuter, execInner, outerId, innerId } = yield* makeLayeredConnExecutors();
 
-        yield* execOuter.connections.create(
-          new CreateConnectionInput({
-            id: cid("shared"),
-            scope: outerId,
-            provider: "spotify",
-            identityLabel: "outer",
-            accessToken: new TokenMaterial({
-              secretId: sid("shared.access.outer"),
-              name: "access",
-              value: "outer-access",
-            }),
-            refreshToken: null,
-            expiresAt: null,
-            oauthScope: null,
-            providerState: null,
+      yield* execOuter.connections.create(
+        new CreateConnectionInput({
+          id: cid("shared"),
+          scope: outerId,
+          provider: "spotify",
+          identityLabel: "outer",
+          accessToken: new TokenMaterial({
+            secretId: sid("shared.access.outer"),
+            name: "access",
+            value: "outer-access",
           }),
-        );
-        yield* execInner.connections.create(
-          new CreateConnectionInput({
-            id: cid("shared"),
-            scope: innerId,
-            provider: "spotify",
-            identityLabel: "inner",
-            accessToken: new TokenMaterial({
-              secretId: sid("shared.access.inner"),
-              name: "access",
-              value: "inner-access",
-            }),
-            refreshToken: null,
-            expiresAt: null,
-            oauthScope: null,
-            providerState: null,
+          refreshToken: null,
+          expiresAt: null,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
+      yield* execInner.connections.create(
+        new CreateConnectionInput({
+          id: cid("shared"),
+          scope: innerId,
+          provider: "spotify",
+          identityLabel: "inner",
+          accessToken: new TokenMaterial({
+            secretId: sid("shared.access.inner"),
+            name: "access",
+            value: "inner-access",
           }),
-        );
+          refreshToken: null,
+          expiresAt: null,
+          oauthScope: null,
+          providerState: null,
+        }),
+      );
 
-        yield* execInner.connections.remove("shared");
+      yield* execInner.connections.remove("shared");
 
-        const outerStill = yield* execOuter.connections.get("shared");
-        expect(outerStill?.identityLabel).toBe("outer");
-      }),
+      const outerStill = yield* execOuter.connections.get("shared");
+      expect(outerStill?.identityLabel).toBe("outer");
+    }),
   );
 });

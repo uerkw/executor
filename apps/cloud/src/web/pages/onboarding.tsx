@@ -69,9 +69,7 @@ export const OnboardingPage = () => {
   };
 
   const suggestedName =
-    auth.status === "authenticated" &&
-    auth.user.name != null &&
-    auth.user.name.trim() !== ""
+    auth.status === "authenticated" && auth.user.name != null && auth.user.name.trim() !== ""
       ? `${auth.user.name}'s Organization`
       : "";
 
@@ -80,7 +78,8 @@ export const OnboardingPage = () => {
     onSuccess: () => {},
   });
 
-  const isLoading = AsyncResult.isInitial(invitationsResult) || AsyncResult.isWaiting(invitationsResult);
+  const isLoading =
+    AsyncResult.isInitial(invitationsResult) || AsyncResult.isWaiting(invitationsResult);
   const invitations = AsyncResult.match(invitationsResult, {
     onInitial: () => [] as readonly PendingInvitation[],
     onFailure: () => [] as readonly PendingInvitation[],
@@ -130,10 +129,7 @@ export const OnboardingPage = () => {
         )}
 
         {!isLoading && (count === 0 || sole || count > 1) && (
-          <CreateOrgSection
-            isPrimary={count === 0}
-            form={form}
-          />
+          <CreateOrgSection isPrimary={count === 0} form={form} />
         )}
 
         <footer className="flex items-center justify-center">

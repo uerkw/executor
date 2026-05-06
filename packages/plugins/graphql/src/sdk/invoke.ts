@@ -20,8 +20,7 @@ export const resolveHeaders = (
   );
   return resolveSecretBackedMap({
     values: headers,
-    getSecret: (secretId) =>
-      secrets.get(secretId).pipe(Effect.catch(() => Effect.succeed(null))),
+    getSecret: (secretId) => secrets.get(secretId).pipe(Effect.catch(() => Effect.succeed(null))),
     missing: "drop",
     onMissing: (name) =>
       new GraphqlInvocationError({

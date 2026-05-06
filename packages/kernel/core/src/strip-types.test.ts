@@ -6,7 +6,7 @@ describe("stripTypeScript", () => {
   it("removes variable type annotations", () => {
     const out = stripTypeScript('const x: string = "hello"; return x;');
     expect(out).not.toContain(": string");
-    expect(out).toContain('const x');
+    expect(out).toContain("const x");
     expect(out).toContain('"hello"');
   });
 
@@ -30,7 +30,9 @@ describe("stripTypeScript", () => {
   });
 
   it("removes interface declarations", () => {
-    const out = stripTypeScript("interface User { name: string; } const u = { name: 'a' }; return u;");
+    const out = stripTypeScript(
+      "interface User { name: string; } const u = { name: 'a' }; return u;",
+    );
     expect(out).not.toContain("interface User");
     expect(out).not.toContain(": string");
     expect(() => new Function(out)).not.toThrow();

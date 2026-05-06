@@ -34,30 +34,14 @@ import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import { Effect, Layer, Option, Schema } from "effect";
 
 import { addGroup, observabilityMiddleware } from "@executor-js/api";
-import {
-  CoreHandlers,
-  ExecutionEngineService,
-  ExecutorService,
-} from "@executor-js/api/server";
+import { CoreHandlers, ExecutionEngineService, ExecutorService } from "@executor-js/api/server";
 import { createExecutionEngine } from "@executor-js/execution";
 import { makeQuickJsExecutor } from "@executor-js/runtime-quickjs";
-import {
-  Scope,
-  ScopeId,
-  collectSchemas,
-  createExecutor,
-} from "@executor-js/sdk";
-import {
-  makeSqliteAdapter,
-  makeSqliteBlobStore,
-} from "@executor-js/storage-file";
+import { Scope, ScopeId, collectSchemas, createExecutor } from "@executor-js/sdk";
+import { makeSqliteAdapter, makeSqliteBlobStore } from "@executor-js/storage-file";
 import { fileSecretsPlugin } from "@executor-js/plugin-file-secrets";
 import { mcpPlugin } from "@executor-js/plugin-mcp";
-import {
-  McpExtensionService,
-  McpGroup,
-  McpHandlers,
-} from "@executor-js/plugin-mcp/api";
+import { McpExtensionService, McpGroup, McpHandlers } from "@executor-js/plugin-mcp/api";
 
 import * as executorSchema from "./executor-schema";
 import { ErrorCaptureLive } from "./observability";
@@ -66,9 +50,10 @@ import { ErrorCaptureLive } from "./observability";
 // the top level so `observabilityMiddleware` can land its typed-error
 // bridge on every endpoint.
 const TestApi = addGroup(McpGroup);
-type TestApiShape = typeof TestApi extends HttpApi.HttpApi<infer _Id, infer Groups>
-  ? HttpApiClient.Client<Groups, never>
-  : never;
+type TestApiShape =
+  typeof TestApi extends HttpApi.HttpApi<infer _Id, infer Groups>
+    ? HttpApiClient.Client<Groups, never>
+    : never;
 
 // ---------------------------------------------------------------------------
 // Fake OAuth + MCP server (mirrors the cloud test)
@@ -84,21 +69,15 @@ const RegistrationBody = Schema.Struct({
   grant_types: Schema.optional(Schema.Array(Schema.String)),
   response_types: Schema.optional(Schema.Array(Schema.String)),
 });
-const decodeRegistrationBody = Schema.decodeUnknownOption(
-  Schema.fromJsonString(RegistrationBody),
-);
+const decodeRegistrationBody = Schema.decodeUnknownOption(Schema.fromJsonString(RegistrationBody));
 
 const startFakeServer = async (): Promise<FakeServer> => {
   const clients = new Map<string, { redirect_uris: readonly string[] }>();
-  const codes = new Map<
-    string,
-    { readonly clientId: string; readonly codeChallenge: string }
-  >();
+  const codes = new Map<string, { readonly clientId: string; readonly codeChallenge: string }>();
   const accessTokens = new Map<string, { readonly refresh: string }>();
   const refreshTokens = new Map<string, string>();
   let seq = 0;
-  const next = (p: string) =>
-    `${p}_${++seq}_${randomBytes(6).toString("hex")}`;
+  const next = (p: string) => `${p}_${++seq}_${randomBytes(6).toString("hex")}`;
 
   const readBody = (req: import("node:http").IncomingMessage): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -110,15 +89,10 @@ const startFakeServer = async (): Promise<FakeServer> => {
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
-    const send = (
-      status: number,
-      body: unknown,
-      headers: Record<string, string> = {},
-    ) => {
+    const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
       const payload = typeof body === "string" ? body : JSON.stringify(body);
       res.writeHead(status, {
-        "content-type":
-          typeof body === "string" ? "text/plain" : "application/json",
+        "content-type": typeof body === "string" ? "text/plain" : "application/json",
         ...headers,
       });
       res.end(payload);
@@ -162,10 +136,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
           client_id: clientId,
           client_id_issued_at: Math.floor(Date.now() / 1000),
           redirect_uris: parsed.redirect_uris ?? [],
-          grant_types: parsed.grant_types ?? [
-            "authorization_code",
-            "refresh_token",
-          ],
+          grant_types: parsed.grant_types ?? ["authorization_code", "refresh_token"],
           response_types: parsed.response_types ?? ["code"],
           token_endpoint_auth_method: "none",
         });
@@ -202,9 +173,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
           const record = codes.get(code);
           if (!record) return send(400, { error: "invalid_grant" });
           codes.delete(code);
-          const computed = createHash("sha256")
-            .update(verifier)
-            .digest("base64url");
+          const computed = createHash("sha256").update(verifier).digest("base64url");
           if (computed !== record.codeChallenge) {
             return send(400, { error: "invalid_grant" });
           }
@@ -240,9 +209,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
     }
   });
 
-  await new Promise<void>((resolve) =>
-    server.listen(0, "127.0.0.1", () => resolve()),
-  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const address = server.address() as AddressInfo;
 
   return {
@@ -328,15 +295,9 @@ const startHarness = async (tmpDir: string): Promise<Harness> => {
       )) as typeof globalThis.fetch,
     scopeId,
     dispose: async () => {
+      await Effect.runPromise(Effect.ignore(Effect.tryPromise(() => disposeHandler())));
       await Effect.runPromise(
-        Effect.ignore(
-          Effect.tryPromise(() => disposeHandler()),
-        ),
-      );
-      await Effect.runPromise(
-        Effect.ignore(
-          Effect.tryPromise(() => Effect.runPromise(executor.close())),
-        ),
+        Effect.ignore(Effect.tryPromise(() => Effect.runPromise(executor.close()))),
       );
       sqlite.close();
     },
@@ -400,9 +361,7 @@ describe("local mcp oauth (real OAuth + MCP server)", () => {
     const redirectUrl = "http://local.test/api/mcp/oauth/callback";
     const scopeId = ScopeId.make(harness.scopeId);
 
-    const run = <A, E>(
-      body: (client: TestApiShape) => Effect.Effect<A, E>,
-    ): Effect.Effect<A, E> =>
+    const run = <A, E>(body: (client: TestApiShape) => Effect.Effect<A, E>): Effect.Effect<A, E> =>
       Effect.gen(function* () {
         const client = yield* HttpApiClient.make(TestApi, {
           baseUrl: TEST_BASE_URL,

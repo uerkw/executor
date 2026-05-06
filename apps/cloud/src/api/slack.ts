@@ -3,11 +3,7 @@ import { Cause, Effect } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import { SlackService } from "../services/slack";
-import {
-  HttpResponseError,
-  isServerError,
-  toErrorServerResponse,
-} from "./error-response";
+import { HttpResponseError, isServerError, toErrorServerResponse } from "./error-response";
 
 const isValidEmail = (s: string): boolean => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 

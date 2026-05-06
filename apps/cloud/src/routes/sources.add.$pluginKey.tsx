@@ -15,13 +15,6 @@ export const Route = createFileRoute("/sources/add/$pluginKey")({
   component: () => {
     const { pluginKey } = Route.useParams();
     const { url, preset, namespace } = Route.useSearch();
-    return (
-      <SourcesAddPage
-        pluginKey={pluginKey}
-        url={url}
-        preset={preset}
-        namespace={namespace}
-      />
-    );
+    return <SourcesAddPage pluginKey={pluginKey} url={url} preset={preset} namespace={namespace} />;
   },
 });

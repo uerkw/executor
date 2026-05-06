@@ -89,7 +89,7 @@ Surveyed five plugin systems in `.reference/`:
 - **emdash** — **closest match to our setup.** Astro/Vite + React, plugins are
   npm packages with separate `./` and `./admin` exports, registered via
   import-and-call in `astro.config.mjs`. `definePlugin({ id, hooks, routes,
-  admin })` declarative shape.
+admin })` declarative shape.
 - **dynamic-software** — most ambitious; Cloudflare Worker Loader for cloud
   isolation, iframe + postMessage RPC for UI, Proxy-based typed API client.
 
@@ -109,10 +109,10 @@ inference flows naturally; no codegen step.
 
 ```ts
 // apps/local/executor.config.ts (after)
-import { defineExecutorConfig } from "@executor-js/sdk"
-import { openApiPlugin } from "@executor-js/plugin-openapi"
-import { mcpPlugin } from "@executor-js/plugin-mcp"
-import { fileSecretsPlugin } from "@executor-js/plugin-file-secrets"
+import { defineExecutorConfig } from "@executor-js/sdk";
+import { openApiPlugin } from "@executor-js/plugin-openapi";
+import { mcpPlugin } from "@executor-js/plugin-mcp";
+import { fileSecretsPlugin } from "@executor-js/plugin-file-secrets";
 
 export default defineExecutorConfig({
   dialect: "sqlite",
@@ -121,7 +121,7 @@ export default defineExecutorConfig({
     mcpPlugin({ dangerouslyAllowStdioMCP: true }),
     fileSecretsPlugin(),
   ] as const,
-})
+});
 ```
 
 "Dynamic" means npm-installable, not load-by-string-name. Same model as emdash.
@@ -137,12 +137,12 @@ config becomes a need.
   "type": "module",
   "exports": {
     "./server": "./dist/server.js",
-    "./client": "./dist/client.js"
+    "./client": "./dist/client.js",
   },
   "executor": {
     "id": "foo",
-    "version": "0.1.0"
-  }
+    "version": "0.1.0",
+  },
 }
 ```
 
@@ -171,7 +171,7 @@ Client side: separate primitive `defineClientPlugin` lives in
 React types never leak into server bundles.
 
 **Layering — extension is the canonical SDK; routes/handlers is optional HTTP transport.**
-The HTTP layer is *not a peer* of the SDK; it's a transport over it. Plugin
+The HTTP layer is _not a peer_ of the SDK; it's a transport over it. Plugin
 authors should treat extension as the implementation and write handlers as
 thin wrappers that delegate via the `self` parameter (same pattern as
 `staticSources(self) => [...]` already in the codebase). This keeps:
@@ -188,7 +188,7 @@ Three plugin shapes fall out of this layering:
   utility for other plugins or scripts. CLI/embedded consumers use
   `executor.<id>.method()`. Vite plugin notices no `./client` and skips the
   plugin in the frontend bundle entirely.
-- **Both.** Extension *and* routes/handlers *and* a `./client`. Examples:
+- **Both.** Extension _and_ routes/handlers _and_ a `./client`. Examples:
   openapi, mcp, anything that needs a frontend. Routes are thin wrappers
   over extension methods.
 - **HTTP-only.** Rare — webhook receivers, OAuth callback URLs. Routes
@@ -214,7 +214,7 @@ Plugin authors can write a complete plugin importing only from
 `@executor-js/sdk` (server) and `@executor-js/sdk/client` (frontend). The SDK
 re-exports `Schema`, `HttpApi`, `HttpApiGroup`, `HttpApiEndpoint`,
 `HttpApiBuilder`, `Effect` so authors who don't want to dig into Effect
-don't have to. Authors who *do* want Effect-native code keep importing from
+don't have to. Authors who _do_ want Effect-native code keep importing from
 `effect` directly. This keeps the door open without forcing the dependency.
 
 ### 6. Skip `capabilities` declaration for v1
@@ -247,7 +247,7 @@ already handles this exact pattern for secrets and works fine:
 secretProviders: (ctx) => [makeScopedProvider(...)]
 ```
 
-Each new pluggable capability gets its *own* typed field on `PluginSpec`,
+Each new pluggable capability gets its _own_ typed field on `PluginSpec`,
 same shape. When artifacts lands, that's `artifactStore: () =>
 ArtifactStore`. If connection providers want to be modeled this way, the
 existing `connectionProviders` field already is.
@@ -335,24 +335,21 @@ server both import it:
 
 ```ts
 // @executor-js/plugin-foo/src/shared.ts
-import { HttpApiEndpoint, HttpApiGroup, Schema } from "@executor-js/sdk"
+import { HttpApiEndpoint, HttpApiGroup, Schema } from "@executor-js/sdk";
 
 export const Thing = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-})
+});
 
 export const FooApi = HttpApiGroup.make("foo")
-  .add(
-    HttpApiEndpoint.get("listThings")`/things`
-      .addSuccess(Schema.Array(Thing)),
-  )
+  .add(HttpApiEndpoint.get("listThings")`/things`.addSuccess(Schema.Array(Thing)))
   .add(
     HttpApiEndpoint.post("syncThing")`/sync/:id`
       .setPath(Schema.Struct({ id: Schema.String }))
       .addSuccess(Thing)
       .addError(SyncError),
-  )
+  );
 ```
 
 ```ts
@@ -429,49 +426,47 @@ Lives in `@executor-js/sdk/client`. Server bundles cannot import this module.
 ```ts
 // packages/core/sdk/src/client.ts
 export interface ClientPluginSpec<TId extends string = string> {
-  readonly id: TId
+  readonly id: TId;
 
   /** Pages contributed to the host's TanStack router. Mounted under
    *  /plugins/{id}/{path}. Sidebar nav metadata declared on the route. */
-  readonly pages?: readonly PageDecl[]
+  readonly pages?: readonly PageDecl[];
 
   /** Dashboard / overview widgets the host can render in known slots. */
-  readonly widgets?: readonly WidgetDecl[]
+  readonly widgets?: readonly WidgetDecl[];
 
   /** Components the host can render in named slots (e.g., source-detail
    *  panels, secret-picker variants). Slot names are part of the host
    *  contract — plugin opts in by registering. */
-  readonly slots?: Record<string, SlotComponent>
+  readonly slots?: Record<string, SlotComponent>;
 
   /** Source-plugin contribution — populated by plugins that expose
    *  `kind` rows in the core `source` table (openapi, mcp, graphql,
    *  google-discovery). The host's sources page derives its provider
    *  list from the union of every loaded plugin's `sourcePlugin`
    *  via `useSourcePlugins()`. */
-  readonly sourcePlugin?: SourcePlugin
+  readonly sourcePlugin?: SourcePlugin;
 
   /** Secret-provider-plugin contribution — populated by plugins that
    *  also ship a `secretProviders` server-side capability AND want to
    *  expose a settings card on the host's secrets page. Surfaced via
    *  `useSecretProviderPlugins()`. */
-  readonly secretProviderPlugin?: SecretProviderPlugin
+  readonly secretProviderPlugin?: SecretProviderPlugin;
 }
 
 type PageDecl = {
-  path: string                          // "/", "/edit/$id"
-  component: ComponentType
-  nav?: { label: string; section?: string }
-}
+  path: string; // "/", "/edit/$id"
+  component: ComponentType;
+  nav?: { label: string; section?: string };
+};
 
 type WidgetDecl = {
-  id: string
-  component: ComponentType<WidgetProps>
-  size?: "half" | "full"
-}
+  id: string;
+  component: ComponentType<WidgetProps>;
+  size?: "half" | "full";
+};
 
-export const defineClientPlugin = <TId extends string>(
-  spec: ClientPluginSpec<TId>,
-) => spec
+export const defineClientPlugin = <TId extends string>(spec: ClientPluginSpec<TId>) => spec;
 ```
 
 ### `createPluginAtomClient` — typed reactive client per plugin
@@ -483,24 +478,21 @@ authors write one line per atom. Same shape as the existing
 
 ```ts
 // packages/core/sdk/src/client.ts (helper)
-import { HttpApi } from "effect/unstable/httpapi"
-import { FetchHttpClient } from "effect/unstable/http"
-import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi"
+import { HttpApi } from "effect/unstable/httpapi";
+import { FetchHttpClient } from "effect/unstable/http";
+import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
 
 export const createPluginAtomClient = <G extends HttpApiGroup.Any>(
   group: G,
   opts: { pluginId: string },
 ) => {
-  const bundle = HttpApi.make(`plugin-${opts.pluginId}`).add(group)
-  return AtomHttpApi.Service<`Plugin_${string}Client`>()(
-    `Plugin_${opts.pluginId}Client`,
-    {
-      api: bundle,
-      httpClient: FetchHttpClient.layer,
-      baseUrl: `/_executor/plugins/${opts.pluginId}`,
-    },
-  )
-}
+  const bundle = HttpApi.make(`plugin-${opts.pluginId}`).add(group);
+  return AtomHttpApi.Service<`Plugin_${string}Client`>()(`Plugin_${opts.pluginId}Client`, {
+    api: bundle,
+    httpClient: FetchHttpClient.layer,
+    baseUrl: `/_executor/plugins/${opts.pluginId}`,
+  });
+};
 ```
 
 Plugin author writes:
@@ -513,39 +505,34 @@ import {
   useAtomValue,
   useAtomSet,
   AsyncResult,
-} from "@executor-js/sdk/client"
-import { FooApi } from "./shared"
+} from "@executor-js/sdk/client";
+import { FooApi } from "./shared";
 
-const FooClient = createPluginAtomClient(FooApi, { pluginId: "foo" })
+const FooClient = createPluginAtomClient(FooApi, { pluginId: "foo" });
 
 export const fooThingsAtom = FooClient.query("foo", "listThings", {
   timeToLive: "30 seconds",
   reactivityKeys: ["foo:things"],
-})
+});
 
-export const fooSync = FooClient.mutation("foo", "syncThing")
+export const fooSync = FooClient.mutation("foo", "syncThing");
 
 const FooPage = () => {
-  const things = useAtomValue(fooThingsAtom)
-  const doSync = useAtomSet(fooSync, { mode: "promise" })
+  const things = useAtomValue(fooThingsAtom);
+  const doSync = useAtomSet(fooSync, { mode: "promise" });
 
   return AsyncResult.match(things, {
     onInitial: () => <Skeleton />,
     onFailure: () => <p>Failed to load</p>,
-    onSuccess: ({ value }) => (
-      <Table
-        rows={value}
-        onSync={(id) => doSync({ path: { id } })}
-      />
-    ),
-  })
-}
+    onSuccess: ({ value }) => <Table rows={value} onSync={(id) => doSync({ path: { id } })} />,
+  });
+};
 
 export default defineClientPlugin({
   id: "foo" as const,
   pages: [{ path: "/", component: FooPage, nav: { label: "Foo" } }],
   widgets: [{ id: "foo-status", component: FooStatus, size: "half" }],
-})
+});
 ```
 
 Type inference: `FooClient.query("foo", "listThings", ...)` is fully typed
@@ -608,15 +595,17 @@ Single config, two consumers.
 
 ```ts
 // apps/local/src/server/executor.ts (after)
-import config from "../../executor.config.ts"
+import config from "../../executor.config.ts";
 
-const executor = yield* createExecutor({
-  scopes: [scope],
-  adapter,
-  blobs,
-  plugins: config.plugins,
-  onElicitation: "accept-all",
-})
+const executor =
+  yield *
+  createExecutor({
+    scopes: [scope],
+    adapter,
+    blobs,
+    plugins: config.plugins,
+    onElicitation: "accept-all",
+  });
 ```
 
 The plugins are already configured (factory called) by the time
@@ -631,18 +620,16 @@ export default function executorVite(): Plugin {
   return {
     name: "executor-plugins",
     resolveId(id) {
-      if (id === "virtual:executor/plugins-client") return "\0" + id
+      if (id === "virtual:executor/plugins-client") return "\0" + id;
     },
     async load(id) {
-      if (id !== "\0virtual:executor/plugins-client") return
-      const config = await loadExecutorConfig()
-      const imports = config.plugins
-        .map((p, i) => `import p${i} from "${p.id}/client"`)
-        .join("\n")
-      const list = config.plugins.map((_, i) => `p${i}`).join(", ")
-      return `${imports}\nexport const plugins = [${list}]`
+      if (id !== "\0virtual:executor/plugins-client") return;
+      const config = await loadExecutorConfig();
+      const imports = config.plugins.map((p, i) => `import p${i} from "${p.id}/client"`).join("\n");
+      const list = config.plugins.map((_, i) => `p${i}`).join(", ");
+      return `${imports}\nexport const plugins = [${list}]`;
     },
-  }
+  };
 }
 ```
 
@@ -655,11 +642,11 @@ file — `__root.tsx` is the only place that touches
 
 ```tsx
 // apps/local/src/routes/__root.tsx
-import { createRootRoute } from "@tanstack/react-router"
-import { ExecutorProvider } from "@executor-js/react/api/provider"
-import { ExecutorPluginsProvider } from "@executor-js/sdk/client"
-import { plugins as clientPlugins } from "virtual:executor/plugins-client"
-import { Shell } from "../web/shell"
+import { createRootRoute } from "@tanstack/react-router";
+import { ExecutorProvider } from "@executor-js/react/api/provider";
+import { ExecutorPluginsProvider } from "@executor-js/sdk/client";
+import { plugins as clientPlugins } from "virtual:executor/plugins-client";
+import { Shell } from "../web/shell";
 
 export const Route = createRootRoute({
   component: () => (
@@ -669,15 +656,15 @@ export const Route = createRootRoute({
       </ExecutorPluginsProvider>
     </ExecutorProvider>
   ),
-})
+});
 ```
 
 ```tsx
 // e.g. inside packages/react/src/pages/sources.tsx
-import { useSourcePlugins } from "@executor-js/sdk/client"
+import { useSourcePlugins } from "@executor-js/sdk/client";
 
 export function SourcesPage() {
-  const sourcePlugins = useSourcePlugins()
+  const sourcePlugins = useSourcePlugins();
   // ...
 }
 ```
@@ -701,49 +688,48 @@ needs a Vite restart (not a hot update — config changed).
 
 ```ts
 // src/shared.ts — only @executor-js/sdk imports, no raw effect imports
-import { HttpApiEndpoint, HttpApiGroup, Schema } from "@executor-js/sdk"
+import { HttpApiEndpoint, HttpApiGroup, Schema } from "@executor-js/sdk";
 
 export const Greeting = Schema.Struct({
   message: Schema.String,
   count: Schema.Number,
-})
-export type Greeting = typeof Greeting.Type
+});
+export type Greeting = typeof Greeting.Type;
 
 export const ExampleApi = HttpApiGroup.make("example").add(
   HttpApiEndpoint.post("greet", "/greet", {
     payload: Schema.Struct({ name: Schema.String }),
     success: Greeting,
   }),
-)
+);
 ```
 
 ```ts
 // src/server.ts
-import {
-  Context, definePlugin, Effect, HttpApi, HttpApiBuilder,
-} from "@executor-js/sdk"
-import { ExampleApi } from "./shared"
+import { Context, definePlugin, Effect, HttpApi, HttpApiBuilder } from "@executor-js/sdk";
+import { ExampleApi } from "./shared";
 
-const ExampleApiBundle = HttpApi.make("example").add(ExampleApi)
+const ExampleApiBundle = HttpApi.make("example").add(ExampleApi);
 
 interface ExampleExtension {
   readonly greet: (
     name: string,
-  ) => Effect.Effect<{ readonly message: string; readonly count: number }>
+  ) => Effect.Effect<{ readonly message: string; readonly count: number }>;
 }
 
 export class ExampleExtensionService extends Context.Service<
-  ExampleExtensionService, ExampleExtension,
+  ExampleExtensionService,
+  ExampleExtension
 >()("ExampleExtensionService") {}
 
 const ExampleHandlers = HttpApiBuilder.group(ExampleApiBundle, "example", (h) =>
   h.handle("greet", ({ payload }) =>
     Effect.gen(function* () {
-      const ext = yield* ExampleExtensionService
-      return yield* ext.greet(payload.name)
+      const ext = yield* ExampleExtensionService;
+      return yield* ext.greet(payload.name);
     }),
   ),
-)
+);
 
 export const examplePlugin = definePlugin(() => ({
   id: "example" as const,
@@ -754,57 +740,57 @@ export const examplePlugin = definePlugin(() => ({
   extension: (ctx): ExampleExtension => ({
     greet: (name: string) =>
       Effect.sync(() => {
-        ctx.storage.count += 1
+        ctx.storage.count += 1;
         return {
           message: `hello ${name}`,
           count: ctx.storage.count,
-        }
+        };
       }),
   }),
 
   routes: () => ExampleApi,
   handlers: () => ExampleHandlers,
   extensionService: ExampleExtensionService,
-}))
+}));
 
-export default examplePlugin
+export default examplePlugin;
 ```
 
 ```tsx
 // src/client.tsx
-import {
-  defineClientPlugin,
-  createPluginAtomClient,
-  useAtomSet,
-} from "@executor-js/sdk/client"
-import { useState } from "react"
-import { ExampleApi } from "./shared"
+import { defineClientPlugin, createPluginAtomClient, useAtomSet } from "@executor-js/sdk/client";
+import { useState } from "react";
+import { ExampleApi } from "./shared";
 
-const ExampleClient = createPluginAtomClient(ExampleApi, { pluginId: "example" })
+const ExampleClient = createPluginAtomClient(ExampleApi, { pluginId: "example" });
 
-const greetAtom = ExampleClient.mutation("example", "greet")
+const greetAtom = ExampleClient.mutation("example", "greet");
 
 const ExamplePage = () => {
-  const [name, setName] = useState("world")
-  const [result, setResult] = useState<string>()
-  const doGreet = useAtomSet(greetAtom, { mode: "promise" })
+  const [name, setName] = useState("world");
+  const [result, setResult] = useState<string>();
+  const doGreet = useAtomSet(greetAtom, { mode: "promise" });
 
   return (
     <div>
       <input value={name} onChange={(e) => setName(e.target.value)} />
-      <button onClick={async () => {
-        const g = await doGreet({ payload: { name } })
-        setResult(`${g.message} (#${g.count})`)
-      }}>Greet</button>
+      <button
+        onClick={async () => {
+          const g = await doGreet({ payload: { name } });
+          setResult(`${g.message} (#${g.count})`);
+        }}
+      >
+        Greet
+      </button>
       {result && <pre>{result}</pre>}
     </div>
-  )
-}
+  );
+};
 
 export default defineClientPlugin({
   id: "example" as const,
   pages: [{ path: "/", component: ExamplePage, nav: { label: "Example" } }],
-})
+});
 ```
 
 ```jsonc
@@ -814,13 +800,13 @@ export default defineClientPlugin({
   "type": "module",
   "exports": {
     "./server": "./dist/server.js",
-    "./client": "./dist/client.js"
+    "./client": "./dist/client.js",
   },
   "executor": { "id": "example", "version": "0.1.0" },
   "peerDependencies": {
     "@executor-js/sdk": "workspace:*",
-    "react": "catalog:"
-  }
+    "react": "catalog:",
+  },
 }
 ```
 
@@ -828,8 +814,8 @@ User adds it:
 
 ```ts
 // apps/local/executor.config.ts
-import { examplePlugin } from "@executor-js/plugin-example/server"
-plugins: [/* ... */, examplePlugin()]
+import { examplePlugin } from "@executor-js/plugin-example/server";
+plugins: [, /* ... */ examplePlugin()];
 ```
 
 ## SDK-only plugin example
@@ -852,81 +838,82 @@ file with no `./client` export, no `routes`, no `handlers`.
   "type": "module",
   "exports": { "./server": "./dist/server.js" },
   "executor": { "id": "rateLimiter", "version": "0.1.0" },
-  "peerDependencies": { "@executor-js/sdk": "workspace:*" }
+  "peerDependencies": { "@executor-js/sdk": "workspace:*" },
 }
 ```
 
 ```ts
 // src/server.ts
-import { definePlugin, defineSchema, Effect, Schema } from "@executor-js/sdk"
+import { definePlugin, defineSchema, Effect, Schema } from "@executor-js/sdk";
 
 interface RateLimiterConfig {
-  defaultLimit?: number
+  defaultLimit?: number;
 }
 
-class RateLimitExceeded extends Schema.TaggedError<RateLimitExceeded>()(
-  "RateLimitExceeded",
-  { key: Schema.String, retryAfterMs: Schema.Number },
-) {}
+class RateLimitExceeded extends Schema.TaggedError<RateLimitExceeded>()("RateLimitExceeded", {
+  key: Schema.String,
+  retryAfterMs: Schema.Number,
+}) {}
 
-export const rateLimiterPlugin = definePlugin(
-  (opts: RateLimiterConfig = {}) => ({
-    id: "rateLimiter" as const,
+export const rateLimiterPlugin = definePlugin((opts: RateLimiterConfig = {}) => ({
+  id: "rateLimiter" as const,
 
-    schema: defineSchema({
-      rate_buckets: {
-        fields: {
-          key: { type: "string", primary: true },
-          tokens: { type: "number" },
-          updated_at: { type: "number" },
-        },
+  schema: defineSchema({
+    rate_buckets: {
+      fields: {
+        key: { type: "string", primary: true },
+        tokens: { type: "number" },
+        updated_at: { type: "number" },
       },
-    }),
-
-    storage: ({ adapter }) => ({
-      adapter,
-      defaultLimit: opts.defaultLimit ?? 60,
-    }),
-
-    extension: (ctx) => ({
-      check: (key: string, cost = 1) =>
-        Effect.gen(function* () {
-          const bucket = yield* readOrCreateBucket(ctx.storage, key)
-          const refilled = refill(bucket, ctx.storage.defaultLimit)
-          if (refilled.tokens < cost) {
-            return yield* new RateLimitExceeded({
-              key,
-              retryAfterMs: estimateRetry(refilled),
-            })
-          }
-          yield* writeBucket(ctx.storage, key, refilled.tokens - cost)
-          return { allowed: true, remaining: refilled.tokens - cost }
-        }),
-
-      reset: (key: string) =>
-        Effect.tryPromise(() =>
-          ctx.storage.adapter.delete({
-            model: "rate_buckets",
-            where: [["key", "=", key]],
-          }),
-        ),
-    }),
+    },
   }),
-)
+
+  storage: ({ adapter }) => ({
+    adapter,
+    defaultLimit: opts.defaultLimit ?? 60,
+  }),
+
+  extension: (ctx) => ({
+    check: (key: string, cost = 1) =>
+      Effect.gen(function* () {
+        const bucket = yield* readOrCreateBucket(ctx.storage, key);
+        const refilled = refill(bucket, ctx.storage.defaultLimit);
+        if (refilled.tokens < cost) {
+          return yield* new RateLimitExceeded({
+            key,
+            retryAfterMs: estimateRetry(refilled),
+          });
+        }
+        yield* writeBucket(ctx.storage, key, refilled.tokens - cost);
+        return { allowed: true, remaining: refilled.tokens - cost };
+      }),
+
+    reset: (key: string) =>
+      Effect.tryPromise(() =>
+        ctx.storage.adapter.delete({
+          model: "rate_buckets",
+          where: [["key", "=", key]],
+        }),
+      ),
+  }),
+}));
 ```
 
 Pure programmatic consumption — works identically from CLI, tests,
 embedded library use, or another plugin's `extension`:
 
 ```ts
-const result = yield* executor.rateLimiter.check("user-123", 5)
+const result = yield * executor.rateLimiter.check("user-123", 5);
 //    ^? { allowed: true; remaining: number }
 
-yield* executor.rateLimiter.check("user-123", 1000).pipe(
-  Effect.catchTag("RateLimitExceeded", (err) =>
-    Effect.log(`hit limit on ${err.key}, retry in ${err.retryAfterMs}ms`),
-  ),
-)
+yield *
+  executor.rateLimiter
+    .check("user-123", 1000)
+    .pipe(
+      Effect.catchTag("RateLimitExceeded", (err) =>
+        Effect.log(`hit limit on ${err.key}, retry in ${err.retryAfterMs}ms`),
+      ),
+    );
 ```
 
 What the host does with this plugin:
@@ -1000,6 +987,7 @@ Build order — all shipped.
 ## References
 
 **Reference research (pre-design):**
+
 - emdash: `astro.config.mjs` import-and-call pattern, `package.json` exports
   for separate admin entry — see `.reference/emdash/demos/plugins-demo/`.
 - dynamic-software: PluginManifest + capability declarations idea (deferred);
@@ -1008,6 +996,7 @@ Build order — all shipped.
   when we add capability enforcement).
 
 **Shipped code:**
+
 - Plugin contract: `packages/core/sdk/src/plugin.ts` (`PluginSpec`,
   `definePlugin`).
 - Client contract: `packages/core/sdk/src/client.ts`
@@ -1030,6 +1019,7 @@ Build order — all shipped.
   follows the same per-capability-typed-field pattern.
 
 **Adjacent plans:**
+
 - `notes/artifacts-workflows-and-generated-ui.md` — the artifacts/workflows
   plan. Uses "protocol" terminology that we're not adopting; read its
   "ArtifactStoreProtocol" as "the typed interface that goes into the

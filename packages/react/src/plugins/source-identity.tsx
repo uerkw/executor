@@ -1,11 +1,7 @@
 import { useCallback, useState } from "react";
 import { parse } from "tldts";
 
-import {
-  CardStack,
-  CardStackContent,
-  CardStackEntryField,
-} from "../components/card-stack";
+import { CardStack, CardStackContent, CardStackEntryField } from "../components/card-stack";
 import { Input } from "../components/input";
 import { normalizeNamespaceInput, slugifyNamespace } from "./namespace";
 export { normalizeNamespaceInput, slugifyNamespace } from "./namespace";

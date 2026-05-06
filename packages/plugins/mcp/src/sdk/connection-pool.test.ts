@@ -163,11 +163,7 @@ describe("MCP connection pooling (regression)", () => {
         // First invoke is necessarily a cache miss — it cold-handshakes the
         // pooled connection. Every subsequent invoke must hit the cache and
         // produce zero new MCP server sessions.
-        yield* executor.tools.invoke(
-          echo.id,
-          { value: "1" },
-          { onElicitation: "accept-all" },
-        );
+        yield* executor.tools.invoke(echo.id, { value: "1" }, { onElicitation: "accept-all" });
         const sessionsAfterFirstInvoke = server.sessionCount();
         expect(sessionsAfterFirstInvoke).toBe(sessionsAfterAddSource + 1);
 
@@ -185,44 +181,30 @@ describe("MCP connection pooling (regression)", () => {
       }),
   );
 
-  it.effect(
-    "different tools on the same source share the cached connection",
-    () =>
-      Effect.gen(function* () {
-        const server = yield* serveMcpServer;
-        const executor = yield* makeTestExecutor(server.url);
-        const tools = yield* executor.tools.list();
-        const echo = tools.find((t) => t.name === "echo")!;
-        const echo2 = tools.find((t) => t.name === "echo2")!;
-        expect(echo).toBeDefined();
-        expect(echo2).toBeDefined();
+  it.effect("different tools on the same source share the cached connection", () =>
+    Effect.gen(function* () {
+      const server = yield* serveMcpServer;
+      const executor = yield* makeTestExecutor(server.url);
+      const tools = yield* executor.tools.list();
+      const echo = tools.find((t) => t.name === "echo")!;
+      const echo2 = tools.find((t) => t.name === "echo2")!;
+      expect(echo).toBeDefined();
+      expect(echo2).toBeDefined();
 
-        const sessionsAfterAddSource = server.sessionCount();
+      const sessionsAfterAddSource = server.sessionCount();
 
-        // Cold handshake on first call.
-        yield* executor.tools.invoke(
-          echo.id,
-          { value: "a" },
-          { onElicitation: "accept-all" },
-        );
-        const baseline = server.sessionCount();
-        expect(baseline).toBe(sessionsAfterAddSource + 1);
+      // Cold handshake on first call.
+      yield* executor.tools.invoke(echo.id, { value: "a" }, { onElicitation: "accept-all" });
+      const baseline = server.sessionCount();
+      expect(baseline).toBe(sessionsAfterAddSource + 1);
 
-        // Different tool on the SAME source — same cache key, same conn.
-        yield* executor.tools.invoke(
-          echo2.id,
-          { value: "b" },
-          { onElicitation: "accept-all" },
-        );
-        expect(server.sessionCount()).toBe(baseline);
+      // Different tool on the SAME source — same cache key, same conn.
+      yield* executor.tools.invoke(echo2.id, { value: "b" }, { onElicitation: "accept-all" });
+      expect(server.sessionCount()).toBe(baseline);
 
-        // Back to the first tool — still pooled.
-        yield* executor.tools.invoke(
-          echo.id,
-          { value: "c" },
-          { onElicitation: "accept-all" },
-        );
-        expect(server.sessionCount()).toBe(baseline);
-      }),
+      // Back to the first tool — still pooled.
+      yield* executor.tools.invoke(echo.id, { value: "c" }, { onElicitation: "accept-all" });
+      expect(server.sessionCount()).toBe(baseline);
+    }),
   );
 });

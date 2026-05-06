@@ -30,31 +30,18 @@ export interface SecretProvider {
    *  failed, etc.) surface as `StorageFailure` — the executor treats
    *  a provider call the same as a DB call; `StorageError` is captured
    *  at the HTTP edge to `InternalError`, `UniqueViolationError` dies. */
-  readonly get: (
-    id: string,
-    scope: string,
-  ) => Effect.Effect<string | null, StorageFailure>;
+  readonly get: (id: string, scope: string) => Effect.Effect<string | null, StorageFailure>;
   /** Check whether a provider has a backing value without returning it.
    *  Providers that can answer this cheaply should implement it so
    *  stale core routing rows don't appear as selectable secrets. */
-  readonly has?: (
-    id: string,
-    scope: string,
-  ) => Effect.Effect<boolean, StorageFailure>;
+  readonly has?: (id: string, scope: string) => Effect.Effect<boolean, StorageFailure>;
   /** Set a secret value at a named scope. Only called on writable
    *  providers. Providers that partition by scope use this arg to
    *  decide where to write; flat providers ignore it. */
-  readonly set?: (
-    id: string,
-    value: string,
-    scope: string,
-  ) => Effect.Effect<void, StorageFailure>;
+  readonly set?: (id: string, value: string, scope: string) => Effect.Effect<void, StorageFailure>;
   /** Delete a secret at a named scope. Only called on writable providers.
    *  Returns true if something was deleted. */
-  readonly delete?: (
-    id: string,
-    scope: string,
-  ) => Effect.Effect<boolean, StorageFailure>;
+  readonly delete?: (id: string, scope: string) => Effect.Effect<boolean, StorageFailure>;
   /** Enumerate known secret entries. Optional — not all backends can
    *  enumerate (env-backed providers, for example). */
   readonly list?: () => Effect.Effect<
@@ -90,9 +77,7 @@ export class SecretRef extends Schema.Class<SecretRef>("SecretRef")({
 // OAuth token exchange writes to the innermost per-user scope.
 // ---------------------------------------------------------------------------
 
-export class SetSecretInput extends Schema.Class<SetSecretInput>(
-  "SetSecretInput",
-)({
+export class SetSecretInput extends Schema.Class<SetSecretInput>("SetSecretInput")({
   id: SecretId,
   /** Scope id to own this secret. Must be one of the executor's
    *  configured scopes. */

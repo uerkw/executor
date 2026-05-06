@@ -8,7 +8,13 @@
 
 import { afterEach, expect, layer } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiBuilder,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  OpenApi,
+} from "effect/unstable/httpapi";
 import { FetchHttpClient, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 
@@ -91,36 +97,40 @@ const mockClientCredentialsFetch = (args: {
   readonly expiresIn?: number;
 }) => {
   let callIndex = 0;
-  globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof _input === "string" ? _input : _input.toString();
-    if (!url.includes("token.example.com")) {
-      return originalFetch(_input, init);
-    }
-    const bodyText =
-      init?.body instanceof URLSearchParams
-        ? init.body.toString()
-        : typeof init?.body === "string"
-          ? init.body
-          : "";
-    const params = new URLSearchParams(bodyText);
-    args.calls.push({
-      grantType: params.get("grant_type"),
-      clientId: params.get("client_id"),
-      clientSecret: params.get("client_secret"),
-      scope: params.get("scope"),
-    });
-    const token = args.accessTokens[Math.min(callIndex, args.accessTokens.length - 1)] ?? "unknown";
-    callIndex += 1;
-    const body: Record<string, unknown> = {
-      access_token: token,
-      token_type: "Bearer",
-    };
-    if (typeof args.expiresIn === "number") body.expires_in = args.expiresIn;
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  }, { preconnect: originalFetch.preconnect });
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof _input === "string" ? _input : _input.toString();
+      if (!url.includes("token.example.com")) {
+        return originalFetch(_input, init);
+      }
+      const bodyText =
+        init?.body instanceof URLSearchParams
+          ? init.body.toString()
+          : typeof init?.body === "string"
+            ? init.body
+            : "";
+      const params = new URLSearchParams(bodyText);
+      args.calls.push({
+        grantType: params.get("grant_type"),
+        clientId: params.get("client_id"),
+        clientSecret: params.get("client_secret"),
+        scope: params.get("scope"),
+      });
+      const token =
+        args.accessTokens[Math.min(callIndex, args.accessTokens.length - 1)] ?? "unknown";
+      callIndex += 1;
+      const body: Record<string, unknown> = {
+        access_token: token,
+        token_type: "Bearer",
+      };
+      if (typeof args.expiresIn === "number") body.expires_in = args.expiresIn;
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
 };
 
 afterEach(() => {
@@ -306,17 +316,13 @@ layer(TestLayer)("OpenAPI client_credentials OAuth", (it) => {
 
       // Access-token secret is owned by the connection and filtered
       // out of the user-facing secret list.
-      const userSecretIds = new Set(
-        (yield* userExec.secrets.list()).map((s) => String(s.id)),
-      );
+      const userSecretIds = new Set((yield* userExec.secrets.list()).map((s) => String(s.id)));
       expect(userSecretIds).toContain("petstore_client_id");
       expect(userSecretIds).toContain("petstore_client_secret");
       expect(userSecretIds).not.toContain(`${auth.connectionId}.access_token`);
 
       // Admin scope sees neither alice's connection nor her token.
-      const adminSecretIds = new Set(
-        (yield* adminExec.secrets.list()).map((s) => String(s.id)),
-      );
+      const adminSecretIds = new Set((yield* adminExec.secrets.list()).map((s) => String(s.id)));
       expect(adminSecretIds).not.toContain(`${auth.connectionId}.access_token`);
     }),
   );

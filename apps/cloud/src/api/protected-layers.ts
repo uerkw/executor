@@ -8,11 +8,7 @@ import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { Layer } from "effect";
 
 import { observabilityMiddleware } from "@executor-js/api";
-import {
-  CoreHandlers,
-  composePluginApi,
-  composePluginHandlerLayer,
-} from "@executor-js/api/server";
+import { CoreHandlers, composePluginApi, composePluginHandlerLayer } from "@executor-js/api/server";
 
 import { cloudPlugins } from "./cloud-plugins";
 import { UserStoreService } from "../auth/context";

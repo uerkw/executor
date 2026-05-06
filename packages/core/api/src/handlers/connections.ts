@@ -18,35 +18,32 @@ const refToResponse = (ref: ConnectionRef) => ({
   updatedAt: ref.updatedAt.getTime(),
 });
 
-export const ConnectionsHandlers = HttpApiBuilder.group(
-  ExecutorApi,
-  "connections",
-  (handlers) =>
-    handlers
-      .handle("list", () =>
-        capture(
-          Effect.gen(function* () {
-            const executor = yield* ExecutorService;
-            const refs = yield* executor.connections.list();
-            return refs.map(refToResponse);
-          }),
-        ),
-      )
-      .handle("remove", ({ params: path }) =>
-        capture(
-          Effect.gen(function* () {
-            const executor = yield* ExecutorService;
-            yield* executor.connections.remove(path.connectionId);
-            return { removed: true };
-          }),
-        ),
-      )
-      .handle("usages", ({ params: path }) =>
-        capture(
-          Effect.gen(function* () {
-            const executor = yield* ExecutorService;
-            return yield* executor.connections.usages(path.connectionId);
-          }),
-        ),
+export const ConnectionsHandlers = HttpApiBuilder.group(ExecutorApi, "connections", (handlers) =>
+  handlers
+    .handle("list", () =>
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          const refs = yield* executor.connections.list();
+          return refs.map(refToResponse);
+        }),
       ),
+    )
+    .handle("remove", ({ params: path }) =>
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          yield* executor.connections.remove(path.connectionId);
+          return { removed: true };
+        }),
+      ),
+    )
+    .handle("usages", ({ params: path }) =>
+      capture(
+        Effect.gen(function* () {
+          const executor = yield* ExecutorService;
+          return yield* executor.connections.usages(path.connectionId);
+        }),
+      ),
+    ),
 );

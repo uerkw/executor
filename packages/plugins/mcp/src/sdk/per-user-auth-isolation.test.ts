@@ -103,72 +103,69 @@ const failureError = <E>(exit: Exit.Exit<unknown, E>): E | undefined =>
 const isToolInvocationError = (error: unknown): error is ToolInvocationError =>
   Predicate.isTagged(error, "ToolInvocationError");
 
-const createAuthRecordingServer: Effect.Effect<TestServer, Error, never> =
-  Effect.callback<TestServer, Error>((resume) => {
-    const transports = new Map<string, StreamableHTTPServerTransport>();
-    const recorded: RecordedRequest[] = [];
+const createAuthRecordingServer: Effect.Effect<TestServer, Error, never> = Effect.callback<
+  TestServer,
+  Error
+>((resume) => {
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const recorded: RecordedRequest[] = [];
 
-    const httpServer = http.createServer(async (req, res) => {
-      recorded.push({
-        authorization: req.headers["authorization"] as string | undefined,
-      });
+  const httpServer = http.createServer(async (req, res) => {
+    recorded.push({
+      authorization: req.headers["authorization"] as string | undefined,
+    });
 
-      const sessionId = req.headers["mcp-session-id"] as string | undefined;
-      if (sessionId) {
-        const transport = transports.get(sessionId);
-        if (!transport) {
-          res.writeHead(404);
-          res.end("Session not found");
-          return;
-        }
-        await transport.handleRequest(req, res);
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (sessionId) {
+      const transport = transports.get(sessionId);
+      if (!transport) {
+        res.writeHead(404);
+        res.end("Session not found");
         return;
       }
-
-      const mcpServer = new McpServer(
-        { name: "iso-test", version: "1.0.0" },
-        { capabilities: {} },
-      );
-      mcpServer.registerTool(
-        "whoami",
-        {
-          description: "Echoes a marker — used to prove the invoke reached the server",
-          inputSchema: { marker: z.string() },
-        },
-        async ({ marker }: { marker: string }) => ({
-          content: [{ type: "text" as const, text: `ok:${marker}` }],
-        }),
-      );
-
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        onsessioninitialized: (sid) => {
-          transports.set(sid, transport);
-        },
-      });
-      await mcpServer.connect(transport);
       await transport.handleRequest(req, res);
-    });
+      return;
+    }
 
-    httpServer.listen(0, () => {
-      const addr = httpServer.address();
-      const port = typeof addr === "object" && addr ? addr.port : 0;
-      resume(
-        Effect.succeed({
-          url: `http://127.0.0.1:${port}`,
-          httpServer,
-          recorded: () => recorded,
-        }),
-      );
+    const mcpServer = new McpServer({ name: "iso-test", version: "1.0.0" }, { capabilities: {} });
+    mcpServer.registerTool(
+      "whoami",
+      {
+        description: "Echoes a marker — used to prove the invoke reached the server",
+        inputSchema: { marker: z.string() },
+      },
+      async ({ marker }: { marker: string }) => ({
+        content: [{ type: "text" as const, text: `ok:${marker}` }],
+      }),
+    );
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (sid) => {
+        transports.set(sid, transport);
+      },
     });
+    await mcpServer.connect(transport);
+    await transport.handleRequest(req, res);
   });
 
-const serveMcpServer = Effect.acquireRelease(
-  createAuthRecordingServer,
-  ({ httpServer }) =>
-    Effect.sync(() => {
-      httpServer.close();
-    }),
+  httpServer.listen(0, () => {
+    const addr = httpServer.address();
+    const port = typeof addr === "object" && addr ? addr.port : 0;
+    resume(
+      Effect.succeed({
+        url: `http://127.0.0.1:${port}`,
+        httpServer,
+        recorded: () => recorded,
+      }),
+    );
+  });
+});
+
+const serveMcpServer = Effect.acquireRelease(createAuthRecordingServer, ({ httpServer }) =>
+  Effect.sync(() => {
+    httpServer.close();
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -181,8 +178,7 @@ const USER_A = ScopeId.make("user-a");
 const USER_B = ScopeId.make("user-b");
 const ORG = ScopeId.make("org");
 
-const scope = (id: ScopeId, name: string): Scope =>
-  new Scope({ id, name, createdAt: new Date() });
+const scope = (id: ScopeId, name: string): Scope => new Scope({ id, name, createdAt: new Date() });
 
 const makeLayeredMcpExecutors = () =>
   Effect.gen(function* () {
@@ -290,9 +286,7 @@ describe("per-user MCP auth isolation", () => {
           content: [{ type: "text", text: "ok:from-user-a" }],
         });
         const userARequests = server.recorded().slice(recordedBeforeUserA);
-        expect(
-          userARequests.some((r) => r.authorization === "Bearer token-user-a"),
-        ).toBe(true);
+        expect(userARequests.some((r) => r.authorization === "Bearer token-user-a")).toBe(true);
 
         // Snapshot the recorded-auth slice we'll check for the user-B
         // run — "token-user-a" must not appear in any request AFTER
@@ -344,95 +338,91 @@ describe("per-user MCP auth isolation", () => {
   // must fail rather than silently fall through to any other scope's
   // value. This also locks the contract that the MCP plugin doesn't
   // quietly downgrade a missing secret to "no auth" on the transport.
-  it.effect(
-    "header source: unauthenticated user B cannot invoke via a per-user secret",
-    () =>
-      Effect.gen(function* () {
-        const server = yield* serveMcpServer;
-        const { execUserA, execUserB } = yield* makeLayeredMcpExecutors();
+  it.effect("header source: unauthenticated user B cannot invoke via a per-user secret", () =>
+    Effect.gen(function* () {
+      const server = yield* serveMcpServer;
+      const { execUserA, execUserB } = yield* makeLayeredMcpExecutors();
 
-        const SECRET = SecretId.make("shared-mcp-token");
+      const SECRET = SecretId.make("shared-mcp-token");
 
-        // User A plants their personal token at their per-user scope
-        // FIRST — so the subsequent addSource's discovery call can
-        // resolve it through user A's stack.
-        yield* execUserA.secrets.set(
-          new SetSecretInput({
-            id: SECRET,
-            scope: USER_A,
-            name: "User A MCP token",
-            value: "token-user-a-header",
-          }),
-        );
+      // User A plants their personal token at their per-user scope
+      // FIRST — so the subsequent addSource's discovery call can
+      // resolve it through user A's stack.
+      yield* execUserA.secrets.set(
+        new SetSecretInput({
+          id: SECRET,
+          scope: USER_A,
+          name: "User A MCP token",
+          value: "token-user-a-header",
+        }),
+      );
 
-        yield* execUserA.mcp.addSource({
-          transport: "remote",
-          scope: ORG,
-          name: "Shared MCP (header)",
-          endpoint: server.url,
-          namespace: "iso_header",
-          auth: {
-            kind: "header",
-            headerName: "Authorization",
-            secretId: SECRET,
-            prefix: "Bearer ",
-          },
-        });
+      yield* execUserA.mcp.addSource({
+        transport: "remote",
+        scope: ORG,
+        name: "Shared MCP (header)",
+        endpoint: server.url,
+        namespace: "iso_header",
+        auth: {
+          kind: "header",
+          headerName: "Authorization",
+          secretId: SECRET,
+          prefix: "Bearer ",
+        },
+      });
 
-        // User A sanity invoke — server sees A's token. Asserting on
-        // the recorded header here guards against false-positive for
-        // the negative check below (e.g. if the plugin silently dropped
-        // auth, both invocations would fail for unrelated reasons).
-        const userATools = yield* execUserA.tools.list();
-        const whoamiForA = userATools.find((t) => t.name === "whoami")!;
+      // User A sanity invoke — server sees A's token. Asserting on
+      // the recorded header here guards against false-positive for
+      // the negative check below (e.g. if the plugin silently dropped
+      // auth, both invocations would fail for unrelated reasons).
+      const userATools = yield* execUserA.tools.list();
+      const whoamiForA = userATools.find((t) => t.name === "whoami")!;
 
-        const recordedBeforeUserA = server.recorded().length;
-        const userAResult = yield* execUserA.tools.invoke(
-          whoamiForA.id,
-          { marker: "user-a-header" },
+      const recordedBeforeUserA = server.recorded().length;
+      const userAResult = yield* execUserA.tools.invoke(
+        whoamiForA.id,
+        { marker: "user-a-header" },
+        { onElicitation: "accept-all" },
+      );
+      expect(userAResult).toMatchObject({
+        content: [{ type: "text", text: "ok:user-a-header" }],
+      });
+      const userARequests = server.recorded().slice(recordedBeforeUserA);
+      expect(userARequests.some((r) => r.authorization === "Bearer token-user-a-header")).toBe(
+        true,
+      );
+
+      const recordedBeforeUserB = server.recorded().length;
+
+      // User B has no personal token. The fall-through lookup walks
+      // [userB, org] — neither scope has the secret row, so the
+      // resolver must return null and the invoke must fail.
+      const userBTools = yield* execUserB.tools.list();
+      const whoamiForB = userBTools.find((t) => t.name === "whoami")!;
+
+      const userBResult = yield* Effect.exit(
+        execUserB.tools.invoke(
+          whoamiForB.id,
+          { marker: "user-b-header" },
           { onElicitation: "accept-all" },
-        );
-        expect(userAResult).toMatchObject({
-          content: [{ type: "text", text: "ok:user-a-header" }],
-        });
-        const userARequests = server.recorded().slice(recordedBeforeUserA);
-        expect(
-          userARequests.some(
-            (r) => r.authorization === "Bearer token-user-a-header",
-          ),
-        ).toBe(true);
+        ),
+      );
 
-        const recordedBeforeUserB = server.recorded().length;
+      expect(Exit.isFailure(userBResult)).toBe(true);
+      // tools.invoke wraps plugin failures in ToolInvocationError
+      // with the original error carried on `cause`. Pin the exact
+      // inner tag — a regression that swapped the "no connection
+      // found" check for a silent no-auth fallback would either
+      // succeed outright (leaking) or surface a different tag here.
+      const outer = failureError(userBResult);
+      expect(isToolInvocationError(outer)).toBe(true);
+      const inner = isToolInvocationError(outer) ? outer.cause : undefined;
+      expect(Predicate.isTagged(inner, "McpConnectionError")).toBe(true);
 
-        // User B has no personal token. The fall-through lookup walks
-        // [userB, org] — neither scope has the secret row, so the
-        // resolver must return null and the invoke must fail.
-        const userBTools = yield* execUserB.tools.list();
-        const whoamiForB = userBTools.find((t) => t.name === "whoami")!;
-
-        const userBResult = yield* Effect.exit(
-          execUserB.tools.invoke(
-            whoamiForB.id,
-            { marker: "user-b-header" },
-            { onElicitation: "accept-all" },
-          ),
-        );
-
-        expect(Exit.isFailure(userBResult)).toBe(true);
-        // tools.invoke wraps plugin failures in ToolInvocationError
-        // with the original error carried on `cause`. Pin the exact
-        // inner tag — a regression that swapped the "no connection
-        // found" check for a silent no-auth fallback would either
-        // succeed outright (leaking) or surface a different tag here.
-        const outer = failureError(userBResult);
-        expect(isToolInvocationError(outer)).toBe(true);
-        const inner = isToolInvocationError(outer) ? outer.cause : undefined;
-        expect(Predicate.isTagged(inner, "McpConnectionError")).toBe(true);
-
-        const afterUserB = server.recorded().slice(recordedBeforeUserB);
-        for (const req of afterUserB) {
-          expect(req.authorization).not.toBe("Bearer token-user-a-header");
-        }
-      }),
+      const afterUserB = server.recorded().slice(recordedBeforeUserB);
+      for (const req of afterUserB) {
+        expect(req.authorization).not.toBe("Bearer token-user-a-header");
+      }
+    }),
   );
 });

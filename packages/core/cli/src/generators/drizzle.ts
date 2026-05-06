@@ -15,14 +15,9 @@ import type { SchemaGenerator } from "./types.js";
 
 type Dialect = "pg" | "sqlite" | "mysql";
 
-const getModelName = (key: string, def: DBSchema[string]): string =>
-  def.modelName ?? key;
+const getModelName = (key: string, def: DBSchema[string]): string => def.modelName ?? key;
 
-const getType = (
-  name: string,
-  field: DBFieldAttribute,
-  dialect: Dialect,
-): string => {
+const getType = (name: string, field: DBFieldAttribute, dialect: Dialect): string => {
   if (field.references?.field === "id") {
     return `text('${name}')`;
   }
@@ -39,9 +34,7 @@ const getType = (
       }[dialect];
     }
     // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: generator rejects invalid schema input through the SchemaGenerator promise API
-    throw new TypeError(
-      `Invalid field type for field ${name}`,
-    );
+    throw new TypeError(`Invalid field type for field ${name}`);
   }
 
   const typeMap: Record<string, Record<Dialect, string>> = {
@@ -65,12 +58,8 @@ const getType = (
     },
     number: {
       sqlite: `integer('${name}')`,
-      pg: field.bigint
-        ? `bigint('${name}', { mode: 'number' })`
-        : `integer('${name}')`,
-      mysql: field.bigint
-        ? `bigint('${name}', { mode: 'number' })`
-        : `int('${name}')`,
+      pg: field.bigint ? `bigint('${name}', { mode: 'number' })` : `integer('${name}')`,
+      mysql: field.bigint ? `bigint('${name}', { mode: 'number' })` : `int('${name}')`,
     },
     date: {
       sqlite: `integer('${name}', { mode: 'timestamp_ms' })`,
@@ -99,9 +88,7 @@ const getType = (
   const dbTypeMap = typeMap[type];
   if (!dbTypeMap) {
     // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: generator rejects unsupported schema input through the SchemaGenerator promise API
-    throw new Error(
-      `Unsupported field type '${field.type}' for field '${name}'.`,
-    );
+    throw new Error(`Unsupported field type '${field.type}' for field '${name}'.`);
   }
   return dbTypeMap[dialect];
 };
@@ -110,11 +97,7 @@ const getType = (
 // Generator
 // ---------------------------------------------------------------------------
 
-export const generateDrizzleSchema: SchemaGenerator = async ({
-  schema,
-  dialect,
-  file,
-}) => {
+export const generateDrizzleSchema: SchemaGenerator = async ({ schema, dialect, file }) => {
   const filePath = file || "./executor-schema.ts";
   const fileExist = existsSync(filePath);
 
@@ -159,69 +142,62 @@ export const generateDrizzleSchema: SchemaGenerator = async ({
     }
 
     const fieldLines = Object.entries(fields)
-    .filter(([fieldName]) => fieldName !== "id")
-    .map(([fieldName, attr]) => {
-      const physical = attr.fieldName ?? fieldName;
+      .filter(([fieldName]) => fieldName !== "id")
+      .map(([fieldName, attr]) => {
+        const physical = attr.fieldName ?? fieldName;
 
-      const isToolPolicyCompositeField =
-        tableKey === "tool_policy" &&
-        (physical === "scope_id" || physical === "position");
+        const isToolPolicyCompositeField =
+          tableKey === "tool_policy" && (physical === "scope_id" || physical === "position");
 
-      if (attr.index && !attr.unique && !isToolPolicyCompositeField) {
-        extras.push({
-          kind: "index",
-          name: `${tableKey}_${physical}_idx`,
-          on: physical,
-        });
-      } else if (attr.index && attr.unique) {
-        extras.push({
-          kind: "uniqueIndex",
-          name: `${tableKey}_${physical}_uidx`,
-          on: physical,
-        });
-      }
+        if (attr.index && !attr.unique && !isToolPolicyCompositeField) {
+          extras.push({
+            kind: "index",
+            name: `${tableKey}_${physical}_idx`,
+            on: physical,
+          });
+        } else if (attr.index && attr.unique) {
+          extras.push({
+            kind: "uniqueIndex",
+            name: `${tableKey}_${physical}_uidx`,
+            on: physical,
+          });
+        }
 
-      let col = getType(physical, attr, dialect);
+        let col = getType(physical, attr, dialect);
 
-      if (
-        attr.defaultValue !== null &&
-        typeof attr.defaultValue !== "undefined"
-      ) {
-        if (typeof attr.defaultValue === "function") {
-          if (
-            attr.type === "date" &&
-            attr.defaultValue.toString().includes("new Date()")
-          ) {
-            if (dialect === "sqlite") {
-              col += `.default(sql\`(cast(unixepoch('subsecond') * 1000 as integer))\`)`;
-            } else {
-              col += `.defaultNow()`;
+        if (attr.defaultValue !== null && typeof attr.defaultValue !== "undefined") {
+          if (typeof attr.defaultValue === "function") {
+            if (attr.type === "date" && attr.defaultValue.toString().includes("new Date()")) {
+              if (dialect === "sqlite") {
+                col += `.default(sql\`(cast(unixepoch('subsecond') * 1000 as integer))\`)`;
+              } else {
+                col += `.defaultNow()`;
+              }
             }
+          } else if (typeof attr.defaultValue === "string") {
+            col += `.default("${attr.defaultValue}")`;
+          } else {
+            col += `.default(${attr.defaultValue})`;
           }
-        } else if (typeof attr.defaultValue === "string") {
-          col += `.default("${attr.defaultValue}")`;
-        } else {
-          col += `.default(${attr.defaultValue})`;
         }
-      }
 
-      if (attr.onUpdate && attr.type === "date") {
-        if (typeof attr.onUpdate === "function") {
-          col += `.$onUpdate(${attr.onUpdate})`;
+        if (attr.onUpdate && attr.type === "date") {
+          if (typeof attr.onUpdate === "function") {
+            col += `.$onUpdate(${attr.onUpdate})`;
+          }
         }
-      }
 
-      return `${physical}: ${col}${attr.required !== false ? ".notNull()" : ""}${
-        attr.unique ? ".unique()" : ""
-      }${
-        attr.references
-          ? `.references(()=> ${attr.references.model}.${attr.references.field ?? "id"}, { onDelete: '${
-              attr.references.onDelete || "cascade"
-            }' })`
-          : ""
-      }`;
-    })
-    .join(",\n  ");
+        return `${physical}: ${col}${attr.required !== false ? ".notNull()" : ""}${
+          attr.unique ? ".unique()" : ""
+        }${
+          attr.references
+            ? `.references(()=> ${attr.references.model}.${attr.references.field ?? "id"}, { onDelete: '${
+                attr.references.onDelete || "cascade"
+              }' })`
+            : ""
+        }`;
+      })
+      .join(",\n  ");
 
     if (tableKey === "tool_policy") {
       extras.push({
@@ -339,12 +315,7 @@ export const generateDrizzleSchema: SchemaGenerator = async ({
     const hasMany = manyRelations.length > 0;
 
     if (hasOne || hasMany) {
-      const destructured = [
-        hasOne ? "one" : "",
-        hasMany ? "many" : "",
-      ]
-        .filter(Boolean)
-        .join(", ");
+      const destructured = [hasOne ? "one" : "", hasMany ? "many" : ""].filter(Boolean).join(", ");
 
       const body = [
         ...singleRelations
@@ -353,9 +324,7 @@ export const generateDrizzleSchema: SchemaGenerator = async ({
             (r) =>
               `  ${r.key}: one(${r.model}, {\n    fields: [${r.reference!.field}],\n    references: [${r.reference!.references}],\n  })`,
           ),
-        ...manyRelations.map(
-          ({ key, model }) => `  ${key}: many(${model})`,
-        ),
+        ...manyRelations.map(({ key, model }) => `  ${key}: many(${model})`),
       ].join(",\n");
 
       const block = `export const ${modelName}Relations = relations(${modelName}, ({ ${destructured} }) => ({
@@ -378,13 +347,7 @@ ${body}
 // Import generation — only emit what's actually used
 // ---------------------------------------------------------------------------
 
-function generateImport({
-  dialect,
-  schema,
-}: {
-  dialect: Dialect;
-  schema: DBSchema;
-}) {
+function generateImport({ dialect, schema }: { dialect: Dialect; schema: DBSchema }) {
   const rootImports: string[] = [];
   const coreImports: string[] = [];
 
@@ -403,10 +366,7 @@ function generateImport({
       if (field.bigint) hasBigint = true;
       if (field.type === "json") hasJson = true;
       if (field.type === "boolean") hasBoolean = true;
-      if (
-        (field.type === "number" && !field.bigint) ||
-        field.type === "number[]"
-      ) {
+      if ((field.type === "number" && !field.bigint) || field.type === "number[]") {
         hasNumber = true;
       }
       if (field.type === "date") hasDate = true;
@@ -482,9 +442,7 @@ function generateImport({
   // produce relation blocks (see relationsString generation).
   if (hasReferences) rootImports.push("relations");
 
-  const filteredCore = coreImports
-    .map((x) => x.trim())
-    .filter((x) => x !== "");
+  const filteredCore = coreImports.map((x) => x.trim()).filter((x) => x !== "");
 
   // Deduplicate
   const uniqueCore = [...new Set(filteredCore)];

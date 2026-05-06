@@ -413,17 +413,11 @@ function PolicyActionMenu(props: {
           <MoreHorizontalIcon className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={props.align ?? "end"}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <DropdownMenuContent align={props.align ?? "end"} onClick={(e) => e.stopPropagation()}>
         <DropdownMenuLabel className="font-mono text-xs">{props.pattern}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {POLICY_ACTIONS_IN_ORDER.map((action) => (
-          <DropdownMenuItem
-            key={action}
-            onSelect={() => props.onSet(props.pattern, action)}
-          >
+          <DropdownMenuItem key={action} onSelect={() => props.onSet(props.pattern, action)}>
             <span className="flex-1">{POLICY_ACTION_LABEL[action]}</span>
             {props.current === action && (
               <span aria-hidden className="text-muted-foreground">
@@ -537,7 +531,9 @@ function ToolLeafRow(props: {
         onClick={props.onSelect}
         className={cn(
           rowBaseClasses,
-          props.active ? "text-foreground hover:bg-transparent" : "text-foreground/80 hover:bg-transparent hover:text-foreground",
+          props.active
+            ? "text-foreground hover:bg-transparent"
+            : "text-foreground/80 hover:bg-transparent hover:text-foreground",
         )}
         style={{
           paddingLeft: rowIndent(props.depth) + 20,

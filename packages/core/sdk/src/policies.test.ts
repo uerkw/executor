@@ -5,10 +5,7 @@ import { generateKeyBetween } from "fractional-indexing";
 import type { ToolPolicyRow } from "./core-schema";
 import { PolicyId } from "./ids";
 import { createExecutor } from "./executor";
-import {
-  ElicitationResponse,
-  type ElicitationHandler,
-} from "./elicitation";
+import { ElicitationResponse, type ElicitationHandler } from "./elicitation";
 import {
   effectivePolicyFromSorted,
   isValidPattern,
@@ -149,13 +146,8 @@ describe("resolveToolPolicy", () => {
       ROW("outer", "vercel.*", "block", "a0", "org"),
       ROW("inner", "vercel.dns.create", "approve", "a0", "user"),
     ];
-    const rank = (row: Pick<ToolPolicyRow, "scope_id">) =>
-      row.scope_id === "user" ? 0 : 1;
-    const result = resolveToolPolicy(
-      "vercel.dns.create",
-      policies,
-      rank,
-    );
+    const rank = (row: Pick<ToolPolicyRow, "scope_id">) => (row.scope_id === "user" ? 0 : 1);
+    const result = resolveToolPolicy("vercel.dns.create", policies, rank);
     expect(result?.action).toBe("approve");
     expect(result?.policyId).toBe("inner");
   });
@@ -167,18 +159,12 @@ describe("resolveToolPolicy", () => {
     // refetch and reorder math sees colliding neighbor keys.
     const a = resolveToolPolicy(
       "vercel.dns.create",
-      [
-        ROW("z", "vercel.dns.*", "block", "a0"),
-        ROW("a", "vercel.dns.*", "approve", "a0"),
-      ],
+      [ROW("z", "vercel.dns.*", "block", "a0"), ROW("a", "vercel.dns.*", "approve", "a0")],
       flatRank,
     );
     const b = resolveToolPolicy(
       "vercel.dns.create",
-      [
-        ROW("a", "vercel.dns.*", "approve", "a0"),
-        ROW("z", "vercel.dns.*", "block", "a0"),
-      ],
+      [ROW("a", "vercel.dns.*", "approve", "a0"), ROW("z", "vercel.dns.*", "block", "a0")],
       flatRank,
     );
     // Same input rows in different order, same winner — id "a" sorts
@@ -189,11 +175,11 @@ describe("resolveToolPolicy", () => {
 });
 
 describe("effectivePolicyFromSorted", () => {
-  const POL = (
-    id: string,
-    pattern: string,
-    action: "approve" | "require_approval" | "block",
-  ) => ({ id: PolicyId.make(id), pattern, action });
+  const POL = (id: string, pattern: string, action: "approve" | "require_approval" | "block") => ({
+    id: PolicyId.make(id),
+    pattern,
+    action,
+  });
 
   it("returns user policy when one matches", () => {
     const result = effectivePolicyFromSorted(
@@ -218,9 +204,10 @@ describe("effectivePolicyFromSorted", () => {
   });
 
   it("falls back to plugin default approve when annotation is false/undefined", () => {
-    expect(
-      effectivePolicyFromSorted("vercel.dns.create", [], false),
-    ).toEqual({ action: "approve", source: "plugin-default" });
+    expect(effectivePolicyFromSorted("vercel.dns.create", [], false)).toEqual({
+      action: "approve",
+      source: "plugin-default",
+    });
     expect(effectivePolicyFromSorted("vercel.dns.create", [])).toEqual({
       action: "approve",
       source: "plugin-default",
@@ -342,10 +329,7 @@ describe("executor.policies", () => {
       expect(second.position < first.position).toBe(true);
 
       const rules = yield* executor.policies.list();
-      expect(rules.map((r) => r.pattern)).toEqual([
-        "vercel.delete",
-        "vercel.*",
-      ]);
+      expect(rules.map((r) => r.pattern)).toEqual(["vercel.delete", "vercel.*"]);
     }),
   );
 
@@ -425,34 +409,27 @@ describe("executor.policies", () => {
     }),
   );
 
-  it.effect(
-    "consecutive creates produce strictly increasing-precedence keys",
-    () =>
-      Effect.gen(function* () {
-        const executor = yield* setupExecutor();
-        const created: string[] = [];
-        for (const pattern of ["a.*", "b.*", "c.*", "d.*"]) {
-          const row = yield* executor.policies.create({
-            scope: "test-scope",
-            pattern,
-            action: "approve",
-          });
-          created.push(row.position);
-        }
-        // Each new key sorts strictly above the previous (lower lex
-        // order = higher precedence). No collisions.
-        for (let i = 1; i < created.length; i++) {
-          expect(created[i]! < created[i - 1]!).toBe(true);
-        }
-        // List order matches insertion-reverse.
-        const rules = yield* executor.policies.list();
-        expect(rules.map((r) => r.pattern)).toEqual([
-          "d.*",
-          "c.*",
-          "b.*",
-          "a.*",
-        ]);
-      }),
+  it.effect("consecutive creates produce strictly increasing-precedence keys", () =>
+    Effect.gen(function* () {
+      const executor = yield* setupExecutor();
+      const created: string[] = [];
+      for (const pattern of ["a.*", "b.*", "c.*", "d.*"]) {
+        const row = yield* executor.policies.create({
+          scope: "test-scope",
+          pattern,
+          action: "approve",
+        });
+        created.push(row.position);
+      }
+      // Each new key sorts strictly above the previous (lower lex
+      // order = higher precedence). No collisions.
+      for (let i = 1; i < created.length; i++) {
+        expect(created[i]! < created[i - 1]!).toBe(true);
+      }
+      // List order matches insertion-reverse.
+      const rules = yield* executor.policies.list();
+      expect(rules.map((r) => r.pattern)).toEqual(["d.*", "c.*", "b.*", "a.*"]);
+    }),
   );
 
   it.effect("remove deletes the row", () =>
@@ -521,14 +498,10 @@ describe("blocked tools", () => {
         pattern: "vercel.*",
         action: "block",
       });
-      const result = yield* Effect.result(
-        executor.tools.invoke("vercel.delete", {}),
-      );
+      const result = yield* Effect.result(executor.tools.invoke("vercel.delete", {}));
       expect(Result.isFailure(result)).toBe(true);
       if (!Result.isFailure(result)) return;
-      expect(Predicate.isTagged("ToolBlockedError")(result.failure)).toBe(
-        true,
-      );
+      expect(Predicate.isTagged("ToolBlockedError")(result.failure)).toBe(true);
       if (!Predicate.isTagged("ToolBlockedError")(result.failure)) return;
       expect(result.failure.pattern).toBe("vercel.*");
     }),
@@ -545,9 +518,13 @@ describe("approve / require_approval interaction with annotations", () => {
         action: "approve",
       });
       const calls = { count: 0 };
-      const result = yield* executor.tools.invoke("vercel.delete", {}, {
-        onElicitation: recordingHandler(calls),
-      });
+      const result = yield* executor.tools.invoke(
+        "vercel.delete",
+        {},
+        {
+          onElicitation: recordingHandler(calls),
+        },
+      );
       expect(calls.count).toBe(0);
       expect(result).toEqual({ ran: "vercel.delete" });
     }),
@@ -562,9 +539,13 @@ describe("approve / require_approval interaction with annotations", () => {
         action: "require_approval",
       });
       const calls = { count: 0 };
-      yield* executor.tools.invoke("vercel.deploy", {}, {
-        onElicitation: recordingHandler(calls),
-      });
+      yield* executor.tools.invoke(
+        "vercel.deploy",
+        {},
+        {
+          onElicitation: recordingHandler(calls),
+        },
+      );
       expect(calls.count).toBe(1);
     }),
   );
@@ -578,15 +559,17 @@ describe("approve / require_approval interaction with annotations", () => {
         action: "require_approval",
       });
       const result = yield* Effect.result(
-        executor.tools.invoke("vercel.deploy", {}, {
-          onElicitation: decliningHandler,
-        }),
+        executor.tools.invoke(
+          "vercel.deploy",
+          {},
+          {
+            onElicitation: decliningHandler,
+          },
+        ),
       );
       expect(Result.isFailure(result)).toBe(true);
       if (!Result.isFailure(result)) return;
-      expect(
-        Predicate.isTagged("ElicitationDeclinedError")(result.failure),
-      ).toBe(true);
+      expect(Predicate.isTagged("ElicitationDeclinedError")(result.failure)).toBe(true);
     }),
   );
 
@@ -597,16 +580,24 @@ describe("approve / require_approval interaction with annotations", () => {
       // marks any tool whose name contains "delete" as requiring
       // approval, so the prompt should fire.
       const calls = { count: 0 };
-      yield* executor.tools.invoke("vercel.delete", {}, {
-        onElicitation: recordingHandler(calls),
-      });
+      yield* executor.tools.invoke(
+        "vercel.delete",
+        {},
+        {
+          onElicitation: recordingHandler(calls),
+        },
+      );
       expect(calls.count).toBe(1);
 
       // vercel.deploy has no plugin-required approval and no policy,
       // so no prompt.
-      yield* executor.tools.invoke("vercel.deploy", {}, {
-        onElicitation: recordingHandler(calls),
-      });
+      yield* executor.tools.invoke(
+        "vercel.deploy",
+        {},
+        {
+          onElicitation: recordingHandler(calls),
+        },
+      );
       expect(calls.count).toBe(1);
     }),
   );

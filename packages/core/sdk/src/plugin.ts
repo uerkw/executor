@@ -1,11 +1,6 @@
 import type { Context, Effect, Layer } from "effect";
 import type { HttpApiGroup } from "effect/unstable/httpapi";
-import type {
-  DBAdapter,
-  DBSchema,
-  StorageFailure,
-  TypedAdapter,
-} from "@executor-js/storage-core";
+import type { DBAdapter, DBSchema, StorageFailure, TypedAdapter } from "@executor-js/storage-core";
 
 import type { PluginBlobStore } from "./blob";
 import type {
@@ -15,12 +10,7 @@ import type {
   CreateConnectionInput,
   UpdateConnectionTokensInput,
 } from "./connections";
-import type {
-  DefinitionsInput,
-  SourceInput,
-  ToolAnnotations,
-  ToolRow,
-} from "./core-schema";
+import type { DefinitionsInput, SourceInput, ToolAnnotations, ToolRow } from "./core-schema";
 import type { SourceDetectionResult } from "./types";
 import type {
   ElicitationDeclinedError,
@@ -70,9 +60,7 @@ export interface StorageDeps<TSchema extends DBSchema | undefined = undefined> {
    * `@executor-js/api` `withCapture`) is the one place that
    * translates it to the opaque `InternalError({ traceId })`.
    */
-  readonly adapter: TSchema extends DBSchema
-    ? TypedAdapter<TSchema, StorageFailure>
-    : DBAdapter;
+  readonly adapter: TSchema extends DBSchema ? TypedAdapter<TSchema, StorageFailure> : DBAdapter;
   readonly blobs: PluginBlobStore;
 }
 
@@ -114,12 +102,8 @@ export interface PluginCtx<TStore = unknown> {
 
   readonly core: {
     readonly sources: {
-      readonly register: (
-        input: SourceInput,
-      ) => Effect.Effect<void, StorageFailure>;
-      readonly unregister: (
-        sourceId: string,
-      ) => Effect.Effect<void, StorageFailure>;
+      readonly register: (input: SourceInput) => Effect.Effect<void, StorageFailure>;
+      readonly unregister: (sourceId: string) => Effect.Effect<void, StorageFailure>;
       readonly update: (input: {
         readonly id: string;
         readonly scope: string;
@@ -134,9 +118,7 @@ export interface PluginCtx<TStore = unknown> {
      *  same `ctx.transaction` as `sources.register` for atomicity.
      *  Replaces any existing defs for the given sourceId. */
     readonly definitions: {
-      readonly register: (
-        input: DefinitionsInput,
-      ) => Effect.Effect<void, StorageFailure>;
+      readonly register: (input: DefinitionsInput) => Effect.Effect<void, StorageFailure>;
     };
   };
 
@@ -157,9 +139,7 @@ export interface PluginCtx<TStore = unknown> {
      *  `executor.secrets.set` on the host surface, but OAuth2 refresh
      *  and one-shot token capture from plugin-owned flows need it here
      *  too. Same routing rules as the host-level setter. */
-    readonly set: (
-      input: SetSecretInput,
-    ) => Effect.Effect<SecretRef, StorageFailure>;
+    readonly set: (input: SetSecretInput) => Effect.Effect<SecretRef, StorageFailure>;
     /** Delete a secret from its pinned provider and the core table.
      *  Rejects with `SecretOwnedByConnectionError` if the row is owned
      *  by a connection — callers must go through `connections.remove`
@@ -168,10 +148,7 @@ export interface PluginCtx<TStore = unknown> {
      *  the user to detach the listed sources first. */
     readonly remove: (
       id: string,
-    ) => Effect.Effect<
-      void,
-      SecretOwnedByConnectionError | SecretInUseError | StorageFailure
-    >;
+    ) => Effect.Effect<void, SecretOwnedByConnectionError | SecretInUseError | StorageFailure>;
   };
 
   /** Connections — product-level sign-in state. Owns backing secret
@@ -180,22 +157,14 @@ export interface PluginCtx<TStore = unknown> {
    *  fresh token (the SDK handles refresh via the registered provider
    *  keyed by `connection.provider`). */
   readonly connections: {
-    readonly get: (
-      id: string,
-    ) => Effect.Effect<ConnectionRef | null, StorageFailure>;
+    readonly get: (id: string) => Effect.Effect<ConnectionRef | null, StorageFailure>;
     readonly list: () => Effect.Effect<readonly ConnectionRef[], StorageFailure>;
     readonly create: (
       input: CreateConnectionInput,
-    ) => Effect.Effect<
-      ConnectionRef,
-      ConnectionProviderNotRegisteredError | StorageFailure
-    >;
+    ) => Effect.Effect<ConnectionRef, ConnectionProviderNotRegisteredError | StorageFailure>;
     readonly updateTokens: (
       input: UpdateConnectionTokensInput,
-    ) => Effect.Effect<
-      ConnectionRef,
-      ConnectionNotFoundError | StorageFailure
-    >;
+    ) => Effect.Effect<ConnectionRef, ConnectionNotFoundError | StorageFailure>;
     readonly setIdentityLabel: (
       id: string,
       label: string | null,
@@ -217,9 +186,7 @@ export interface PluginCtx<TStore = unknown> {
     /** Refuses with `ConnectionInUseError` if any plugin reports the
      *  connection as in use. Caller surfaces the `usages` list to the
      *  user. */
-    readonly remove: (
-      id: string,
-    ) => Effect.Effect<void, ConnectionInUseError | StorageFailure>;
+    readonly remove: (id: string) => Effect.Effect<void, ConnectionInUseError | StorageFailure>;
   };
 
   /** Shared OAuth service. Plugins use this to probe/start/complete OAuth
@@ -230,9 +197,7 @@ export interface PluginCtx<TStore = unknown> {
    *  adapter's transaction method. Use this in extension methods that
    *  need atomicity across plugin storage writes AND core source/tool
    *  registration. */
-  readonly transaction: <A, E>(
-    effect: Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E | StorageFailure>;
+  readonly transaction: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E | StorageFailure>;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,9 +230,7 @@ export interface StaticToolDecl<TStore = unknown> {
    *  Inline because static tools have no plugin storage to resolve from;
    *  the plugin author literally writes this at definition time. */
   readonly annotations?: ToolAnnotations;
-  readonly handler: (
-    input: StaticToolHandlerInput<TStore>,
-  ) => Effect.Effect<unknown, unknown>;
+  readonly handler: (input: StaticToolHandlerInput<TStore>) => Effect.Effect<unknown, unknown>;
 }
 
 export interface StaticSourceDecl<TStore = unknown> {
@@ -388,9 +351,7 @@ export interface PluginSpec<
    *  Handlers close over `self` via the closure, so a control tool
    *  that delegates to the plugin's real API is a one-liner:
    *  `({ args }) => self.addSpec(args)`. */
-  readonly staticSources?: (
-    self: NoInfer<TExtension>,
-  ) => readonly StaticSourceDecl<TStore>[];
+  readonly staticSources?: (self: NoInfer<TExtension>) => readonly StaticSourceDecl<TStore>[];
 
   /** HttpApiGroup contributed by this plugin. Composed into the host's
    *  `HttpApi` via the `addGroup` helper at runtime. The host mounts
@@ -446,9 +407,7 @@ export interface PluginSpec<
    *  map doesn't have the toolId. The plugin reads its own enrichment
    *  via `ctx.storage` and returns the result. Optional — plugins with
    *  only static tools can omit it. */
-  readonly invokeTool?: (
-    input: InvokeToolInput<TStore>,
-  ) => Effect.Effect<unknown, unknown>;
+  readonly invokeTool?: (input: InvokeToolInput<TStore>) => Effect.Effect<unknown, unknown>;
 
   /** Bulk resolve annotations (requiresApproval, approvalDescription,
    *  mayElicit) for a set of tool rows under a single source. Called
@@ -497,13 +456,9 @@ export interface PluginSpec<
    *  by this plugin. Plugin-side cleanup only; the executor deletes
    *  the core source/tool rows after this callback returns, inside
    *  the same transaction. */
-  readonly removeSource?: (
-    input: SourceLifecycleInput<TStore>,
-  ) => Effect.Effect<void, unknown>;
+  readonly removeSource?: (input: SourceLifecycleInput<TStore>) => Effect.Effect<void, unknown>;
 
-  readonly refreshSource?: (
-    input: SourceLifecycleInput<TStore>,
-  ) => Effect.Effect<void, unknown>;
+  readonly refreshSource?: (input: SourceLifecycleInput<TStore>) => Effect.Effect<void, unknown>;
 
   /** URL autodetection hook. When the user pastes a URL in the
    *  onboarding UI, `executor.sources.detect(url)` fans out to every
@@ -526,9 +481,7 @@ export interface PluginSpec<
   readonly secretProviders?:
     | readonly SecretProvider[]
     | ((ctx: PluginCtx<TStore>) => readonly SecretProvider[])
-    | ((
-        ctx: PluginCtx<TStore>,
-      ) => Effect.Effect<readonly SecretProvider[]>);
+    | ((ctx: PluginCtx<TStore>) => Effect.Effect<readonly SecretProvider[]>);
 
   /** Connection providers contributed by this plugin. Same registration
    *  shape as `secretProviders`. Each provider's `key` is what
@@ -538,9 +491,7 @@ export interface PluginSpec<
   readonly connectionProviders?:
     | readonly ConnectionProvider[]
     | ((ctx: PluginCtx<TStore>) => readonly ConnectionProvider[])
-    | ((
-        ctx: PluginCtx<TStore>,
-      ) => Effect.Effect<readonly ConnectionProvider[]>);
+    | ((ctx: PluginCtx<TStore>) => Effect.Effect<readonly ConnectionProvider[]>);
 
   readonly close?: () => Effect.Effect<void, unknown>;
 }
@@ -558,15 +509,7 @@ export interface Plugin<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   THandlersLayer extends Layer.Layer<any, any, any> = any,
   TGroup extends HttpApiGroup.Any = HttpApiGroup.Any,
-> extends PluginSpec<
-    TId,
-    TExtension,
-    TStore,
-    TSchema,
-    TExtensionService,
-    THandlersLayer,
-    TGroup
-  > {}
+> extends PluginSpec<TId, TExtension, TStore, TSchema, TExtensionService, THandlersLayer, TGroup> {}
 
 // ---------------------------------------------------------------------------
 // definePlugin — factory-returning-spec. Options from the author factory
@@ -589,15 +532,7 @@ export type ConfiguredPlugin<
   options?: TOptions & {
     readonly storage?: (deps: StorageDeps<TSchema>) => TStore;
   },
-) => Plugin<
-  TId,
-  TExtension,
-  TStore,
-  TSchema,
-  TExtensionService,
-  THandlersLayer,
-  TGroup
->;
+) => Plugin<TId, TExtension, TStore, TSchema, TExtensionService, THandlersLayer, TGroup>;
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 export function definePlugin<
@@ -614,15 +549,7 @@ export function definePlugin<
 >(
   authorFactory: (
     options?: TOptions,
-  ) => PluginSpec<
-    TId,
-    TExtension,
-    TStore,
-    TSchema,
-    TExtensionService,
-    THandlersLayer,
-    TGroup
-  >,
+  ) => PluginSpec<TId, TExtension, TStore, TSchema, TExtensionService, THandlersLayer, TGroup>,
 ): ConfiguredPlugin<
   TId,
   TExtension,
@@ -643,9 +570,7 @@ export function definePlugin<
     } = options ?? {};
 
     const hasAuthorOptions = Object.keys(rest).length > 0;
-    const spec = authorFactory(
-      hasAuthorOptions ? (rest as TOptions) : undefined,
-    );
+    const spec = authorFactory(hasAuthorOptions ? (rest as TOptions) : undefined);
 
     return {
       ...spec,
@@ -664,12 +589,7 @@ export function definePlugin<
 export type AnyPlugin = Plugin<string>;
 
 export type PluginExtensions<TPlugins extends readonly AnyPlugin[]> = {
-  readonly [P in TPlugins[number] as P["id"]]: P extends Plugin<
-    string,
-    infer TExt
-  >
-    ? TExt
-    : never;
+  readonly [P in TPlugins[number] as P["id"]]: P extends Plugin<string, infer TExt> ? TExt : never;
 };
 
 /** Lightweight projection of a secret entry as returned by `ctx.secrets.list`. */

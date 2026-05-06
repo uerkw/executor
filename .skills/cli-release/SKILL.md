@@ -6,16 +6,19 @@ description: Runbook for releasing the `executor` CLI package (stable and beta).
 # Executor CLI release runbook
 
 ## Authoritative doc
+
 `RELEASING.md` at repo root is the source of truth. This skill encodes the owner's preferences on top of it.
 
 ## What the `executor` CLI actually ships
 
 The CLI binary bundles:
+
 - `apps/cli/**` — CLI source + daemon
 - `apps/local/**` — the web UI (embedded as a virtual module via `apps/cli/src/build.ts:178`) + drizzle migrations (`build.ts:205`)
 - `packages/**` — `core`, `kernel`, `hosts/mcp`, `runtime-quickjs`, and every plugin under `packages/plugins/**`
 
 Does **not** ship in the CLI:
+
 - `apps/cloud/**` (Cloudflare Workers deployment)
 - `apps/marketing/**`, `apps/desktop/**`
 - `examples/**`, `tests/**`
@@ -37,6 +40,7 @@ The owner doesn't want GitHub's auto-generated "PR title by @user" list. Release
 **`apps/cli/release-notes/next.md` is the canonical user-facing changelog.** Per-package workspace `CHANGELOG.md` files are one-line stubs required by `changesets/action@v1` (the GitHub Action wrapping the CLI in `release.yml`) — it reads each bumped package's `CHANGELOG.md` to build the Version Packages PR description and crashes with `ENOENT` if any is missing. The stubs satisfy that read; don't put release content in them.
 
 ### How it's wired
+
 `apps/cli/src/release.ts` reads `apps/cli/release-notes/next.md` and uses
 its contents as the GitHub Release body. If the file is missing or empty,
 falls back to `gh release create --generate-notes`. There's no
@@ -44,7 +48,9 @@ per-version archive in the repo — historical release bodies live on
 GitHub Releases (durable, indexed, linkable).
 
 ### Writing conventions
+
 Structure release-notes files as:
+
 ```
 ## Highlights
 ### <user-facing story>     # e.g. "Per-user OAuth for OpenAPI and MCP sources"
@@ -74,17 +80,20 @@ External contributor bullets end with `Thanks @<user> (#PR)`:
 Do not `Thanks` maintainers, bots, or the repo owner — the lint script rejects `@claude`, `@anthropic`, `@github-actions`, `@dependabot`, `@renovate`, `@rhyssullivan`, `@rhys-sullivan`. Run `bun run lint:release-notes` before pushing notes.
 
 ### When drafting from `git log`
+
 - Look at `git diff v<last>..HEAD -- README.md` first — it's the best single view of user-facing changes.
 - Read commit messages in bulk (`git log --oneline v<last>..HEAD -- apps/cli apps/local packages`), then bucket by theme before writing prose.
 - Don't list every commit. Merge PRs and refactor-chain commits into one line.
 
 ### Pairing with changesets
+
 - A `.changeset/*.md` describes the version bump (semver level + a short summary for the Version Packages PR description). It is **not** the user-facing changelog.
 - If your PR adds a `.changeset/*.md` for the `executor` package, also edit `apps/cli/release-notes/next.md` for the user-facing story. They have different audiences.
 - The `.changeset/*.md` body can be a one-liner pointing at the release-notes section it expands; users read the GitHub release body, not the changeset.
 - Frontmatter is `"executor": patch` (or `minor`/`major` if owner says so).
 
 ### Starting a new release cycle
+
 There's no post-release rename step. When you start work on the next
 release, replace the existing `next.md` content with new entries — the
 previous cycle's content is already preserved on the matching `vX.Y.Z`

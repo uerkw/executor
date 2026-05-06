@@ -158,9 +158,8 @@ const extractFlows = (rawFlows: unknown): Option.Option<OAuth2Flows> => {
   if (!rawFlows || typeof rawFlows !== "object") return Option.none();
   const flows = rawFlows as Record<string, unknown>;
 
-  const parseFlow = <K extends "authorizationCode" | "clientCredentials">(
-    key: K,
-  ): unknown => flows[key];
+  const parseFlow = <K extends "authorizationCode" | "clientCredentials">(key: K): unknown =>
+    flows[key];
 
   let authorizationCode: Option.Option<OAuth2AuthorizationCodeFlow> = Option.none();
   const authCodeRaw = parseFlow("authorizationCode");
@@ -233,9 +232,7 @@ const extractSecuritySchemes = (
         headerName: Option.fromNullishOr(scheme.name as string | undefined),
         description: Option.fromNullishOr(scheme.description as string | undefined),
         flows: schemeType === "oauth2" ? extractFlows(scheme.flows) : Option.none(),
-        openIdConnectUrl: Option.fromNullishOr(
-          scheme.openIdConnectUrl as string | undefined,
-        ),
+        openIdConnectUrl: Option.fromNullishOr(scheme.openIdConnectUrl as string | undefined),
       }),
     ];
   });
@@ -358,10 +355,7 @@ export const previewSpec = Effect.fn("OpenApi.previewSpec")(function* (input: st
   const result = yield* extract(doc);
 
   const resolver = new DocResolver(doc);
-  const securitySchemes = extractSecuritySchemes(
-    doc.components?.securitySchemes ?? {},
-    resolver,
-  );
+  const securitySchemes = extractSecuritySchemes(doc.components?.securitySchemes ?? {}, resolver);
 
   const rawSecurity = (doc.security ?? []) as Array<Record<string, unknown>>;
   const declaredStrategies = rawSecurity.map(

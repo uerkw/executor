@@ -3,10 +3,7 @@ import { Schema } from "effect";
 import { ScopeId } from "@executor-js/sdk/core";
 import { InternalError } from "@executor-js/api";
 
-import {
-  GraphqlIntrospectionError,
-  GraphqlExtractionError,
-} from "../sdk/errors";
+import { GraphqlIntrospectionError, GraphqlExtractionError } from "../sdk/errors";
 import { GraphqlSourceAuth, HeaderValue } from "../sdk/types";
 
 // StoredGraphqlSource shape as an HTTP response schema. Kept local to the
@@ -72,12 +69,8 @@ const AddSourceResponse = Schema.Struct({
 // Errors with HTTP status
 // ---------------------------------------------------------------------------
 
-const IntrospectionError = GraphqlIntrospectionError.annotate(
-  { httpApiStatus: 400 },
-);
-const ExtractionError = GraphqlExtractionError.annotate(
-  { httpApiStatus: 400 },
-);
+const IntrospectionError = GraphqlIntrospectionError.annotate({ httpApiStatus: 400 });
+const ExtractionError = GraphqlExtractionError.annotate({ httpApiStatus: 400 });
 
 // ---------------------------------------------------------------------------
 // Group
@@ -119,6 +112,6 @@ export const GraphqlGroup = HttpApiGroup.make("graphql")
       success: UpdateSourceResponse,
       error: GraphqlErrors,
     }),
-  )
-  // Plugin domain errors carry their own HTTP status (4xx);
-  // `InternalError` is the shared opaque 500 translated at the HTTP edge.
+  );
+// Plugin domain errors carry their own HTTP status (4xx);
+// `InternalError` is the shared opaque 500 translated at the HTTP edge.

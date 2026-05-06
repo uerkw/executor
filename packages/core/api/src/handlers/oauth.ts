@@ -67,7 +67,8 @@ const toPopupErrorMessage = (error: unknown): string => {
   if (message) return message;
 
   const sessionNotFound = decodeOAuthSessionNotFoundError(error);
-  if (Option.isSome(sessionNotFound)) return `OAuth session not found: ${sessionNotFound.value.sessionId}`;
+  if (Option.isSome(sessionNotFound))
+    return `OAuth session not found: ${sessionNotFound.value.sessionId}`;
   return "Authentication failed";
 };
 

@@ -33,8 +33,7 @@ const echoPlugin = definePlugin(() => ({
     },
   ],
   extension: () => ({
-    greet: (name: string) =>
-      Effect.succeed(`hello, ${name}`) as Effect.Effect<string, never>,
+    greet: (name: string) => Effect.succeed(`hello, ${name}`) as Effect.Effect<string, never>,
   }),
 }));
 
@@ -110,8 +109,7 @@ describe("promise/createExecutor", () => {
         "ap.ctl.go",
         {},
         {
-          onElicitation: () =>
-            Effect.succeed({ action: "decline" as const }) as any,
+          onElicitation: () => Effect.succeed({ action: "decline" as const }) as any,
         },
       ),
     ).rejects.toMatchObject({

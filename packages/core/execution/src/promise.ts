@@ -30,13 +30,9 @@ import {
   type ResumeResponse,
 } from "./engine";
 
-export type ElicitationHandler = (
-  ctx: ElicitationContext,
-) => Promise<ElicitationResponse>;
+export type ElicitationHandler = (ctx: ElicitationContext) => Promise<ElicitationResponse>;
 
-export type ExecutionEngineConfig<
-  E extends Cause.YieldableError = CodeExecutionError,
-> = {
+export type ExecutionEngineConfig<E extends Cause.YieldableError = CodeExecutionError> = {
   readonly executor: PromiseExecutor;
   readonly codeExecutor: CodeExecutor<E>;
 };
@@ -64,9 +60,7 @@ const fromPromise = <A>(try_: () => Promise<A>): Effect.Effect<A> =>
 type EffectInvokeOptions = Parameters<EffectExecutor["tools"]["invoke"]>[2];
 type PromiseInvokeOptions = Parameters<PromiseExecutor["tools"]["invoke"]>[2];
 
-const toPromiseInvokeOptions = (
-  options: EffectInvokeOptions,
-): PromiseInvokeOptions => {
+const toPromiseInvokeOptions = (options: EffectInvokeOptions): PromiseInvokeOptions => {
   const onElicitation = options?.onElicitation;
   if (!onElicitation) return undefined;
   if (onElicitation === "accept-all") return { onElicitation };
@@ -154,9 +148,7 @@ export const toPromiseExecutionEngine = <E extends Cause.YieldableError>(
   getDescription: () => Effect.runPromise(engine.getDescription),
 });
 
-export const createExecutionEngine = <
-  E extends Cause.YieldableError = CodeExecutionError,
->(
+export const createExecutionEngine = <E extends Cause.YieldableError = CodeExecutionError>(
   config: ExecutionEngineConfig<E>,
 ): ExecutionEngine =>
   toPromiseExecutionEngine(

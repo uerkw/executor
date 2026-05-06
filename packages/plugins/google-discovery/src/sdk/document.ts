@@ -22,9 +22,7 @@ const LowercaseText = Schema.String.pipe(
 );
 const TextOption = Schema.OptionFromOptional(TrimmedString).pipe(
   Schema.decode({
-    decode: SchemaGetter.transform((value) =>
-      Option.filter(value, (text) => text.length > 0),
-    ),
+    decode: SchemaGetter.transform((value) => Option.filter(value, (text) => text.length > 0)),
     encode: SchemaGetter.transform((value) => value),
   }),
   Schema.withDecodingDefaultType(Effect.succeed(Option.none())),
@@ -48,9 +46,7 @@ const DiscoveryParameterLocationInput = Schema.optional(
 const DiscoveryDefaultValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 
 const DiscoverySchemaModel = Schema.Struct({
-  type: Schema.optional(
-    LowercaseText,
-  ),
+  type: Schema.optional(LowercaseText),
   description: TextOption,
   properties: UnknownRecordWithDefault,
   items: Schema.optional(Schema.Unknown),
@@ -65,9 +61,7 @@ const DiscoverySchemaModel = Schema.Struct({
 type DiscoverySchema = typeof DiscoverySchemaModel.Type;
 
 const DiscoveryParameterModel = Schema.Struct({
-  type: Schema.optional(
-    LowercaseText,
-  ),
+  type: Schema.optional(LowercaseText),
   description: TextOption,
   properties: UnknownRecordWithDefault,
   items: Schema.optional(Schema.Unknown),
@@ -446,7 +440,9 @@ const manifestMethodFromMethod = (input: {
         hasBody: requestRef !== undefined,
       }),
       inputSchema: Option.fromNullishOr(buildInputSchema({ parameters, requestRef })),
-      outputSchema: Option.fromNullishOr(responseRef ? { $ref: schemaRef(responseRef) } : undefined),
+      outputSchema: Option.fromNullishOr(
+        responseRef ? { $ref: schemaRef(responseRef) } : undefined,
+      ),
       scopes: method.scopes ?? [],
     });
   });
@@ -497,20 +493,24 @@ export const extractGoogleDiscoveryManifest = Effect.fn("GoogleDiscovery.extract
       ),
     );
 
-    const topLevelMethods = yield* Effect.forEach(Object.values(document.methods ?? {}), (rawMethod) =>
-      manifestMethodFromMethod({
-        service,
-        rawMethod,
-        globalParameters: document.parameters ?? {},
-      }),
+    const topLevelMethods = yield* Effect.forEach(
+      Object.values(document.methods ?? {}),
+      (rawMethod) =>
+        manifestMethodFromMethod({
+          service,
+          rawMethod,
+          globalParameters: document.parameters ?? {},
+        }),
     );
 
-    const nestedMethods = yield* Effect.forEach(Object.values(document.resources ?? {}), (rawResource) =>
-      collectMethods({
-        service,
-        rawResource,
-        globalParameters: document.parameters ?? {},
-      }),
+    const nestedMethods = yield* Effect.forEach(
+      Object.values(document.resources ?? {}),
+      (rawResource) =>
+        collectMethods({
+          service,
+          rawResource,
+          globalParameters: document.parameters ?? {},
+        }),
     );
 
     return new GoogleDiscoveryManifest({

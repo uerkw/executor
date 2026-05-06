@@ -83,35 +83,27 @@ interface MemorySecretsConfig {
 
 // definePlugin takes a factory and returns a configured-plugin function
 // that the consumer calls with options.
-export const memorySecretsPlugin = definePlugin(
-  (options?: MemorySecretsConfig) => {
-    const map = new Map<string, string>(
-      Object.entries(options?.initial ?? {}),
-    );
-    const provider: SecretProvider = {
-      key: "memory",
-      writable: true,
-      get: (id: string) => Effect.sync(() => map.get(id) ?? null),
-      has: (id: string) => Effect.sync(() => map.has(id)),
-      set: (id: string, value: string) =>
-        Effect.sync(() => void map.set(id, value)),
-      delete: (id: string) => Effect.sync(() => map.delete(id)),
-      list: () =>
-        Effect.sync(() =>
-          Array.from(map.keys()).map((k) => ({ id: k, name: k })),
-        ),
-    };
+export const memorySecretsPlugin = definePlugin((options?: MemorySecretsConfig) => {
+  const map = new Map<string, string>(Object.entries(options?.initial ?? {}));
+  const provider: SecretProvider = {
+    key: "memory",
+    writable: true,
+    get: (id: string) => Effect.sync(() => map.get(id) ?? null),
+    has: (id: string) => Effect.sync(() => map.has(id)),
+    set: (id: string, value: string) => Effect.sync(() => void map.set(id, value)),
+    delete: (id: string) => Effect.sync(() => map.delete(id)),
+    list: () => Effect.sync(() => Array.from(map.keys()).map((k) => ({ id: k, name: k }))),
+  };
 
-    return {
-      id: "memorySecrets" as const,
-      storage: () => ({}),
-      extension: () => ({
-        label: "in-memory secrets",
-      }),
-      secretProviders: () => [provider],
-    };
-  },
-);
+  return {
+    id: "memorySecrets" as const,
+    storage: () => ({}),
+    extension: () => ({
+      label: "in-memory secrets",
+    }),
+    secretProviders: () => [provider],
+  };
+});
 
 // End users compose the executor exactly the same way as above —
 // the plugin's extension is reachable as `executor.memorySecrets`.

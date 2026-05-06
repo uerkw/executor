@@ -16,16 +16,12 @@ import {
   type WorkOSVaultPromiseApi,
 } from "./client";
 
-export class TestWorkOSVaultNotFoundError extends Data.TaggedError(
-  "TestWorkOSVaultNotFoundError",
-)<{
+export class TestWorkOSVaultNotFoundError extends Data.TaggedError("TestWorkOSVaultNotFoundError")<{
   readonly message: string;
   readonly status: 404;
 }> {}
 
-export class TestWorkOSVaultConflictError extends Data.TaggedError(
-  "TestWorkOSVaultConflictError",
-)<{
+export class TestWorkOSVaultConflictError extends Data.TaggedError("TestWorkOSVaultConflictError")<{
   readonly message: string;
   readonly status: 409;
 }> {}
@@ -61,11 +57,9 @@ export interface TestWorkOSVaultClientOptions {
   readonly rejectReadNamesLongerThan?: number;
 }
 
-const notFound = (message: string) =>
-  new TestWorkOSVaultNotFoundError({ message, status: 404 });
+const notFound = (message: string) => new TestWorkOSVaultNotFoundError({ message, status: 404 });
 
-const conflict = (message: string) =>
-  new TestWorkOSVaultConflictError({ message, status: 409 });
+const conflict = (message: string) => new TestWorkOSVaultConflictError({ message, status: 409 });
 
 const invalidRequest = (message: string) =>
   new TestWorkOSVaultInvalidRequestError({ message, status: 400 });
@@ -88,21 +82,16 @@ export const makeTestWorkOSVaultClient = (
   let sequence = 0;
   let conflictPending = options?.conflictOnNextSecretUpdate ?? false;
 
-  const nextId = () =>
-    `vault_${(sequence += 1)}_${crypto.randomUUID().slice(0, 8)}`;
+  const nextId = () => `vault_${(sequence += 1)}_${crypto.randomUUID().slice(0, 8)}`;
 
-  const validateObjectName = (
-    name: string,
-  ): Effect.Effect<void, TestWorkOSVaultError> => {
+  const validateObjectName = (name: string): Effect.Effect<void, TestWorkOSVaultError> => {
     if (options?.rejectNamesWithColon && name.includes(":")) {
       return Effect.fail(invalidRequest(`Invalid object name "${name}"`));
     }
     return Effect.void;
   };
 
-  const validateReadName = (
-    name: string,
-  ): Effect.Effect<void, TestWorkOSVaultError> =>
+  const validateReadName = (name: string): Effect.Effect<void, TestWorkOSVaultError> =>
     Effect.gen(function* () {
       yield* validateObjectName(name);
       if (
@@ -134,9 +123,7 @@ export const makeTestWorkOSVaultClient = (
       return metadata;
     });
 
-  const readObjectByName = (
-    name: string,
-  ): Effect.Effect<WorkOSVaultObject, TestWorkOSVaultError> =>
+  const readObjectByName = (name: string): Effect.Effect<WorkOSVaultObject, TestWorkOSVaultError> =>
     Effect.gen(function* () {
       yield* validateReadName(name);
       const object = objects.get(name);
@@ -160,10 +147,7 @@ export const makeTestWorkOSVaultClient = (
         conflictPending = false;
         return yield* conflict(`Injected conflict for "${opts.id}"`);
       }
-      if (
-        opts.versionCheck &&
-        current.metadata.versionId !== opts.versionCheck
-      ) {
+      if (opts.versionCheck && current.metadata.versionId !== opts.versionCheck) {
         return yield* conflict(`Version mismatch for "${opts.id}"`);
       }
 
@@ -184,13 +168,9 @@ export const makeTestWorkOSVaultClient = (
       return next;
     });
 
-  const deleteObject = (opts: {
-    readonly id: string;
-  }): Effect.Effect<void, TestWorkOSVaultError> =>
+  const deleteObject = (opts: { readonly id: string }): Effect.Effect<void, TestWorkOSVaultError> =>
     Effect.gen(function* () {
-      const entry = [...objects.entries()].find(
-        ([, object]) => object.id === opts.id,
-      );
+      const entry = [...objects.entries()].find(([, object]) => object.id === opts.id);
       if (!entry) {
         return yield* notFound(`Object "${opts.id}" not found`);
       }

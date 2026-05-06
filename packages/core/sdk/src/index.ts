@@ -121,11 +121,7 @@ export {
 } from "./secret-backed-value";
 
 // Usage tracking — secret/connection refs across plugins
-export {
-  Usage,
-  type UsagesForSecretInput,
-  type UsagesForConnectionInput,
-} from "./usages";
+export { Usage, type UsagesForSecretInput, type UsagesForConnectionInput } from "./usages";
 
 // Connections
 export {

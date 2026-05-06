@@ -24,7 +24,9 @@ import { OpenApiGroup } from "./group";
 // `.addError(InternalError)` on the group — no per-handler translation.
 // ---------------------------------------------------------------------------
 
-export class OpenApiExtensionService extends Context.Service<OpenApiExtensionService, OpenApiPluginExtension
+export class OpenApiExtensionService extends Context.Service<
+  OpenApiExtensionService,
+  OpenApiPluginExtension
 >()("OpenApiExtensionService") {}
 
 // ---------------------------------------------------------------------------

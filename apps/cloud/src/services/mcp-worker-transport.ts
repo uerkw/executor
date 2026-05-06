@@ -64,9 +64,7 @@ const extractJsonRpcRequestIdKeys = async (request: Request): Promise<ReadonlyAr
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) return [];
 
-  const parsed = await Effect.runPromiseExit(
-    Effect.tryPromise(() => request.clone().json()),
-  );
+  const parsed = await Effect.runPromiseExit(Effect.tryPromise(() => request.clone().json()));
   if (Exit.isFailure(parsed)) {
     return [];
   }
@@ -192,8 +190,6 @@ export const makeMcpWorkerTransport = (
             try: () => transport.close(),
             catch: (cause) => new McpWorkerTransportError({ cause }),
           }),
-        ).pipe(
-          Effect.withSpan("mcp.worker_transport.close"),
-        ),
+        ).pipe(Effect.withSpan("mcp.worker_transport.close")),
     } satisfies McpWorkerTransport;
   }).pipe(Effect.withSpan("mcp.worker_transport.make"));

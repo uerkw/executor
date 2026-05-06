@@ -11,10 +11,7 @@ export function slugifyForSecretId(input: string): string {
 
 const normalizeSecretId = (secretId: string): string => secretId.trim();
 
-export function isSecretIdTaken(
-  secretId: string,
-  existingSecretIds: Iterable<string>,
-): boolean {
+export function isSecretIdTaken(secretId: string, existingSecretIds: Iterable<string>): boolean {
   const normalizedId = normalizeSecretId(secretId);
   if (!normalizedId) return false;
 

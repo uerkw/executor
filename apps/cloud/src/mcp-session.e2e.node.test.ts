@@ -33,10 +33,7 @@ import {
   createExecutor,
   definePlugin,
 } from "@executor-js/sdk";
-import {
-  makePostgresAdapter,
-  makePostgresBlobStore,
-} from "@executor-js/storage-postgres";
+import { makePostgresAdapter, makePostgresBlobStore } from "@executor-js/storage-postgres";
 import { makeTestWorkOSVaultClient } from "@executor-js/plugin-workos-vault/testing";
 import executorConfig from "../executor.config";
 import { DbService } from "./services/db";
@@ -65,7 +62,11 @@ const elicitingTestPlugin = definePlugin(() => ({
           name: "needsApproval",
           description: "Tool that asks the caller to approve before returning.",
           inputSchema: EMPTY_INPUT_SCHEMA,
-          handler: ({ elicit }: { elicit: (r: FormElicitation) => Effect.Effect<typeof ElicitationResponse.Type, unknown> }) =>
+          handler: ({
+            elicit,
+          }: {
+            elicit: (r: FormElicitation) => Effect.Effect<typeof ElicitationResponse.Type, unknown>;
+          }) =>
             Effect.gen(function* () {
               const response = yield* elicit(
                 new FormElicitation({
@@ -94,11 +95,7 @@ const ELICITATION_CAPS: ClientCapabilities = {
 
 type BuildOptions = { readonly withElicitingPlugin?: boolean };
 
-const buildScopedExecutor = (
-  scopeId: string,
-  scopeName: string,
-  options: BuildOptions = {},
-) =>
+const buildScopedExecutor = (scopeId: string, scopeName: string, options: BuildOptions = {}) =>
   Effect.gen(function* () {
     const { db } = yield* DbService;
     const basePlugins = executorConfig.plugins({

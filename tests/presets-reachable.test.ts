@@ -72,7 +72,8 @@ describe("graphql presets are reachable endpoints", () => {
           );
 
           const authFailureMessage = result.ok ? null : result.message;
-          let isReachable = result.ok || /401|403|Unauthorized|Forbidden|auth/i.test(authFailureMessage ?? "");
+          let isReachable =
+            result.ok || /401|403|Unauthorized|Forbidden|auth/i.test(authFailureMessage ?? "");
           let failureDetails = authFailureMessage ?? "";
           if (!isReachable) {
             const response = yield* Effect.tryPromise(() =>

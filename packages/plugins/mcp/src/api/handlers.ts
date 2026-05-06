@@ -20,8 +20,9 @@ import { McpGroup } from "./group";
 // (no `Captured<>` inversion).
 // ---------------------------------------------------------------------------
 
-export class McpExtensionService extends Context.Service<McpExtensionService, McpPluginExtension
->()("McpExtensionService") {}
+export class McpExtensionService extends Context.Service<McpExtensionService, McpPluginExtension>()(
+  "McpExtensionService",
+) {}
 
 // ---------------------------------------------------------------------------
 // Composed API

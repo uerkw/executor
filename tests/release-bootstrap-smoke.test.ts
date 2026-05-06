@@ -95,164 +95,138 @@ const isSupportedPlatform =
   ["x64", "arm64"].includes(process.arch);
 
 describe("release bootstrap smoke", () => {
-  it(
-    "wrapper resolves the platform binary from optionalDependencies and stays runnable",
-    async () => {
-      if (!isSupportedPlatform) {
-        return;
-      }
+  it("wrapper resolves the platform binary from optionalDependencies and stays runnable", async () => {
+    if (!isSupportedPlatform) {
+      return;
+    }
 
-      const build = await runCommand(
-        "bun",
-        ["run", "src/build.ts", "binary", "--single"],
-        cliRoot,
-      );
-      expect(build.exitCode, build.stderr || build.stdout).toBe(0);
+    const build = await runCommand("bun", ["run", "src/build.ts", "binary", "--single"], cliRoot);
+    expect(build.exitCode, build.stderr || build.stdout).toBe(0);
 
-      const wrapperDir = join(distDir, "executor");
-      const platformDir = join(distDir, currentPlatformPackage);
+    const wrapperDir = join(distDir, "executor");
+    const platformDir = join(distDir, currentPlatformPackage);
 
-      // Simulate the install layout npm/bun produces:
-      //   <root>/executor/                <- wrapper (bin, postinstall, package.json)
-      //   <root>/executor/node_modules/executor-<plat>-<arch>/  <- platform package
-      const tempRoot = await mkdtemp(join(tmpdir(), "executor-optdeps-bootstrap-"));
-      const installedWrapperDir = join(tempRoot, "executor");
-      const installedPlatformDir = join(
+    // Simulate the install layout npm/bun produces:
+    //   <root>/executor/                <- wrapper (bin, postinstall, package.json)
+    //   <root>/executor/node_modules/executor-<plat>-<arch>/  <- platform package
+    const tempRoot = await mkdtemp(join(tmpdir(), "executor-optdeps-bootstrap-"));
+    const installedWrapperDir = join(tempRoot, "executor");
+    const installedPlatformDir = join(installedWrapperDir, "node_modules", currentPlatformPackage);
+    const dataDir = join(tempRoot, "data");
+
+    await cp(wrapperDir, installedWrapperDir, { recursive: true });
+    await mkdir(join(installedWrapperDir, "node_modules"), { recursive: true });
+    await cp(platformDir, installedPlatformDir, { recursive: true });
+
+    // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: release smoke test must clean temp install files after process checks
+    try {
+      const firstRun = await runCommand(
+        process.execPath,
+        [join(installedWrapperDir, "bin", "executor"), "--help"],
         installedWrapperDir,
-        "node_modules",
-        currentPlatformPackage,
       );
-      const dataDir = join(tempRoot, "data");
+      const combined = `${firstRun.stdout}\n${firstRun.stderr}`;
+      expect(firstRun.exitCode, combined).toBe(0);
+      expect(combined).not.toContain("could not locate a platform binary");
+      expect(combined).not.toContain("ENOENT");
 
-      await cp(wrapperDir, installedWrapperDir, { recursive: true });
-      await mkdir(join(installedWrapperDir, "node_modules"), { recursive: true });
-      await cp(platformDir, installedPlatformDir, { recursive: true });
+      // The platform binary lives under node_modules/<platform-pkg>/bin/.
+      const platformBinaryPath = join(installedPlatformDir, "bin", currentRuntimeBinaryName);
+      const platformBinaryStat = await readFile(platformBinaryPath);
+      expect(platformBinaryStat.byteLength).toBeGreaterThan(0);
 
-      // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: release smoke test must clean temp install files after process checks
+      // Boot the web command and check that the bundled web UI serves.
+      const probeServer = createServer((_, response) => {
+        response.statusCode = 204;
+        response.end();
+      });
+      const webPort = await listen(probeServer);
+      await closeServer(probeServer);
+
+      const webProcess = spawn(
+        process.execPath,
+        [join(installedWrapperDir, "bin", "executor"), "web", "--port", String(webPort)],
+        {
+          cwd: installedWrapperDir,
+          env: {
+            ...process.env,
+            EXECUTOR_DATA_DIR: dataDir,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+
+      let webStdout = "";
+      let webStderr = "";
+      webProcess.stdout.setEncoding("utf8");
+      webProcess.stdout.on("data", (chunk) => {
+        webStdout += chunk;
+      });
+      webProcess.stderr.setEncoding("utf8");
+      webProcess.stderr.on("data", (chunk) => {
+        webStderr += chunk;
+      });
+
+      // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: release smoke test must stop the spawned web process
       try {
-        const firstRun = await runCommand(
+        const deadline = Date.now() + 30_000;
+        let rootResponse: Response | null = null;
+        while (Date.now() < deadline) {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+          const fetchExit = await Effect.runPromiseExit(
+            Effect.tryPromise(() => fetch(`http://127.0.0.1:${webPort}/`)),
+          );
+          if (Exit.isSuccess(fetchExit)) {
+            rootResponse = fetchExit.value;
+            if (rootResponse.ok) {
+              break;
+            }
+          }
+        }
+
+        expect(rootResponse, `${webStdout}\n${webStderr}`).not.toBeNull();
+        expect(rootResponse!.status, `${webStdout}\n${webStderr}`).toBe(200);
+        const rootHtml = await rootResponse!.text();
+        expect(rootHtml.toLowerCase()).toContain("<html");
+
+        const assetJs = rootHtml.match(/src="([^"]+\.js)"/)?.[1];
+        const assetCss = rootHtml.match(/href="([^"]+\.css)"/)?.[1];
+        expect(assetJs, rootHtml).toBeDefined();
+        expect(assetCss, rootHtml).toBeDefined();
+
+        const assetJsResponse = await fetch(`http://127.0.0.1:${webPort}${assetJs}`);
+        expect(assetJsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
+
+        const assetCssResponse = await fetch(`http://127.0.0.1:${webPort}${assetCss}`);
+        expect(assetCssResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
+
+        const docsResponse = await fetch(`http://127.0.0.1:${webPort}/docs`);
+        expect(docsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
+
+        // Sanity: a second invocation still works (the cache shouldn't
+        // break anything if it was created).
+        const secondRun = await runCommand(
           process.execPath,
           [join(installedWrapperDir, "bin", "executor"), "--help"],
           installedWrapperDir,
         );
-        const combined = `${firstRun.stdout}\n${firstRun.stderr}`;
-        expect(firstRun.exitCode, combined).toBe(0);
-        expect(combined).not.toContain("could not locate a platform binary");
-        expect(combined).not.toContain("ENOENT");
-
-        // The platform binary lives under node_modules/<platform-pkg>/bin/.
-        const platformBinaryPath = join(
-          installedPlatformDir,
-          "bin",
-          currentRuntimeBinaryName,
-        );
-        const platformBinaryStat = await readFile(platformBinaryPath);
-        expect(platformBinaryStat.byteLength).toBeGreaterThan(0);
-
-        // Boot the web command and check that the bundled web UI serves.
-        const probeServer = createServer((_, response) => {
-          response.statusCode = 204;
-          response.end();
-        });
-        const webPort = await listen(probeServer);
-        await closeServer(probeServer);
-
-        const webProcess = spawn(
-          process.execPath,
-          [
-            join(installedWrapperDir, "bin", "executor"),
-            "web",
-            "--port",
-            String(webPort),
-          ],
-          {
-            cwd: installedWrapperDir,
-            env: {
-              ...process.env,
-              EXECUTOR_DATA_DIR: dataDir,
-            },
-            stdio: ["ignore", "pipe", "pipe"],
-          },
-        );
-
-        let webStdout = "";
-        let webStderr = "";
-        webProcess.stdout.setEncoding("utf8");
-        webProcess.stdout.on("data", (chunk) => {
-          webStdout += chunk;
-        });
-        webProcess.stderr.setEncoding("utf8");
-        webProcess.stderr.on("data", (chunk) => {
-          webStderr += chunk;
-        });
-
-        // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: release smoke test must stop the spawned web process
-        try {
-          const deadline = Date.now() + 30_000;
-          let rootResponse: Response | null = null;
-          while (Date.now() < deadline) {
-            await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-            const fetchExit = await Effect.runPromiseExit(
-              Effect.tryPromise(() => fetch(`http://127.0.0.1:${webPort}/`)),
-            );
-            if (Exit.isSuccess(fetchExit)) {
-              rootResponse = fetchExit.value;
-              if (rootResponse.ok) {
-                break;
-              }
-            }
-          }
-
-          expect(rootResponse, `${webStdout}\n${webStderr}`).not.toBeNull();
-          expect(rootResponse!.status, `${webStdout}\n${webStderr}`).toBe(200);
-          const rootHtml = await rootResponse!.text();
-          expect(rootHtml.toLowerCase()).toContain("<html");
-
-          const assetJs = rootHtml.match(/src="([^"]+\.js)"/)?.[1];
-          const assetCss = rootHtml.match(/href="([^"]+\.css)"/)?.[1];
-          expect(assetJs, rootHtml).toBeDefined();
-          expect(assetCss, rootHtml).toBeDefined();
-
-          const assetJsResponse = await fetch(`http://127.0.0.1:${webPort}${assetJs}`);
-          expect(assetJsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
-
-          const assetCssResponse = await fetch(`http://127.0.0.1:${webPort}${assetCss}`);
-          expect(assetCssResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
-
-          const docsResponse = await fetch(`http://127.0.0.1:${webPort}/docs`);
-          expect(docsResponse.status, `${webStdout}\n${webStderr}`).toBe(200);
-
-          // Sanity: a second invocation still works (the cache shouldn't
-          // break anything if it was created).
-          const secondRun = await runCommand(
-            process.execPath,
-            [join(installedWrapperDir, "bin", "executor"), "--help"],
-            installedWrapperDir,
-          );
-          expect(
-            secondRun.exitCode,
-            `${secondRun.stdout}\n${secondRun.stderr}`,
-          ).toBe(0);
-        } finally {
-          webProcess.kill("SIGTERM");
-          await Promise.race([
-            new Promise((resolveClose) =>
-              webProcess.once("close", () => resolveClose(undefined)),
-            ),
-            new Promise((resolveClose) => setTimeout(resolveClose, 5_000)),
-          ]);
-          if (webProcess.exitCode === null) {
-            if (process.platform === "win32") {
-              webProcess.kill();
-            } else {
-              webProcess.kill("SIGKILL");
-            }
+        expect(secondRun.exitCode, `${secondRun.stdout}\n${secondRun.stderr}`).toBe(0);
+      } finally {
+        webProcess.kill("SIGTERM");
+        await Promise.race([
+          new Promise((resolveClose) => webProcess.once("close", () => resolveClose(undefined))),
+          new Promise((resolveClose) => setTimeout(resolveClose, 5_000)),
+        ]);
+        if (webProcess.exitCode === null) {
+          if (process.platform === "win32") {
+            webProcess.kill();
+          } else {
+            webProcess.kill("SIGKILL");
           }
         }
-      } finally {
-        await rm(tempRoot, { recursive: true, force: true });
       }
-    },
-    180_000,
-  );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  }, 180_000);
 });

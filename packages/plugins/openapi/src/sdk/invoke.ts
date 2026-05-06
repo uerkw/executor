@@ -191,9 +191,7 @@ const isXmlContentType = (ct: string | null | undefined): boolean => {
   const normalized = normalizeContentType(ct);
   if (!normalized) return false;
   return (
-    normalized === "application/xml" ||
-    normalized === "text/xml" ||
-    normalized.endsWith("+xml")
+    normalized === "application/xml" || normalized === "text/xml" || normalized.endsWith("+xml")
   );
 };
 
@@ -291,8 +289,7 @@ const serializeFormUrlEncoded = (
           parts.push(`${encKey}=${encodeFormValue(v, allowReserved)}`);
         }
       } else {
-        const sep =
-          style === "spaceDelimited" ? " " : style === "pipeDelimited" ? "|" : ",";
+        const sep = style === "spaceDelimited" ? " " : style === "pipeDelimited" ? "|" : ",";
         parts.push(
           `${encKey}=${encodeFormValue(
             raw.map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(sep),
@@ -313,18 +310,13 @@ const serializeFormUrlEncoded = (
           // `%5B` / `%5D`. Matches swagger-client's behaviour and remains
           // accepted by common server-side parsers (qs, Rails, etc.).
           parts.push(
-            `${encodeURIComponent(`${key}[${subkey}]`)}=${encodeFormValue(
-              subval,
-              allowReserved,
-            )}`,
+            `${encodeURIComponent(`${key}[${subkey}]`)}=${encodeFormValue(subval, allowReserved)}`,
           );
         }
       } else if (explode) {
         // form + explode=true on object: sub-keys become top-level fields.
         for (const [subkey, subval] of entries) {
-          parts.push(
-            `${encodeURIComponent(subkey)}=${encodeFormValue(subval, allowReserved)}`,
-          );
+          parts.push(`${encodeURIComponent(subkey)}=${encodeFormValue(subval, allowReserved)}`);
         }
       } else {
         // form + explode=false on object: flatten to csv key,val,key,val.
@@ -369,8 +361,7 @@ const coerceFormDataRecord = (
     // emits `Content-Type: <partType>` on this part. JSON types get the
     // value JSON-stringified first so the blob body is valid JSON.
     if (partType) {
-      const isJson =
-        partType.startsWith("application/json") || partType.includes("+json");
+      const isJson = partType.startsWith("application/json") || partType.includes("+json");
       const serialized =
         typeof raw === "string"
           ? raw
@@ -452,10 +443,7 @@ const applyRequestBody = (
     if (typeof bodyValue === "object" && bodyValue !== null && !Array.isArray(bodyValue)) {
       // Serialize ourselves so OAS3 encoding (style/explode/deepObject)
       // is honored. bodyUrlParams doesn't know about per-field style.
-      const serialized = serializeFormUrlEncoded(
-        bodyValue as Record<string, unknown>,
-        encoding,
-      );
+      const serialized = serializeFormUrlEncoded(bodyValue as Record<string, unknown>, encoding);
       return HttpClientRequest.bodyText(request, serialized, contentType);
     }
     // Non-object body — fall back to platform helper (handles URLSearchParams).
@@ -563,8 +551,7 @@ export const invoke = Effect.fn("OpenApi.invoke")(function* (
       // multiple, the caller can override via `args.contentType`; otherwise
       // we use the first-declared (spec author's preferred ordering).
       const contentsOpt = Option.getOrUndefined(rb.contents);
-      const requestedCt =
-        typeof args.contentType === "string" ? args.contentType : undefined;
+      const requestedCt = typeof args.contentType === "string" ? args.contentType : undefined;
       const selected: MediaBinding | undefined =
         contentsOpt && requestedCt
           ? contentsOpt.find((c) => c.contentType === requestedCt)

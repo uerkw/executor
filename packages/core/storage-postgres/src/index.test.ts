@@ -22,18 +22,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { DBAdapter, StorageFailure } from "@executor-js/storage-core";
-import {
-  conformanceSchema,
-  runAdapterConformance,
-} from "@executor-js/storage-core/testing";
+import { conformanceSchema, runAdapterConformance } from "@executor-js/storage-core/testing";
 
 import { makePostgresAdapter } from "./index";
 
 const url = "postgresql://postgres:postgres@127.0.0.1:5435/postgres";
 
-class PostgresTestDatabaseError extends Data.TaggedError(
-  "PostgresTestDatabaseError",
-)<{
+class PostgresTestDatabaseError extends Data.TaggedError("PostgresTestDatabaseError")<{
   readonly message: string;
   readonly cause: unknown;
 }> {}
@@ -153,7 +148,7 @@ const resetTables = Effect.gen(function* () {
     try: () =>
       sql`DROP TABLE IF EXISTS "source", "tag", "source_tag", "with_defaults", "blob" CASCADE`.then(
         () => undefined,
-    ),
+      ),
     catch: (cause) =>
       new PostgresTestDatabaseError({
         message: "failed to reset postgres conformance tables",

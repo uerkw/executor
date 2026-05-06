@@ -283,9 +283,7 @@ describe("0007_normalize_plugin_secret_refs (openapi)", () => {
     const after = openDatabase(dbPath, { readonly: true });
     const qpCount = Schema.decodeUnknownSync(CountRow)(
       after
-        .prepare(
-          "SELECT count(*) as n FROM openapi_source_query_param WHERE source_id = ?",
-        )
+        .prepare("SELECT count(*) as n FROM openapi_source_query_param WHERE source_id = ?")
         .get("bare"),
     ).n;
     expect(qpCount).toBe(0);

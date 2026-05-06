@@ -4,7 +4,7 @@
 
 The MCP plugin **already pools connections within a session DO**. Production
 telemetry attributing 17% of `plugin.mcp.connection.acquire` calls to a
-fresh `plugin.mcp.connection.handshake` represents *cold-start sessions*,
+fresh `plugin.mcp.connection.handshake` represents _cold-start sessions_,
 not redundant in-session handshakes. No structural change is required;
 this PR ships a strict regression test that pins the existing contract
 plus a `plugin.mcp.cache_hit` span attribute so future telemetry can
@@ -68,11 +68,12 @@ mutating the cache key per call) trips immediately in CI.
 ## Re-reading the production trace
 
 Trace `b7102047bed975da461c0519d1251de4`:
+
 - `mcp.plugin.resolve_connector` 2.72s
-- `plugin.mcp.connection.acquire`  2.72s
+- `plugin.mcp.connection.acquire` 2.72s
 - `plugin.mcp.connection.handshake` 2.52s
-- `executor.storage.transaction`    1.02s (token persist)
-- `plugin.mcp.client.call_tool`     1.48s
+- `executor.storage.transaction` 1.02s (token persist)
+- `plugin.mcp.client.call_tool` 1.48s
 
 Span nesting plus `resolve_connector ≈ acquire ≈ handshake` durations is
 the cache-miss path: `resolveConnector` only runs (and emits its span)
@@ -80,11 +81,12 @@ when the cache lookup actually invokes the lookup closure, which only
 happens on a miss.
 
 8h aggregate:
-- `plugin.mcp.connection.handshake` count 4
-- `plugin.mcp.connection.acquire`   count 24
-- `mcp.plugin.resolve_connector`    count 4
 
-Acquire count is 6× handshake count. The cache *is* hitting on 20 of 24
+- `plugin.mcp.connection.handshake` count 4
+- `plugin.mcp.connection.acquire` count 24
+- `mcp.plugin.resolve_connector` count 4
+
+Acquire count is 6× handshake count. The cache _is_ hitting on 20 of 24
 calls. The 4 misses are cold-start sessions (each MCP session DO's first
 tool call, plus any session where the connection went stale and was
 invalidated by the retry path). Six tool calls per session is consistent

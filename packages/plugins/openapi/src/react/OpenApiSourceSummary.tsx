@@ -87,9 +87,7 @@ export default function OpenApiSourceSummary(props: {
   }
   const connections = AsyncResult.isSuccess(connectionsResult) ? connectionsResult.value : [];
   const liveConnectionIds = new Set(connections.map((connection) => connection.id));
-  const scopeRanks = new Map(
-    scopeStack.map((scope, index) => [scope.id, index] as const),
-  );
+  const scopeRanks = new Map(scopeStack.map((scope, index) => [scope.id, index] as const));
   const credentialTargetScope = userScope;
   const missing = missingCredentialLabels(source, bindings, credentialTargetScope, scopeRanks, {
     liveConnectionIds,

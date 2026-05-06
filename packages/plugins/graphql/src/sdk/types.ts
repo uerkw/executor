@@ -64,15 +64,13 @@ export type QueryParamValue = typeof QueryParamValue.Type;
 // Source auth
 // ---------------------------------------------------------------------------
 
-export const GraphqlSourceAuth = Schema.Union(
-  [
-    Schema.Struct({ kind: Schema.Literal("none") }),
-    Schema.Struct({
-      kind: Schema.Literal("oauth2"),
-      connectionId: Schema.String,
-    }),
-  ],
-);
+export const GraphqlSourceAuth = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("none") }),
+  Schema.Struct({
+    kind: Schema.Literal("oauth2"),
+    connectionId: Schema.String,
+  }),
+]);
 export type GraphqlSourceAuth = typeof GraphqlSourceAuth.Type;
 
 export class InvocationConfig extends Schema.Class<InvocationConfig>("InvocationConfig")({

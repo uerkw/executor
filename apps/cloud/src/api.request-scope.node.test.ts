@@ -29,15 +29,9 @@ import { RequestScopedServicesLive } from "./api/layers";
 import { requestScopedMiddleware } from "./api/request-scoped";
 import { makeApiLive } from "./api/router";
 
-class Counter extends Context.Service<
-  Counter,
-  { readonly id: number }
->()("test/Counter") {}
+class Counter extends Context.Service<Counter, { readonly id: number }>()("test/Counter") {}
 
-const makeCounterLive = (
-  counts: { acquires: number; releases: number },
-  acquireDelayMs = 0,
-) =>
+const makeCounterLive = (counts: { acquires: number; releases: number }, acquireDelayMs = 0) =>
   Layer.effect(Counter)(
     Effect.acquireRelease(
       Effect.gen(function* () {
@@ -72,8 +66,7 @@ describe("HttpRouter.toWebHandler request scoping", () => {
       Layer.provideMerge(makeCounterLive(counts)),
       Layer.provideMerge(HttpServer.layerServices),
     );
-    const handler = HttpRouter.toWebHandler(App, { disableLogger: true })
-      .handler;
+    const handler = HttpRouter.toWebHandler(App, { disableLogger: true }).handler;
 
     const a = await handler(new Request("http://test.local/"));
     const b = await handler(new Request("http://test.local/"));
@@ -91,8 +84,7 @@ describe("HttpRouter.toWebHandler request scoping", () => {
       HttpRouter.provideRequest(makeCounterLive(counts)),
       Layer.provideMerge(HttpServer.layerServices),
     );
-    const handler = HttpRouter.toWebHandler(App, { disableLogger: true })
-      .handler;
+    const handler = HttpRouter.toWebHandler(App, { disableLogger: true }).handler;
 
     const a = await handler(new Request("http://test.local/"));
     const b = await handler(new Request("http://test.local/"));
@@ -111,8 +103,7 @@ describe("HttpRouter.toWebHandler request scoping", () => {
       Layer.provide(requestScopedMiddleware(makeCounterLive(counts)).layer),
       Layer.provideMerge(HttpServer.layerServices),
     );
-    const handler = HttpRouter.toWebHandler(App, { disableLogger: true })
-      .handler;
+    const handler = HttpRouter.toWebHandler(App, { disableLogger: true }).handler;
 
     const a = await handler(new Request("http://test.local/"));
     const b = await handler(new Request("http://test.local/"));
@@ -144,8 +135,7 @@ describe("HttpRouter.toWebHandler request scoping", () => {
       Layer.provide(requestScopedMiddleware(makeCounterLive(counts, 5)).layer),
       Layer.provideMerge(HttpServer.layerServices),
     );
-    const handler = HttpRouter.toWebHandler(App, { disableLogger: true })
-      .handler;
+    const handler = HttpRouter.toWebHandler(App, { disableLogger: true }).handler;
 
     const [a, b] = await Promise.all([
       handler(new Request("http://test.local/")),

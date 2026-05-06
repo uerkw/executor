@@ -20,13 +20,11 @@ class FakeRuntimeError extends Data.TaggedError("FakeRuntimeError")<{
 }> {}
 
 const failingExecutor: CodeExecutor<FakeRuntimeError> = {
-  execute: () =>
-    Effect.fail(new FakeRuntimeError({ message: "Unexpected token ':'" })),
+  execute: () => Effect.fail(new FakeRuntimeError({ message: "Unexpected token ':'" })),
 };
 
 const succeedingExecutor: CodeExecutor<FakeRuntimeError> = {
-  execute: () =>
-    Effect.succeed({ result: "ok", logs: [] } satisfies ExecuteResult),
+  execute: () => Effect.succeed({ result: "ok", logs: [] } satisfies ExecuteResult),
 };
 
 const emptyPlugin = definePlugin(() => ({

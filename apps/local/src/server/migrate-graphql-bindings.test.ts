@@ -57,9 +57,7 @@ const decodeTableInfoRows = Schema.decodeUnknownSync(Schema.Array(TableInfoRow))
 const decodeHeaderRows = Schema.decodeUnknownSync(Schema.Array(GraphqlHeaderRow));
 const decodeQueryParamRow = Schema.decodeUnknownSync(GraphqlQueryParamRow);
 const decodeCountRow = Schema.decodeUnknownSync(CountRow);
-const decodeHeaderIdRows = Schema.decodeUnknownSync(
-  Schema.Array(GraphqlHeaderIdRow),
-);
+const decodeHeaderIdRows = Schema.decodeUnknownSync(Schema.Array(GraphqlHeaderIdRow));
 
 let dir: string;
 
@@ -96,19 +94,13 @@ describe("0007_normalize_plugin_secret_refs (graphql)", () => {
     const after = new Database(dbPath, { readonly: true });
     const row = decodeAuthRow(
       after
-        .prepare(
-          "SELECT auth_kind, auth_connection_id FROM graphql_source WHERE id = ?",
-        )
+        .prepare("SELECT auth_kind, auth_connection_id FROM graphql_source WHERE id = ?")
         .get("github"),
     );
     expect(row.auth_kind).toBe("oauth2");
     expect(row.auth_connection_id).toBe("conn-1");
     // Old json column is gone.
-    const cols = decodeTableInfoRows(
-      after
-        .prepare("PRAGMA table_info('graphql_source')")
-        .all(),
-    );
+    const cols = decodeTableInfoRows(after.prepare("PRAGMA table_info('graphql_source')").all());
     expect(cols.some((c) => c.name === "auth")).toBe(false);
     expect(cols.some((c) => c.name === "headers")).toBe(false);
     expect(cols.some((c) => c.name === "query_params")).toBe(false);
@@ -180,9 +172,7 @@ describe("0007_normalize_plugin_secret_refs (graphql)", () => {
 
     const paramRow = decodeQueryParamRow(
       after
-        .prepare(
-          "SELECT kind, secret_id FROM graphql_source_query_param WHERE source_id = ?",
-        )
+        .prepare("SELECT kind, secret_id FROM graphql_source_query_param WHERE source_id = ?")
         .get("example"),
     );
     expect(paramRow).toMatchObject({ kind: "secret", secret_id: "sec-key" });
@@ -196,9 +186,12 @@ describe("0007_normalize_plugin_secret_refs (graphql)", () => {
     db.exec(PRE_0007_SQL);
     stampPriorMigrationsApplied(db);
 
-    db.prepare(
-      "INSERT INTO graphql_source (scope_id, id, name, endpoint) VALUES (?, ?, ?, ?)",
-    ).run("default-scope", "bare", "Bare", "https://bare.example/graphql");
+    db.prepare("INSERT INTO graphql_source (scope_id, id, name, endpoint) VALUES (?, ?, ?, ?)").run(
+      "default-scope",
+      "bare",
+      "Bare",
+      "https://bare.example/graphql",
+    );
     db.close();
 
     const drizzleDb = drizzle(new Database(dbPath));
@@ -207,9 +200,7 @@ describe("0007_normalize_plugin_secret_refs (graphql)", () => {
     const after = new Database(dbPath, { readonly: true });
     const row = decodeAuthRow(
       after
-        .prepare(
-          "SELECT auth_kind, auth_connection_id FROM graphql_source WHERE id = ?",
-        )
+        .prepare("SELECT auth_kind, auth_connection_id FROM graphql_source WHERE id = ?")
         .get("bare"),
     );
     expect(row.auth_kind).toBe("none");
@@ -217,9 +208,7 @@ describe("0007_normalize_plugin_secret_refs (graphql)", () => {
 
     const headerCount = decodeCountRow(
       after
-        .prepare(
-          "SELECT count(*) as n FROM graphql_source_header WHERE source_id = ?",
-        )
+        .prepare("SELECT count(*) as n FROM graphql_source_header WHERE source_id = ?")
         .get("bare"),
     ).n;
     expect(headerCount).toBe(0);

@@ -2,10 +2,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Context, Effect } from "effect";
 
 import { addGroup, capture } from "@executor-js/api";
-import type {
-  GoogleDiscoveryAddSourceInput,
-  GoogleDiscoveryPluginExtension,
-} from "../sdk/plugin";
+import type { GoogleDiscoveryAddSourceInput, GoogleDiscoveryPluginExtension } from "../sdk/plugin";
 import { GoogleDiscoveryStoredSourceSchema } from "../sdk/stored-source";
 import { GoogleDiscoveryGroup } from "./group";
 
@@ -20,7 +17,9 @@ import { GoogleDiscoveryGroup } from "./group";
 // `.addError(InternalError)` on the group — no per-handler translation.
 // ---------------------------------------------------------------------------
 
-export class GoogleDiscoveryExtensionService extends Context.Service<GoogleDiscoveryExtensionService, GoogleDiscoveryPluginExtension
+export class GoogleDiscoveryExtensionService extends Context.Service<
+  GoogleDiscoveryExtensionService,
+  GoogleDiscoveryPluginExtension
 >()("GoogleDiscoveryExtensionService") {}
 
 // ---------------------------------------------------------------------------

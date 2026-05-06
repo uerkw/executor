@@ -166,15 +166,10 @@ export const OpenApiGroup = HttpApiGroup.make("openapi")
     }),
   )
   .add(
-    HttpApiEndpoint.post(
-      "removeSourceBinding",
-      "/scopes/:scopeId/openapi/source-bindings/remove",
-      {
-        params: ScopeIdParam,
-        payload: RemoveBindingPayload,
-        success: Schema.Struct({ removed: Schema.Boolean }),
-        error: DomainErrors,
-      },
-    ),
-  )
-;
+    HttpApiEndpoint.post("removeSourceBinding", "/scopes/:scopeId/openapi/source-bindings/remove", {
+      params: ScopeIdParam,
+      payload: RemoveBindingPayload,
+      success: Schema.Struct({ removed: Schema.Boolean }),
+      error: DomainErrors,
+    }),
+  );

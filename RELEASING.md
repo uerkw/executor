@@ -74,14 +74,18 @@ Use this section structure (mirrors what's already in `next.md`):
 
 ```markdown
 ## Highlights
+
 ### <user-facing story>
-   bullets of concrete user value
+
+bullets of concrete user value
 
 ## Fixes
 
 ## Breaking changes
+
 ### <specific surface>
-   before / after code blocks for migrations
+
+before / after code blocks for migrations
 ```
 
 Lead with **user-visible stories**, not commit subjects. Group related

@@ -20,9 +20,7 @@ const makeRecorder = (traceId = "trace-xyz") =>
       ErrorCapture,
       ErrorCapture.of({
         captureException: (cause) =>
-          Ref.update(seen, (prev) => [...prev, cause]).pipe(
-            Effect.as(traceId),
-          ),
+          Ref.update(seen, (prev) => [...prev, cause]).pipe(Effect.as(traceId)),
       }),
     );
     return { layer, seen };
@@ -58,17 +56,19 @@ describe("capture", () => {
     }),
   );
 
-  it.effect("UniqueViolationError dies (becomes a defect — plugins should catchTag before returning)", () =>
-    Effect.gen(function* () {
-      const err = new UniqueViolationError({ model: "thing" });
-      const exit = yield* Effect.exit(capture(Effect.fail(err)));
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (!Exit.isFailure(exit)) return;
-      const defect = Cause.findDefect(exit.cause);
-      expect(Result.isSuccess(defect) ? defect.success : undefined).toBeInstanceOf(
-        UniqueViolationError,
-      );
-    }),
+  it.effect(
+    "UniqueViolationError dies (becomes a defect — plugins should catchTag before returning)",
+    () =>
+      Effect.gen(function* () {
+        const err = new UniqueViolationError({ model: "thing" });
+        const exit = yield* Effect.exit(capture(Effect.fail(err)));
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (!Exit.isFailure(exit)) return;
+        const defect = Cause.findDefect(exit.cause);
+        expect(Result.isSuccess(defect) ? defect.success : undefined).toBeInstanceOf(
+          UniqueViolationError,
+        );
+      }),
   );
 
   it.effect("non-storage typed failures pass through unchanged", () =>
@@ -76,10 +76,7 @@ describe("capture", () => {
       class DomainError {
         readonly _tag = "DomainError" as const;
       }
-      const eff = Effect.fail(new DomainError()) as Effect.Effect<
-        never,
-        DomainError
-      >;
+      const eff = Effect.fail(new DomainError()) as Effect.Effect<never, DomainError>;
       const result = yield* Effect.flip(capture(eff));
       expect(result).toBeInstanceOf(DomainError);
     }),

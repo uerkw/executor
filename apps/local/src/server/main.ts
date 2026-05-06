@@ -103,10 +103,12 @@ export const createServerHandlers = async (): Promise<ServerHandlers> => {
   return { api: apiHandler, mcp };
 };
 
-export class ServerHandlersService extends Context.Service<ServerHandlersService, ServerHandlers
->()("@executor-js/local/ServerHandlersService") {}
+export class ServerHandlersService extends Context.Service<ServerHandlersService, ServerHandlers>()(
+  "@executor-js/local/ServerHandlersService",
+) {}
 
-const ServerHandlersLive = Layer.effect(ServerHandlersService)(Effect.acquireRelease(
+const ServerHandlersLive = Layer.effect(ServerHandlersService)(
+  Effect.acquireRelease(
     Effect.promise(() => createServerHandlers()),
     (handlers) => Effect.promise(() => closeServerHandlers(handlers)),
   ),

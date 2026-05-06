@@ -48,21 +48,15 @@ const RegistrationBody = Schema.Struct({
   grant_types: Schema.optional(Schema.Array(Schema.String)),
   response_types: Schema.optional(Schema.Array(Schema.String)),
 });
-const decodeRegistrationBody = Schema.decodeUnknownOption(
-  Schema.fromJsonString(RegistrationBody),
-);
+const decodeRegistrationBody = Schema.decodeUnknownOption(Schema.fromJsonString(RegistrationBody));
 
 const startFakeServer = async (): Promise<FakeServer> => {
   const clients = new Map<string, { redirect_uris: readonly string[] }>();
-  const codes = new Map<
-    string,
-    { readonly clientId: string; readonly codeChallenge: string }
-  >();
+  const codes = new Map<string, { readonly clientId: string; readonly codeChallenge: string }>();
   const accessTokens = new Map<string, { readonly refresh: string }>();
   const refreshTokens = new Map<string, string>();
   let seq = 0;
-  const next = (p: string) =>
-    `${p}_${++seq}_${randomBytes(6).toString("hex")}`;
+  const next = (p: string) => `${p}_${++seq}_${randomBytes(6).toString("hex")}`;
   let registrations = 0;
   let tokenCalls = 0;
 
@@ -76,16 +70,10 @@ const startFakeServer = async (): Promise<FakeServer> => {
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
-    const send = (
-      status: number,
-      body: unknown,
-      headers: Record<string, string> = {},
-    ) => {
-      const payload =
-        typeof body === "string" ? body : JSON.stringify(body);
+    const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+      const payload = typeof body === "string" ? body : JSON.stringify(body);
       res.writeHead(status, {
-        "content-type":
-          typeof body === "string" ? "text/plain" : "application/json",
+        "content-type": typeof body === "string" ? "text/plain" : "application/json",
         ...headers,
       });
       res.end(payload);
@@ -130,10 +118,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
           client_id: clientId,
           client_id_issued_at: Math.floor(Date.now() / 1000),
           redirect_uris: parsed.redirect_uris ?? [],
-          grant_types: parsed.grant_types ?? [
-            "authorization_code",
-            "refresh_token",
-          ],
+          grant_types: parsed.grant_types ?? ["authorization_code", "refresh_token"],
           response_types: parsed.response_types ?? ["code"],
           token_endpoint_auth_method: "none",
         });
@@ -171,9 +156,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
           const record = codes.get(code);
           if (!record) return send(400, { error: "invalid_grant" });
           codes.delete(code);
-          const computed = createHash("sha256")
-            .update(verifier)
-            .digest("base64url");
+          const computed = createHash("sha256").update(verifier).digest("base64url");
           if (computed !== record.codeChallenge) {
             return send(400, { error: "invalid_grant" });
           }
@@ -229,9 +212,7 @@ const startFakeServer = async (): Promise<FakeServer> => {
     }
   });
 
-  await new Promise<void>((resolve) =>
-    server.listen(0, "127.0.0.1", () => resolve()),
-  );
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const address = server.address() as AddressInfo;
 
   return {
@@ -352,9 +333,7 @@ describe("mcp oauth end-to-end (node pool, real OAuth + MCP server)", () => {
             },
           }),
         );
-        const redirA = yield* Effect.promise(() =>
-          followAuthorize(startedA.authorizationUrl!),
-        );
+        const redirA = yield* Effect.promise(() => followAuthorize(startedA.authorizationUrl!));
         const completedA = yield* asUser(userA, orgId, (client) =>
           client.oauth.complete({
             params: { scopeId: scopeA },
@@ -377,9 +356,7 @@ describe("mcp oauth end-to-end (node pool, real OAuth + MCP server)", () => {
             },
           }),
         );
-        const redirB = yield* Effect.promise(() =>
-          followAuthorize(startedB.authorizationUrl!),
-        );
+        const redirB = yield* Effect.promise(() => followAuthorize(startedB.authorizationUrl!));
         const completedB = yield* asUser(userB, orgId, (client) =>
           client.oauth.complete({
             params: { scopeId: scopeB },

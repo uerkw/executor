@@ -1,10 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 import { Schema } from "effect";
-import {
-  ScopeId,
-  SourceRemovalNotAllowedError,
-  ToolId,
-} from "@executor-js/sdk";
+import { ScopeId, SourceRemovalNotAllowedError, ToolId } from "@executor-js/sdk";
 
 import { InternalError } from "../observability";
 
@@ -68,9 +64,7 @@ const DetectResultResponse = Schema.Struct({
 // Error schemas with HTTP status annotations
 // ---------------------------------------------------------------------------
 
-const SourceRemovalNotAllowed = SourceRemovalNotAllowedError.annotate(
-  { httpApiStatus: 409 },
-);
+const SourceRemovalNotAllowed = SourceRemovalNotAllowedError.annotate({ httpApiStatus: 409 });
 
 // ---------------------------------------------------------------------------
 // Group

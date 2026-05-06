@@ -16,17 +16,8 @@ import {
 } from "./db-upgrade";
 import { migrateLegacyConnections } from "./migrate-connections";
 
-import {
-  Scope,
-  ScopeId,
-  type AnyPlugin,
-  collectSchemas,
-  createExecutor,
-} from "@executor-js/sdk";
-import {
-  makeSqliteAdapter,
-  makeSqliteBlobStore,
-} from "@executor-js/storage-file";
+import { Scope, ScopeId, type AnyPlugin, collectSchemas, createExecutor } from "@executor-js/sdk";
+import { makeSqliteAdapter, makeSqliteBlobStore } from "@executor-js/storage-file";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { loadPluginsFromJsonc, makeFileConfigSink } from "@executor-js/config";
 import * as executorSchema from "./executor-schema";
@@ -107,9 +98,7 @@ class LocalExecutorTag extends Context.Service<LocalExecutorTag, LocalExecutorBu
 
 export type LocalExecutor = LocalExecutorBundle["executor"];
 
-class LocalExecutorDisposeError extends Data.TaggedError(
-  "LocalExecutorDisposeError",
-)<{
+class LocalExecutorDisposeError extends Data.TaggedError("LocalExecutorDisposeError")<{
   readonly operation: "createHandle" | "disposeExecutor" | "disposeRuntime";
   readonly cause: unknown;
 }> {}
@@ -131,13 +120,10 @@ const handleOrNull = (promise: ReturnType<typeof createExecutorHandle>) =>
   Effect.runPromise(
     Effect.tryPromise({
       try: () => promise,
-      catch: (cause) =>
-        new LocalExecutorDisposeError({ operation: "createHandle", cause }),
+      catch: (cause) => new LocalExecutorDisposeError({ operation: "createHandle", cause }),
     }).pipe(
       Effect.catch(() =>
-        Effect.succeed<Awaited<ReturnType<typeof createExecutorHandle>> | null>(
-          null,
-        ),
+        Effect.succeed<Awaited<ReturnType<typeof createExecutorHandle>> | null>(null),
       ),
     ),
   );
@@ -145,7 +131,8 @@ const handleOrNull = (promise: ReturnType<typeof createExecutorHandle>) =>
 const createLocalExecutorLayer = () => {
   const { path: dbPath, legacySecrets } = resolveDbPath();
 
-  return Layer.effect(LocalExecutorTag)(Effect.gen(function* () {
+  return Layer.effect(LocalExecutorTag)(
+    Effect.gen(function* () {
       const sqlite = yield* Effect.acquireRelease(
         Effect.sync(() => new Database(dbPath)),
         (conn) => Effect.sync(() => conn.close()),
@@ -183,9 +170,7 @@ const createLocalExecutorLayer = () => {
       // ordering. Without this, a package listed in both surfaces would
       // boot twice (double routes, double in-memory storage).
       const staticPackageNames = new Set(
-        staticPlugins
-          .map((p) => p.packageName)
-          .filter((n): n is string => !!n),
+        staticPlugins.map((p) => p.packageName).filter((n): n is string => !!n),
       );
       const dedupedDynamic = dynamicPlugins.filter((p) => {
         if (p.packageName && staticPackageNames.has(p.packageName)) {
@@ -261,9 +246,7 @@ export const disposeExecutor = async (): Promise<void> => {
   const currentHandlePromise = sharedHandlePromise;
   sharedHandlePromise = null;
 
-  const handle = currentHandlePromise
-    ? await handleOrNull(currentHandlePromise)
-    : null;
+  const handle = currentHandlePromise ? await handleOrNull(currentHandlePromise) : null;
   if (handle) {
     await ignorePromiseFailure("disposeExecutor", () => handle.dispose());
   }

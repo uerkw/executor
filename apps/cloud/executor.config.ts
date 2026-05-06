@@ -2,10 +2,7 @@ import { defineExecutorConfig } from "@executor-js/sdk";
 import { openApiPlugin } from "@executor-js/plugin-openapi";
 import { mcpPlugin } from "@executor-js/plugin-mcp";
 import { graphqlPlugin } from "@executor-js/plugin-graphql";
-import {
-  workosVaultPlugin,
-  type WorkOSVaultClient,
-} from "@executor-js/plugin-workos-vault";
+import { workosVaultPlugin, type WorkOSVaultClient } from "@executor-js/plugin-workos-vault";
 
 // ---------------------------------------------------------------------------
 // Single source of truth for the cloud app's plugin list.

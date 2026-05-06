@@ -52,14 +52,6 @@
   "dependencies": {
     "@executor-js/sdk": "workspace:*"
   },
-  "peerDependencies": {
-    "react": "catalog:"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
@@ -69,5 +61,13 @@
     "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   }
 }

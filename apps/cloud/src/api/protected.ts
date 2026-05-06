@@ -3,10 +3,7 @@
 // harness can't load in the workerd test runtime.
 
 import { HttpApiSwagger } from "effect/unstable/httpapi";
-import {
-  HttpRouter,
-  HttpServerRequest,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { Effect, Layer } from "effect";
 
 import {
@@ -26,11 +23,7 @@ import { DbService } from "../services/db";
 import { makeExecutionStack } from "../services/execution-stack";
 import { HttpResponseError } from "./error-response";
 import { RequestScopedServicesLive } from "./layers";
-import {
-  ProtectedCloudApi,
-  ProtectedCloudApiLive,
-  RouterConfig,
-} from "./protected-layers";
+import { ProtectedCloudApi, ProtectedCloudApiLive, RouterConfig } from "./protected-layers";
 import { requestScopedMiddleware } from "./request-scoped";
 
 // Pre-compute the per-plugin `Effect.provideService(extensionService,
@@ -119,9 +112,7 @@ const ExecutionStackMiddleware = HttpRouter.middleware<{
 // the layer rebuilds per HTTP request, satisfying Cloudflare Workers'
 // I/O isolation. Exposed as a factory so tests can swap in a counting
 // fake — see `apps/cloud/src/api.request-scope.node.test.ts`.
-export const makeProtectedApiLive = (
-  rsLive: Layer.Layer<DbService | UserStoreService>,
-) => {
+export const makeProtectedApiLive = (rsLive: Layer.Layer<DbService | UserStoreService>) => {
   const protectedMiddleware = ExecutionStackMiddleware.combine(
     requestScopedMiddleware(rsLive),
   ).layer;

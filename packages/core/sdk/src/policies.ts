@@ -184,9 +184,7 @@ export const resolveToolPolicy = (
 //      policies in evaluation order from the API.
 // ---------------------------------------------------------------------------
 
-const liftPlugin = (
-  defaultRequiresApproval: boolean | undefined,
-): EffectivePolicy =>
+const liftPlugin = (defaultRequiresApproval: boolean | undefined): EffectivePolicy =>
   defaultRequiresApproval
     ? { action: "require_approval", source: "plugin-default" }
     : { action: "approve", source: "plugin-default" };
@@ -245,8 +243,4 @@ export const rowToToolPolicy = (row: ToolPolicyRow): ToolPolicy => ({
 // inputs with effect/Schema.
 // ---------------------------------------------------------------------------
 
-export const ToolPolicyActionSchema = Schema.Literals([
-  "approve",
-  "require_approval",
-  "block",
-]);
+export const ToolPolicyActionSchema = Schema.Literals(["approve", "require_approval", "block"]);

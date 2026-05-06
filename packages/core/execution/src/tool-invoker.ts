@@ -60,9 +60,7 @@ type ToolResultEnvelope = {
 };
 
 const isToolResultEnvelope = (value: unknown): value is ToolResultEnvelope =>
-  value !== null &&
-  typeof value === "object" &&
-  ("error" in value || "data" in value);
+  value !== null && typeof value === "object" && ("error" in value || "data" in value);
 
 const hasToolResultError = (
   value: ToolResultEnvelope,
@@ -129,7 +127,11 @@ export const makeExecutorToolInvoker = (
 
 const isElicitationDeclinedError = (
   value: unknown,
-): value is { readonly _tag: "ElicitationDeclinedError"; readonly toolId: string; readonly action: "cancel" | "decline" } =>
+): value is {
+  readonly _tag: "ElicitationDeclinedError";
+  readonly toolId: string;
+  readonly action: "cancel" | "decline";
+} =>
   Predicate.isTagged(value, "ElicitationDeclinedError") &&
   value !== null &&
   typeof value === "object" &&

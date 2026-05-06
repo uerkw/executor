@@ -1,8 +1,5 @@
 import { Cause, Data, Effect, Predicate, Result } from "effect";
-import {
-  HttpServerRespondable,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpServerRespondable, HttpServerResponse } from "effect/unstable/http";
 
 import { captureCause } from "../observability";
 

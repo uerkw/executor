@@ -61,8 +61,7 @@ export const OAUTH2_DEFAULT_TIMEOUT_MS = 20_000;
 // PKCE (RFC 7636) — straight delegation to `oauth4webapi`
 // ---------------------------------------------------------------------------
 
-export const createPkceCodeVerifier = (): string =>
-  oauth.generateRandomCodeVerifier();
+export const createPkceCodeVerifier = (): string => oauth.generateRandomCodeVerifier();
 
 export const createPkceCodeChallenge = (verifier: string): Promise<string> =>
   oauth.calculatePKCECodeChallenge(verifier);
@@ -165,9 +164,7 @@ const asFromTokenUrlAndIssuer = (
   return options.idTokenSigningAlgValuesSupported
     ? {
         ...withIssuer,
-        id_token_signing_alg_values_supported: [
-          ...options.idTokenSigningAlgValuesSupported,
-        ],
+        id_token_signing_alg_values_supported: [...options.idTokenSigningAlgValuesSupported],
       }
     : withIssuer;
 };
@@ -194,9 +191,7 @@ const oauth4webapiRequestOptions = (
     signal: AbortSignal.timeout(timeoutMs ?? OAUTH2_DEFAULT_TIMEOUT_MS),
   };
   if (isLoopbackHttpUrl(targetUrl)) {
-    (options as { [oauth.allowInsecureRequests]?: boolean })[
-      oauth.allowInsecureRequests
-    ] = true;
+    (options as { [oauth.allowInsecureRequests]?: boolean })[oauth.allowInsecureRequests] = true;
   }
   return options;
 };
@@ -211,9 +206,7 @@ const pickClientAuth = (
     : oauth.ClientSecretPost(clientSecret);
 };
 
-const tokenResponseFrom = (
-  r: oauth.TokenEndpointResponse,
-): OAuth2TokenResponse => ({
+const tokenResponseFrom = (r: oauth.TokenEndpointResponse): OAuth2TokenResponse => ({
   access_token: r.access_token,
   token_type: r.token_type,
   refresh_token: r.refresh_token,
@@ -227,15 +220,14 @@ const tokenResponseFrom = (
 // its claims against the AS metadata and rejects mismatches we don't care
 // about. Strip the field before delegation.
 const stripIdToken = async (response: Response): Promise<Response> => {
-  const body = await response.clone().json().then(
-    (value: unknown) => value,
-    () => null,
-  );
-  if (
-    !body ||
-    typeof body !== "object" ||
-    !("id_token" in (body as Record<string, unknown>))
-  ) {
+  const body = await response
+    .clone()
+    .json()
+    .then(
+      (value: unknown) => value,
+      () => null,
+    );
+  if (!body || typeof body !== "object" || !("id_token" in (body as Record<string, unknown>))) {
     return response;
   }
   const { id_token: _ignored, ...rest } = body as Record<string, unknown>;
@@ -252,11 +244,7 @@ const processTokenEndpointResponse = async (
   response: Response,
 ): Promise<OAuth2TokenResponse> =>
   tokenResponseFrom(
-    await oauth.processGenericTokenEndpointResponse(
-      as,
-      client,
-      await stripIdToken(response),
-    ),
+    await oauth.processGenericTokenEndpointResponse(as, client, await stripIdToken(response)),
   );
 
 // ---------------------------------------------------------------------------
@@ -282,14 +270,10 @@ export const exchangeAuthorizationCode = (
   Effect.tryPromise({
     try: async () => {
       const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-        idTokenSigningAlgValuesSupported:
-          input.idTokenSigningAlgValuesSupported,
+        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
       });
       const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(
-        input.clientSecret,
-        input.clientAuth ?? "body",
-      );
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
       // `authorizationCodeGrantRequest` requires its `callbackParameters`
       // to have been returned from `validateAuthResponse`. Our public API
       // takes the `code` directly (the UI already validated `state` by
@@ -334,10 +318,7 @@ export const exchangeClientCredentials = (
     try: async () => {
       const as = asFromTokenUrl(input.tokenUrl);
       const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(
-        input.clientSecret,
-        input.clientAuth ?? "body",
-      );
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
       const params = new URLSearchParams();
       if (input.scopes && input.scopes.length > 0) {
         params.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
@@ -349,11 +330,7 @@ export const exchangeClientCredentials = (
         params,
         oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
       );
-      const result = await oauth.processClientCredentialsResponse(
-        as,
-        client,
-        response,
-      );
+      const result = await oauth.processClientCredentialsResponse(as, client, response);
       return tokenResponseFrom(result);
     },
     catch: toOAuth2Error,
@@ -382,14 +359,10 @@ export const refreshAccessToken = (
   Effect.tryPromise({
     try: async () => {
       const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-        idTokenSigningAlgValuesSupported:
-          input.idTokenSigningAlgValuesSupported,
+        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
       });
       const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(
-        input.clientSecret,
-        input.clientAuth ?? "body",
-      );
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
       const additionalParameters =
         input.scopes && input.scopes.length > 0
           ? new URLSearchParams({

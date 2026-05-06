@@ -3,11 +3,7 @@ import { isConfigOrTooling, unwrapExpression } from "../utils.js";
 const message =
   "Avoid primitive casts like value as string. Remove redundant casts, or normalize unknown data with Schema/a typed adapter before use. Skill: wrdn-effect-schema-boundaries.";
 
-const primitiveTypes = new Set([
-  "TSStringKeyword",
-  "TSNumberKeyword",
-  "TSBooleanKeyword",
-]);
+const primitiveTypes = new Set(["TSStringKeyword", "TSNumberKeyword", "TSBooleanKeyword"]);
 
 const isPrimitiveType = (node) => primitiveTypes.has(node?.type);
 
@@ -31,10 +27,7 @@ export default {
     if (isConfigOrTooling(context.filename)) return {};
 
     const check = (node) => {
-      if (
-        isPrimitiveType(node.typeAnnotation) &&
-        isPossiblyRedundantExpression(node.expression)
-      ) {
+      if (isPrimitiveType(node.typeAnnotation) && isPossiblyRedundantExpression(node.expression)) {
         context.report({ node, message });
       }
     };

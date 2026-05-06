@@ -304,8 +304,7 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
                   ? yield* workos.getUser(inv.inviterUserId).pipe(
                       Effect.map((u) => ({
                         email: u.email,
-                        name:
-                          [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
+                        name: [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
                       })),
                       Effect.orElseSucceed(() => null),
                     )
@@ -354,20 +353,15 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
           // through login again. The acceptance has already succeeded
           // server-side, so the next login will pick up the membership.
           const refreshed = yield* workos.refreshSession(session.sealedSession, org.id);
-          const verified = refreshed
-            ? yield* workos.authenticateSealedSession(refreshed)
-            : null;
+          const verified = refreshed ? yield* workos.authenticateSealedSession(refreshed) : null;
 
           if (!refreshed || !verified || verified.organizationId !== org.id) {
-            yield* Effect.logWarning(
-              "acceptInvitation: unable to attach org to current session",
-              {
-                userId: session.accountId,
-                orgId: org.id,
-                refreshReturnedSession: refreshed != null,
-                verifiedOrgId: verified?.organizationId ?? null,
-              },
-            );
+            yield* Effect.logWarning("acceptInvitation: unable to attach org to current session", {
+              userId: session.accountId,
+              orgId: org.id,
+              refreshReturnedSession: refreshed != null,
+              verifiedOrgId: verified?.organizationId ?? null,
+            });
             deleteCookie("wos-session", { path: "/" });
             return yield* new WorkOSError();
           }

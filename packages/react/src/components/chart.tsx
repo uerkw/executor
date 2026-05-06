@@ -317,10 +317,7 @@ function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key:
 
   if (typeof payload[key] === "string") {
     configLabelKey = payload[key];
-  } else if (
-    payloadPayload &&
-    typeof payloadPayload[key] === "string"
-  ) {
+  } else if (payloadPayload && typeof payloadPayload[key] === "string") {
     configLabelKey = payloadPayload[key];
   }
 

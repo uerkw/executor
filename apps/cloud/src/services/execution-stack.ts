@@ -20,11 +20,9 @@ export const makeExecutionStack = (
   organizationName: string,
 ) =>
   Effect.gen(function* () {
-    const executor = yield* createScopedExecutor(
-      userId,
-      organizationId,
-      organizationName,
-    ).pipe(Effect.withSpan("McpSessionDO.createScopedExecutor"));
+    const executor = yield* createScopedExecutor(userId, organizationId, organizationName).pipe(
+      Effect.withSpan("McpSessionDO.createScopedExecutor"),
+    );
     const codeExecutor = makeDynamicWorkerExecutor({ loader: env.LOADER });
     const autumn = yield* AutumnService;
     const engine = withExecutionUsageTracking(

@@ -14,11 +14,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 
 import { ScopeId, SecretId } from "@executor-js/sdk";
 
-import {
-  asOrg,
-  asUser,
-  testUserOrgScopeId,
-} from "./__test-harness__/api-harness";
+import { asOrg, asUser, testUserOrgScopeId } from "./__test-harness__/api-harness";
 
 const MINIMAL_OPENAPI_SPEC = JSON.stringify({
   openapi: "3.0.0",
@@ -108,7 +104,10 @@ const startEchoServer = () => {
 
   return new Promise<{
     readonly baseUrl: string;
-    readonly requests: () => ReadonlyArray<{ readonly path: string; readonly suffix: string | null }>;
+    readonly requests: () => ReadonlyArray<{
+      readonly path: string;
+      readonly suffix: string | null;
+    }>;
     readonly close: () => Promise<void>;
   }>((resolveServer) => {
     server.listen(0, "127.0.0.1", () => {
@@ -225,10 +224,7 @@ const startGraphqlServer = () => {
 };
 
 const createCloudMcpServer = () => {
-  const server = new McpServer(
-    { name: "cloud-e2e-mcp", version: "1.0.0" },
-    { capabilities: {} },
-  );
+  const server = new McpServer({ name: "cloud-e2e-mcp", version: "1.0.0" }, { capabilities: {} });
 
   server.registerTool(
     "simple_echo",
@@ -831,9 +827,7 @@ describe("sources api (HTTP)", () => {
       const sources = yield* asOrg(orgId, (client) =>
         client.sources.list({ params: { scopeId: ScopeId.make(orgId) } }),
       );
-      expect(sources.find((source) => source.id === namespace)?.scopeId).toBe(
-        ScopeId.make(orgId),
-      );
+      expect(sources.find((source) => source.id === namespace)?.scopeId).toBe(ScopeId.make(orgId));
     }),
   );
 

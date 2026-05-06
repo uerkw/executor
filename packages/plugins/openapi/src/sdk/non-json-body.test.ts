@@ -39,14 +39,12 @@ const memoryProvider: SecretProvider = (() => {
   return {
     key: "memory",
     writable: true,
-    get: (id, scope) =>
-      Effect.sync(() => store.get(`${scope}:${id}`) ?? null),
+    get: (id, scope) => Effect.sync(() => store.get(`${scope}:${id}`) ?? null),
     set: (id, value, scope) =>
       Effect.sync(() => {
         store.set(`${scope}:${id}`, value);
       }),
-    delete: (id, scope) =>
-      Effect.sync(() => store.delete(`${scope}:${id}`)),
+    delete: (id, scope) => Effect.sync(() => store.delete(`${scope}:${id}`)),
     list: () => Effect.sync(() => []),
   };
 })();
@@ -64,31 +62,29 @@ type Captured = {
 
 const startEchoServer = () =>
   Effect.acquireRelease(
-    Effect.callback<{ baseUrl: string; captured: Captured; close: () => void }>(
-      (resume) => {
-        const captured: Captured = { contentType: "", body: Buffer.alloc(0) };
-        const server = createServer((req, res) => {
-          const chunks: Buffer[] = [];
-          req.on("data", (c: Buffer) => chunks.push(c));
-          req.on("end", () => {
-            captured.contentType = req.headers["content-type"] ?? "";
-            captured.body = Buffer.concat(chunks);
-            res.writeHead(200, { "content-type": "application/json" });
-            res.end(JSON.stringify({ ok: true }));
-          });
+    Effect.callback<{ baseUrl: string; captured: Captured; close: () => void }>((resume) => {
+      const captured: Captured = { contentType: "", body: Buffer.alloc(0) };
+      const server = createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          captured.contentType = req.headers["content-type"] ?? "";
+          captured.body = Buffer.concat(chunks);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
         });
-        server.listen(0, "127.0.0.1", () => {
-          const port = (server.address() as AddressInfo).port;
-          resume(
-            Effect.succeed({
-              baseUrl: `http://127.0.0.1:${port}`,
-              captured,
-              close: () => server.close(),
-            }),
-          );
-        });
-      },
-    ),
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const port = (server.address() as AddressInfo).port;
+        resume(
+          Effect.succeed({
+            baseUrl: `http://127.0.0.1:${port}`,
+            captured,
+            close: () => server.close(),
+          }),
+        );
+      });
+    }),
     (s) => Effect.sync(() => s.close()),
   );
 
@@ -188,11 +184,7 @@ describe("OpenAPI non-JSON request body dispatch", () => {
       });
 
       const xml = '<?xml version="1.0"?><root><name>Acme</name></root>';
-      yield* executor.tools.invoke(
-        "xml.body.submit",
-        { body: xml },
-        autoApprove,
-      );
+      yield* executor.tools.invoke("xml.body.submit", { body: xml }, autoApprove);
 
       expect(captured.contentType).toBe("application/xml");
       expect(captured.body.toString("utf8")).toBe(xml);
@@ -219,11 +211,7 @@ describe("OpenAPI non-JSON request body dispatch", () => {
         baseUrl,
       });
 
-      yield* executor.tools.invoke(
-        "tx.body.submit",
-        { body: { name: "Acme" } },
-        autoApprove,
-      );
+      yield* executor.tools.invoke("tx.body.submit", { body: { name: "Acme" } }, autoApprove);
 
       expect(captured.contentType).toBe("text/xml");
       const body = captured.body.toString("utf8");
@@ -252,11 +240,7 @@ describe("OpenAPI non-JSON request body dispatch", () => {
         baseUrl,
       });
 
-      yield* executor.tools.invoke(
-        "tp.body.submit",
-        { body: "hello, world" },
-        autoApprove,
-      );
+      yield* executor.tools.invoke("tp.body.submit", { body: "hello, world" }, autoApprove);
 
       expect(captured.contentType).toBe("text/plain");
       expect(captured.body.toString("utf8")).toBe("hello, world");
@@ -284,11 +268,7 @@ describe("OpenAPI non-JSON request body dispatch", () => {
       });
 
       const payload = new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02]);
-      yield* executor.tools.invoke(
-        "bin.body.submit",
-        { body: payload },
-        autoApprove,
-      );
+      yield* executor.tools.invoke("bin.body.submit", { body: payload }, autoApprove);
 
       expect(captured.contentType).toBe("application/octet-stream");
       expect(captured.body.length).toBe(payload.length);
@@ -349,11 +329,7 @@ describe("OpenAPI non-JSON request body dispatch", () => {
         baseUrl,
       });
 
-      yield* executor.tools.invoke(
-        "mc.body.submit",
-        { body: { name: "Acme" } },
-        autoApprove,
-      );
+      yield* executor.tools.invoke("mc.body.submit", { body: { name: "Acme" } }, autoApprove);
 
       // multipart/form-data was declared first in the spec — it wins,
       // even though the old preferredContent would have picked JSON.

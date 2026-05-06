@@ -62,7 +62,9 @@ describe("keychain plugin", () => {
         const resolved = yield* executor.secrets.get(testId);
         expect(resolved).toBe("keychain-test-value");
       }).pipe(
-        Effect.ensuring(executor.secrets.remove(testId).pipe(Effect.orElseSucceed(() => undefined))),
+        Effect.ensuring(
+          executor.secrets.remove(testId).pipe(Effect.orElseSucceed(() => undefined)),
+        ),
       );
     }),
   );

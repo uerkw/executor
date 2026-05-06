@@ -53,8 +53,7 @@ const TestMcpAuthLive = Layer.succeed(McpAuth)({
 });
 
 const TestMcpOrganizationAuthLive = Layer.succeed(McpOrganizationAuth)({
-  authorize: (_accountId, organizationId) =>
-    Effect.succeed(!organizationId.startsWith("revoked_")),
+  authorize: (_accountId, organizationId) => Effect.succeed(!organizationId.startsWith("revoked_")),
 });
 
 // ---------------------------------------------------------------------------
@@ -112,14 +111,14 @@ const handleSeedOrg = async (
 // OTLPTraceExporter — not Durable-Object-specific) to stand in.
 const testMcpFetch = HttpEffect.toWebHandler(
   mcpApp.pipe(
-    Effect.provide(
-      Layer.mergeAll(TestMcpAuthLive, TestMcpOrganizationAuthLive, DoTelemetryLive),
-    ),
+    Effect.provide(Layer.mergeAll(TestMcpAuthLive, TestMcpOrganizationAuthLive, DoTelemetryLive)),
   ),
 );
 
 const realAuthMcpFetch = HttpEffect.toWebHandler(
-  mcpApp.pipe(Effect.provide(Layer.mergeAll(McpAuthLive, McpOrganizationAuthLive, DoTelemetryLive))),
+  mcpApp.pipe(
+    Effect.provide(Layer.mergeAll(McpAuthLive, McpOrganizationAuthLive, DoTelemetryLive)),
+  ),
 );
 
 export default {

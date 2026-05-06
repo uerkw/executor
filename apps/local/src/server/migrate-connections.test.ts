@@ -40,9 +40,7 @@ const columnNames = (db: Database, table: string): ReadonlyArray<string> =>
 const MigratedMcpConfig = Schema.Struct({
   auth: Schema.optional(Schema.Unknown),
 });
-const decodeMigratedMcpConfig = Schema.decodeUnknownSync(
-  Schema.fromJsonString(MigratedMcpConfig),
-);
+const decodeMigratedMcpConfig = Schema.decodeUnknownSync(Schema.fromJsonString(MigratedMcpConfig));
 
 const MigratedOpenApiOAuth2 = Schema.Struct({
   kind: Schema.Literal("oauth2"),
@@ -130,9 +128,7 @@ describe("migrateLegacyConnections", () => {
     expect(source.auth_connection_id).toBe("mcp-oauth2-remote-mcp");
 
     const ownedSecrets = db
-      .prepare(
-        "SELECT id, owned_by_connection_id FROM secret WHERE scope_id = ? ORDER BY id",
-      )
+      .prepare("SELECT id, owned_by_connection_id FROM secret WHERE scope_id = ? ORDER BY id")
       .all("scope-1");
     expect(ownedSecrets).toEqual([
       {
@@ -208,9 +204,7 @@ describe("migrateLegacyConnections", () => {
     await migrateLegacyConnections(db);
 
     const connection = db
-      .prepare(
-        "SELECT id, provider, access_token_secret_id FROM connection WHERE scope_id = ?",
-      )
+      .prepare("SELECT id, provider, access_token_secret_id FROM connection WHERE scope_id = ?")
       .get("scope-1") as
       | { readonly id: string; readonly provider: string; readonly access_token_secret_id: string }
       | undefined;

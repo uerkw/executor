@@ -24,10 +24,7 @@ import { combinedSchema } from "./db";
 
 describe("combinedSchema", () => {
   it("spreads every cloud + executor schema export", () => {
-    const expected = new Set([
-      ...Object.keys(cloudSchema),
-      ...Object.keys(executorSchema),
-    ]);
+    const expected = new Set([...Object.keys(cloudSchema), ...Object.keys(executorSchema)]);
     for (const key of expected) {
       expect(combinedSchema, `combinedSchema missing "${key}"`).toHaveProperty(key);
     }
