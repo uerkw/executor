@@ -391,7 +391,7 @@ layer(TestLayer)("OpenAPI oauth refresh", (it) => {
         ),
       );
       expect(flipped.provider).toBe("openapi:oauth2");
-      expect(flipped.message).toBe("OAuth refresh failed");
+      expect(flipped.message).toMatch(/OAuth refresh failed: .*revoked/i);
     }),
   );
 });
