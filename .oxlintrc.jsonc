@@ -12,6 +12,7 @@
     "executor/no-error-constructor": "error",
     "executor/no-instanceof-error": "error",
     "executor/no-instanceof-tagged-error": "error",
+    "executor/no-json-parse": "error",
     "executor/no-manual-tag-check": "error",
     "executor/no-promise-catch": "error",
     "executor/no-promise-reject": "error",
@@ -47,6 +48,7 @@
       "rules": {
         "executor/no-error-constructor": "off",
         "executor/no-instanceof-error": "off",
+        "executor/no-json-parse": "off",
         "executor/no-promise-catch": "off",
         "executor/no-promise-reject": "off",
         "executor/no-try-catch-or-throw": "off",
@@ -58,6 +60,7 @@
       "rules": {
         "executor/no-error-constructor": "off",
         "executor/no-instanceof-error": "off",
+        "executor/no-json-parse": "off",
         "executor/no-try-catch-or-throw": "off",
         "executor/no-unknown-error-message": "off",
       },

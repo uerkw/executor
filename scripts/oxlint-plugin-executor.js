@@ -6,6 +6,7 @@ import noErrorConstructor from "./oxlint-plugin-executor/rules/no-error-construc
 import noInlineObjectTypeAssertion from "./oxlint-plugin-executor/rules/no-inline-object-type-assertion.js";
 import noInstanceofError from "./oxlint-plugin-executor/rules/no-instanceof-error.js";
 import noInstanceofTaggedError from "./oxlint-plugin-executor/rules/no-instanceof-tagged-error.js";
+import noJsonParse from "./oxlint-plugin-executor/rules/no-json-parse.js";
 import noManualTagCheck from "./oxlint-plugin-executor/rules/no-manual-tag-check.js";
 import noPromiseCatch from "./oxlint-plugin-executor/rules/no-promise-catch.js";
 import noPromiseClientSurface from "./oxlint-plugin-executor/rules/no-promise-client-surface.js";
@@ -38,6 +39,7 @@ export default {
     "no-inline-object-type-assertion": noInlineObjectTypeAssertion,
     "no-instanceof-error": noInstanceofError,
     "no-instanceof-tagged-error": noInstanceofTaggedError,
+    "no-json-parse": noJsonParse,
     "no-manual-tag-check": noManualTagCheck,
     "no-promise-catch": noPromiseCatch,
     "no-promise-client-surface": noPromiseClientSurface,
