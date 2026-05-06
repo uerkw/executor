@@ -38,7 +38,7 @@
 import { Duration, Effect, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
-import type { DBAdapter, StorageFailure, TypedAdapter } from "@executor-js/storage-core";
+import type { StorageFailure, TypedAdapter } from "@executor-js/storage-core";
 
 import {
   ConnectionRefreshError,
@@ -87,6 +87,7 @@ import {
   type OAuth2Error,
   refreshAccessToken,
 } from "./oauth-helpers";
+import type { ScopedDBAdapter } from "./scoped-adapter";
 
 // ---------------------------------------------------------------------------
 // Session payload — persisted under `oauth2_session.payload` as opaque
@@ -254,9 +255,9 @@ export interface OAuthServiceDeps {
    *  fall through the scope stack; writes stamp the scope the caller
    *  named (`tokenScope` on start input). */
   readonly adapter: TypedAdapter<CoreSchema>;
-  /** Raw adapter for opening transactions — the typed one doesn't expose
-   *  `.transaction` directly. */
-  readonly rawAdapter: DBAdapter;
+  /** Scoped adapter for opening transactions — the typed one doesn't
+   *  expose `.transaction` directly. */
+  readonly rawAdapter: ScopedDBAdapter;
   /** Resolves client-id / client-secret refs at start + refresh time.
    *  A `null` return means "secret row is gone" and aborts the flow. */
   readonly secretsGet: (id: string) => Effect.Effect<string | null, StorageFailure>;
