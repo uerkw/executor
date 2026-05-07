@@ -261,9 +261,9 @@ export const makeOAuth2Service = (
       })();
 
       const authServer = authorizationServerUrl
-        ? yield* discoverAuthorizationServerMetadata(authorizationServerUrl, { httpClientLayer }).pipe(
-            Effect.catchTag("OAuthDiscoveryError", () => Effect.succeed(null)),
-          )
+        ? yield* discoverAuthorizationServerMetadata(authorizationServerUrl, {
+            httpClientLayer,
+          }).pipe(Effect.catchTag("OAuthDiscoveryError", () => Effect.succeed(null)))
         : null;
 
       // Dynamic registration is only viable when the AS advertises a

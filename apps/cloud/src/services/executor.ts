@@ -64,7 +64,9 @@ export const createScopedExecutor = (
     const { db } = yield* DbService;
 
     const plugins = orgPlugins();
-    const httpClientLayer = makeHostedHttpClientLayer();
+    const httpClientLayer = makeHostedHttpClientLayer({
+      allowLocalNetwork: env.NODE_ENV === "test",
+    });
     const schema = collectSchemas(plugins);
     const adapter = makePostgresAdapter({ db, schema });
     const blobs = makePostgresBlobStore({ db });

@@ -96,7 +96,7 @@ export const validateHostedOutboundUrl = (
   });
 
 const guardFetch = (
-  fetch: typeof globalThis.fetch,
+  underlying: typeof globalThis.fetch,
   options: HostedHttpClientOptions,
 ): typeof globalThis.fetch =>
   (async (input, init) => {
@@ -105,7 +105,7 @@ const guardFetch = (
     for (let redirects = 0; redirects <= maxRedirects; redirects++) {
       const url = current instanceof Request ? current.url : String(current);
       Effect.runSync(validateHostedOutboundUrl(url, options));
-      const response = await fetch(current, { ...init, redirect: "manual" });
+      const response = await underlying(current, { ...init, redirect: "manual" });
       if (
         response.status >= 300 &&
         response.status < 400 &&
@@ -117,7 +117,7 @@ const guardFetch = (
       }
       return response;
     }
-    return fetch(current, { ...init, redirect: "manual" });
+    return underlying(current, { ...init, redirect: "manual" });
   }) as typeof globalThis.fetch;
 
 export const makeHostedHttpClientLayer = (
@@ -129,7 +129,9 @@ export const makeHostedHttpClientLayer = (
         ? Layer.succeed(FetchHttpClient.Fetch)(guardFetch(options.fetch, options))
         : Layer.effect(
             FetchHttpClient.Fetch,
-            Effect.map(Effect.service(FetchHttpClient.Fetch), (fetch) => guardFetch(fetch, options)),
+            Effect.map(Effect.service(FetchHttpClient.Fetch), (underlying) =>
+              guardFetch(underlying, options),
+            ),
           ),
     ),
   );

@@ -336,9 +336,9 @@ describe("tenant isolation (HTTP)", () => {
         client.connections.usages({
           params: { scopeId: ScopeId.make(orgB), connectionId: connectionIdA },
         }),
-      ).pipe(Effect.result);
+      );
 
-      if (Result.isSuccess(usages)) expect(usages.success).toEqual([]);
+      expect(usages).toEqual([]);
     }),
   );
 

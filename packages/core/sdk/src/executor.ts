@@ -2458,7 +2458,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
       usagesForConnection: credentialBindingUsagesForConnection,
     };
 
-  const oauthBundle = makeOAuth2Service({
+    const oauthBundle = makeOAuth2Service({
       adapter: core,
       rawAdapter: adapter,
       secretsGet: (id) =>

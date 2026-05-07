@@ -26,11 +26,8 @@ describe("hosted outbound HTTP client", () => {
         "http://192.168.1.10/mcp",
         "http://169.254.169.254/latest/meta-data/",
       ]) {
-        const result = yield* validateHostedOutboundUrl(url).pipe(Effect.result);
-        expect(Result.isFailure(result)).toBe(true);
-        if (Result.isFailure(result)) {
-          expect(result.failure).toBeInstanceOf(HostedOutboundRequestBlocked);
-        }
+        const error = yield* validateHostedOutboundUrl(url).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(HostedOutboundRequestBlocked);
       }
     }),
   );
