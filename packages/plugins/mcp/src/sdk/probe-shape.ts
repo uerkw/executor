@@ -30,7 +30,7 @@
 // round-trip, no DCR — every non-MCP endpoint exits here.
 // ---------------------------------------------------------------------------
 
-import { Data, Duration, Effect, Option, Schema } from "effect";
+import { Data, Duration, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 /** MCP initialize request body used as the shape probe. Any real MCP
@@ -97,6 +97,7 @@ export type McpShapeProbeResult =
 export interface ProbeOptions {
   /** Abort the request after this many ms. Default 8000. */
   readonly timeoutMs?: number;
+  readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   readonly headers?: Record<string, string>;
   readonly queryParams?: Record<string, string>;
 }
@@ -191,7 +192,7 @@ export const probeMcpEndpointShape = (
         reason: `unexpected status ${postResponse.status} for initialize`,
       } as const;
     }).pipe(
-      Effect.provide(FetchHttpClient.layer),
+      Effect.provide(options.httpClientLayer ?? FetchHttpClient.layer),
       Effect.mapError(
         (cause) =>
           new ProbeTransportError({

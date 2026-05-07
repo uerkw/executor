@@ -1,6 +1,6 @@
 import { Effect, Option, Schema } from "effect";
 import type { Layer } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/unstable/http";
 
 import { GraphqlGroup } from "../api/group";
 import { GraphqlExtensionService, GraphqlHandlers } from "../api/handlers";
@@ -916,15 +916,14 @@ const makeGraphqlExtension = (
 export type GraphqlPluginExtension = ReturnType<typeof makeGraphqlExtension>;
 
 export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
-  const httpClientLayer = options?.httpClientLayer ?? FetchHttpClient.layer;
-
   return {
     id: "graphql" as const,
     packageName: "@executor-js/plugin-graphql",
     schema: graphqlSchema,
     storage: (deps): GraphqlStore => makeDefaultGraphqlStore(deps),
 
-    extension: (ctx) => makeGraphqlExtension(ctx, httpClientLayer, options?.configFile),
+    extension: (ctx) =>
+      makeGraphqlExtension(ctx, options?.httpClientLayer ?? ctx.httpClientLayer, options?.configFile),
 
     staticSources: (self) => [
       {
@@ -969,6 +968,7 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
 
     invokeTool: ({ ctx, toolRow, args }) =>
       Effect.gen(function* () {
+        const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
         // toolRow.scope_id is the resolved owning scope of the tool
         // (innermost-wins from the executor's stack). The matching
         // graphql_operation + graphql_source rows live at the same
@@ -1081,8 +1081,9 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
 
     usagesForConnection: () => Effect.succeed([]),
 
-    detect: ({ url }) =>
+    detect: ({ ctx, url }) =>
       Effect.gen(function* () {
+        const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
         const trimmed = url.trim();
         if (!trimmed) return null;
         const parsed = yield* Effect.try({

@@ -233,6 +233,13 @@ export { makeOAuth2Service, type OAuthServiceDeps } from "./oauth-service";
 export type { ScopedDBAdapter, ScopedTypedAdapter } from "./scoped-adapter";
 
 export {
+  HostedOutboundRequestBlocked,
+  makeHostedHttpClientLayer,
+  validateHostedOutboundUrl,
+  type HostedHttpClientOptions,
+} from "./hosted-http-client";
+
+export {
   OAuthDiscoveryError,
   OAuthAuthorizationServerMetadataSchema,
   OAuthClientInformationSchema,

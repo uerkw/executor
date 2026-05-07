@@ -10,7 +10,13 @@
 
 import { Effect } from "effect";
 
-import { Scope, ScopeId, collectSchemas, createExecutor } from "@executor-js/sdk";
+import {
+  Scope,
+  ScopeId,
+  collectSchemas,
+  createExecutor,
+  makeHostedHttpClientLayer,
+} from "@executor-js/sdk";
 import { makePostgresAdapter, makePostgresBlobStore } from "@executor-js/storage-postgres";
 
 import { env } from "cloudflare:workers";
@@ -58,6 +64,7 @@ export const createScopedExecutor = (
     const { db } = yield* DbService;
 
     const plugins = orgPlugins();
+    const httpClientLayer = makeHostedHttpClientLayer();
     const schema = collectSchemas(plugins);
     const adapter = makePostgresAdapter({ db, schema });
     const blobs = makePostgresBlobStore({ db });
@@ -82,6 +89,7 @@ export const createScopedExecutor = (
       adapter,
       blobs,
       plugins,
+      httpClientLayer,
       onElicitation: "accept-all",
     });
   });

@@ -1,4 +1,15 @@
-import { Duration, Effect, Exit, Option, Predicate, Result, Scope, ScopedCache } from "effect";
+import {
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Predicate,
+  Result,
+  Scope,
+  ScopedCache,
+} from "effect";
+import type { HttpClient } from "effect/unstable/http";
 
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 
@@ -848,6 +859,7 @@ export interface McpPluginOptions {
    * `process.env`. Only enable for trusted single-user contexts.
    */
   readonly dangerouslyAllowStdioMCP?: boolean;
+  readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   /** If provided, source add/remove is mirrored to executor.jsonc
    *  (best-effort — file errors are logged, not raised). */
   readonly configFile?: ConfigFileSink;
@@ -937,6 +949,7 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
     storage: (deps): McpBindingStore => makeMcpStore(deps),
 
     extension: (ctx) => {
+      const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
       const probeEndpoint = (input: string | McpProbeEndpointInput) =>
         Effect.gen(function* () {
           const endpoint = typeof input === "string" ? input : input.endpoint;
@@ -994,6 +1007,7 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
           // probe and be misclassified as MCP. The shape probe rejects
           // anything whose initialize response isn't 2xx or 401+Bearer.
           const shape = yield* probeMcpEndpointShape(trimmed, {
+            httpClientLayer,
             headers: probeHeaders,
             queryParams: probeQueryParams,
           });
@@ -1575,6 +1589,7 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
 
     detect: ({ ctx, url }) =>
       Effect.gen(function* () {
+        const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
         const trimmed = url.trim();
         if (!trimmed) return null;
 
@@ -1610,7 +1625,7 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
 
         // host publishes RFC 9728 + 8414 metadata) would be classified
         // as MCP whenever the cross-plugin detector fans out to us.
-        const shape = yield* probeMcpEndpointShape(trimmed);
+        const shape = yield* probeMcpEndpointShape(trimmed, { httpClientLayer });
         if (shape.kind !== "mcp") return null;
 
         // Confirm OAuth metadata is actually reachable. The shape

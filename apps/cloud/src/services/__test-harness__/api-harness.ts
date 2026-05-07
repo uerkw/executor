@@ -26,7 +26,12 @@ import {
 } from "@executor-js/api/server";
 import { createExecutionEngine } from "@executor-js/execution";
 import { makeQuickJsExecutor } from "@executor-js/runtime-quickjs";
-import { Scope, ScopeId, collectSchemas, createExecutor } from "@executor-js/sdk";
+import {
+  Scope,
+  ScopeId,
+  collectSchemas,
+  createExecutor,
+} from "@executor-js/sdk";
 import { makePostgresAdapter, makePostgresBlobStore } from "@executor-js/storage-postgres";
 import { makeTestWorkOSVaultClient } from "@executor-js/plugin-workos-vault/testing";
 
@@ -61,7 +66,10 @@ const defaultUserFor = (orgId: string) => `default_user_${orgId}`;
 // ---------------------------------------------------------------------------
 
 const fakeVault = makeTestWorkOSVaultClient();
-const testPlugins = executorConfig.plugins({ workosVaultClient: fakeVault });
+const testPlugins = executorConfig.plugins({
+  workosVaultClient: fakeVault,
+});
+const testHttpClientLayer = FetchHttpClient.layer;
 
 const createTestScopedExecutor = (userId: string, orgId: string, orgName: string) =>
   Effect.gen(function* () {
@@ -85,6 +93,7 @@ const createTestScopedExecutor = (userId: string, orgId: string, orgName: string
       adapter,
       blobs,
       plugins,
+      httpClientLayer: testHttpClientLayer,
       onElicitation: "accept-all",
     });
   });

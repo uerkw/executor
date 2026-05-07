@@ -1,6 +1,6 @@
 import { Effect, Option, Predicate, Schema } from "effect";
 import type { Layer } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/unstable/http";
 
 import { OpenApiGroup } from "../api/group";
 import { OpenApiExtensionService, OpenApiHandlers } from "../api/handlers";
@@ -754,8 +754,6 @@ const toOpenApiSourceConfig = (
 const isHttpUrl = (s: string): boolean => s.startsWith("http://") || s.startsWith("https://");
 
 export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
-  const httpClientLayer = options?.httpClientLayer ?? FetchHttpClient.layer;
-
   type RebuildInput = {
     readonly specText: string;
     readonly scope: string;
@@ -902,6 +900,7 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
   // than surface a 500 through the unwhitelisted error channel.
   const refreshSourceInternal = (ctx: PluginCtx<OpenapiStore>, sourceId: string, scope: string) =>
     Effect.gen(function* () {
+      const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
       const existing = yield* ctx.storage.getSource(sourceId, scope);
       if (!existing) return;
       const effective = yield* resolveEffectiveSourceConfig(ctx, existing);
@@ -938,6 +937,7 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
     storage: (deps): OpenapiStore => makeDefaultOpenapiStore(deps),
 
     extension: (ctx) => {
+      const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
       const addSpecInternal = (config: OpenApiSpecConfig) =>
         Effect.gen(function* () {
           // Resolve URL → text and parse BEFORE opening a transaction.
@@ -1173,6 +1173,7 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
 
     invokeTool: ({ ctx, toolRow, args }) =>
       Effect.gen(function* () {
+        const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
         // toolRow.scope_id is the resolved owning scope of the tool
         // (innermost-wins from the executor's stack). The matching
         // openapi_operation + openapi_source rows live at the same
@@ -1313,8 +1314,9 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
     // means stale UI state, which is worth surfacing to the caller.
     refreshSource: ({ ctx, sourceId, scope }) => refreshSourceInternal(ctx, sourceId, scope),
 
-    detect: ({ url }) =>
+    detect: ({ ctx, url }) =>
       Effect.gen(function* () {
+        const httpClientLayer = options?.httpClientLayer ?? ctx.httpClientLayer;
         const trimmed = url.trim();
         if (!trimmed) return null;
         const parsed = yield* Effect.try({

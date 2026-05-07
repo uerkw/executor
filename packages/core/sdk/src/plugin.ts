@@ -1,4 +1,5 @@
 import type { Context, Effect, Layer } from "effect";
+import type { HttpClient } from "effect/unstable/http";
 import type { HttpApiGroup } from "effect/unstable/httpapi";
 import type { DBSchema, StorageFailure } from "@executor-js/storage-core";
 
@@ -102,6 +103,7 @@ export interface PluginCtx<TStore = unknown> {
    */
   readonly scopes: readonly Scope[];
   readonly storage: TStore;
+  readonly httpClientLayer: Layer.Layer<HttpClient.HttpClient>;
 
   readonly core: {
     readonly sources: {

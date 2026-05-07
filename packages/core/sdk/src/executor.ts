@@ -1,4 +1,5 @@
-import { Context, Deferred, Effect, Option, Result, Schema, Semaphore } from "effect";
+import { Context, Deferred, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
+import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
 import { generateKeyBetween } from "fractional-indexing";
 import {
   StorageError,
@@ -341,6 +342,7 @@ export interface ExecutorConfig<TPlugins extends readonly AnyPlugin[] = []> {
    * an options arg.
    */
   readonly onElicitation: OnElicitation;
+  readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
 }
 
 // ---------------------------------------------------------------------------
@@ -2456,7 +2458,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
       usagesForConnection: credentialBindingUsagesForConnection,
     };
 
-    const oauthBundle = makeOAuth2Service({
+  const oauthBundle = makeOAuth2Service({
       adapter: core,
       rawAdapter: adapter,
       secretsGet: (id) =>
@@ -2465,6 +2467,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         ),
       secretsSet: (input) => secretsSet(input),
       connectionsCreate: (input) => connectionsCreate(input),
+      httpClientLayer: config.httpClientLayer,
     });
     connectionProviders.set(oauthBundle.connectionProvider.key, oauthBundle.connectionProvider);
 
@@ -2502,6 +2505,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
       const ctx: PluginCtx<unknown> = {
         scopes,
         storage,
+        httpClientLayer: config.httpClientLayer ?? FetchHttpClient.layer,
         core: {
           sources: {
             register: (input: SourceInput) =>

@@ -373,6 +373,26 @@ describe("sources api (HTTP)", () => {
     }),
   );
 
+  it.effect("openapi.addSpec accepts a public HTTP baseUrl in local mode", () =>
+    Effect.gen(function* () {
+      const org = `org_${crypto.randomUUID()}`;
+
+      const result = yield* asOrg(org, (client) =>
+        client.openapi.addSpec({
+          params: { scopeId: ScopeId.make(org) },
+          payload: {
+            targetScope: ScopeId.make(org),
+            spec: MINIMAL_OPENAPI_SPEC,
+            namespace: `ns_${crypto.randomUUID().replace(/-/g, "_")}`,
+            baseUrl: "http://example.com",
+          },
+        }),
+      );
+
+      expect(result.toolCount).toBe(1);
+    }),
+  );
+
   it.effect("added OpenAPI source can be listed, inspected, and invoked through execution", () =>
     Effect.gen(function* () {
       const server = yield* Effect.acquireRelease(

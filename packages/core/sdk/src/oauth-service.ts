@@ -35,7 +35,7 @@
 // every strategy because refresh semantics are strategy-independent.
 // ---------------------------------------------------------------------------
 
-import { Duration, Effect, Option, Schema } from "effect";
+import { Duration, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import type { StorageFailure, TypedAdapter } from "@executor-js/storage-core";
@@ -183,6 +183,8 @@ export interface OAuthServiceDeps {
   readonly newSessionId?: () => string;
   /** `Date.now()` substitute — tests override to drive TTL behavior. */
   readonly now?: () => number;
+  /** Outbound HTTP client used for OAuth metadata/DCR probes. */
+  readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
 }
 
 const defaultSessionId = (): string => {
@@ -225,6 +227,7 @@ export const makeOAuth2Service = (
 ): { readonly service: OAuthService; readonly connectionProvider: ConnectionProvider } => {
   const now = deps.now ?? (() => Date.now());
   const newSessionId = deps.newSessionId ?? defaultSessionId;
+  const httpClientLayer = deps.httpClientLayer;
 
   // -------------------------------------------------------------------
   // probe
@@ -232,6 +235,7 @@ export const makeOAuth2Service = (
   const probe = (input: OAuthProbeInput): Effect.Effect<OAuthProbeResult, OAuthProbeError> =>
     Effect.gen(function* () {
       const resource = yield* discoverProtectedResourceMetadata(input.endpoint, {
+        httpClientLayer,
         resourceHeaders: input.headers,
         resourceQueryParams: input.queryParams,
       }).pipe(
@@ -257,7 +261,7 @@ export const makeOAuth2Service = (
       })();
 
       const authServer = authorizationServerUrl
-        ? yield* discoverAuthorizationServerMetadata(authorizationServerUrl).pipe(
+        ? yield* discoverAuthorizationServerMetadata(authorizationServerUrl, { httpClientLayer }).pipe(
             Effect.catchTag("OAuthDiscoveryError", () => Effect.succeed(null)),
           )
         : null;
@@ -312,7 +316,7 @@ export const makeOAuth2Service = (
           response.headers["www-authenticate"] ?? response.headers["WWW-Authenticate"];
         return !!wwwAuth && /^\s*bearer\b/i.test(wwwAuth);
       }).pipe(
-        Effect.provide(FetchHttpClient.layer),
+        Effect.provide(httpClientLayer ?? FetchHttpClient.layer),
         Effect.catch(() => Effect.succeed(false)),
       );
 
@@ -344,6 +348,7 @@ export const makeOAuth2Service = (
           scopes: strategy.scopes,
         },
         {
+          httpClientLayer,
           resourceHeaders: input.headers,
           resourceQueryParams: input.queryParams,
         },
