@@ -71,6 +71,20 @@
       "when": 1778128200000,
       "tag": "0009_scoped_credentials_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778177700000,
+      "tag": "0010_repair_mcp_connection_binding_scopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778178300000,
+      "tag": "0011_repair_openapi_connection_binding_scopes",
+      "breakpoints": true
     }
   ]
 }
