@@ -156,6 +156,11 @@ describe("buildAuthorizationUrl", () => {
     expect(url.searchParams.get("scope")).toBe("read,write");
   });
 
+  it("omits scope when no scopes are requested", () => {
+    const url = new URL(buildAuthorizationUrl({ ...baseInput, scopes: [] }));
+    expect(url.searchParams.has("scope")).toBe(false);
+  });
+
   it("merges Google-style extra params without dropping them", () => {
     const url = new URL(
       buildAuthorizationUrl({

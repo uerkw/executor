@@ -433,7 +433,7 @@ describe("beginDynamicAuthorization", () => {
     ),
   );
 
-  it.effect("requests empty scope when only AS-level scopes_supported is advertised", () =>
+  it.effect("omits scope when only AS-level scopes_supported is advertised", () =>
     withOAuthFixture(
       (request, baseUrl) => {
         if (request.url === "/.well-known/oauth-protected-resource") {
@@ -475,7 +475,7 @@ describe("beginDynamicAuthorization", () => {
           expect(body.scope).toBeUndefined();
 
           const authUrl = new URL(result.authorizationUrl);
-          expect(authUrl.searchParams.get("scope")).toBe("");
+          expect(authUrl.searchParams.has("scope")).toBe(false);
         }),
     ),
   );

@@ -923,7 +923,11 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
     storage: (deps): GraphqlStore => makeDefaultGraphqlStore(deps),
 
     extension: (ctx) =>
-      makeGraphqlExtension(ctx, options?.httpClientLayer ?? ctx.httpClientLayer, options?.configFile),
+      makeGraphqlExtension(
+        ctx,
+        options?.httpClientLayer ?? ctx.httpClientLayer,
+        options?.configFile,
+      ),
 
     staticSources: (self) => [
       {
