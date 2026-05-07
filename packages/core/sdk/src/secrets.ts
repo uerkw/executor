@@ -90,3 +90,10 @@ export class SetSecretInput extends Schema.Class<SetSecretInput>("SetSecretInput
    *  writable provider in registration order. */
   provider: Schema.optional(Schema.String),
 }) {}
+
+export class RemoveSecretInput extends Schema.Class<RemoveSecretInput>("RemoveSecretInput")({
+  id: SecretId,
+  /** Scope id whose secret row/value should be removed. Must be one of
+   *  the executor's configured scopes. */
+  targetScope: ScopeId,
+}) {}

@@ -32,7 +32,11 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: { spec: MINIMAL_OPENAPI_SPEC, namespace: namespaceA },
+          payload: {
+            targetScope: ScopeId.make(orgA),
+            spec: MINIMAL_OPENAPI_SPEC,
+            namespace: namespaceA,
+          },
         }),
       );
 
@@ -52,7 +56,11 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: { spec: MINIMAL_OPENAPI_SPEC, namespace: namespaceA },
+          payload: {
+            targetScope: ScopeId.make(orgA),
+            spec: MINIMAL_OPENAPI_SPEC,
+            namespace: namespaceA,
+          },
         }),
       );
 
@@ -72,7 +80,11 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: { spec: MINIMAL_OPENAPI_SPEC, namespace: namespaceA },
+          payload: {
+            targetScope: ScopeId.make(orgA),
+            spec: MINIMAL_OPENAPI_SPEC,
+            namespace: namespaceA,
+          },
         }),
       );
 
@@ -166,6 +178,7 @@ describe("tenant isolation (HTTP)", () => {
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
           payload: {
+            targetScope: ScopeId.make(orgA),
             spec: MINIMAL_OPENAPI_SPEC,
             namespace,
             name: "Org A API",
@@ -177,6 +190,7 @@ describe("tenant isolation (HTTP)", () => {
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgB) },
           payload: {
+            targetScope: ScopeId.make(orgB),
             spec: MINIMAL_OPENAPI_SPEC,
             namespace,
             name: "Org B API",
@@ -189,6 +203,7 @@ describe("tenant isolation (HTTP)", () => {
         client.openapi.updateSource({
           params: { scopeId: ScopeId.make(orgA), namespace },
           payload: {
+            sourceScope: ScopeId.make(orgA),
             name: "Org A Updated API",
             baseUrl: "https://org-a-updated.example.com",
           },

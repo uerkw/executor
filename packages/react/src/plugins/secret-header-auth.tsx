@@ -7,6 +7,12 @@ import { Input } from "../components/input";
 import { SecretForm } from "./secret-form";
 import { SecretPicker, type SecretPickerSecret } from "./secret-picker";
 
+export const secretsForCredentialTarget = (
+  secrets: readonly SecretPickerSecret[],
+  targetScope: ScopeId,
+): readonly SecretPickerSecret[] =>
+  secrets.filter((secret) => secret.scopeId === String(targetScope));
+
 export interface HeaderAuthPreset {
   readonly key: string;
   readonly label: string;
@@ -30,15 +36,14 @@ export function InlineCreateSecret(props: {
   onCreated: (secretId: string) => void;
   onCancel: () => void;
   fallbackId?: string;
-  targetScope?: ScopeId;
-  writeScope?: ScopeId;
+  targetScope: ScopeId;
 }) {
   return (
     <SecretForm.Provider
       existingSecretIds={props.existingSecretIds}
       suggestedName={props.suggestedName}
       fallbackId={props.fallbackId ?? "custom-header"}
-      scopeId={props.targetScope ?? props.writeScope}
+      scopeId={props.targetScope}
       onCreated={props.onCreated}
     >
       <div className="bg-primary/[0.03] px-4 py-3 space-y-3">
@@ -145,8 +150,7 @@ export function SecretHeaderAuthRow(props: {
    * sources don't collide on ids like `authorization`.
    */
   sourceName?: string;
-  targetScope?: ScopeId;
-  writeScope?: ScopeId;
+  targetScope: ScopeId;
 }) {
   const [creating, setCreating] = useState(false);
   const nameInputId = useId();
@@ -164,24 +168,24 @@ export function SecretHeaderAuthRow(props: {
     label = "Header",
     sourceName,
     targetScope,
-    writeScope,
   } = props;
 
   const isCustom = presetKey === "custom" || presetKey === undefined;
   const headerLabel = name.trim() || "Custom Header";
   const suggestedName = [sourceName?.trim(), headerLabel].filter(Boolean).join(" ");
+  const scopedSecrets = secretsForCredentialTarget(existingSecrets, targetScope);
 
   if (creating) {
     return (
       <InlineCreateSecret
         suggestedName={suggestedName}
-        existingSecretIds={existingSecrets.map((secret) => secret.id)}
+        existingSecretIds={scopedSecrets.map((secret) => secret.id)}
         onCreated={(id) => {
           onSelectSecret(id);
           setCreating(false);
         }}
         onCancel={() => setCreating(false)}
-        targetScope={targetScope ?? writeScope}
+        targetScope={targetScope}
       />
     );
   }
@@ -242,7 +246,7 @@ export function SecretHeaderAuthRow(props: {
       <SecretPicker
         value={secretId}
         onSelect={onSelectSecret}
-        secrets={existingSecrets}
+        secrets={scopedSecrets}
         onCreateNew={() => setCreating(true)}
       />
 
@@ -262,7 +266,7 @@ export function CreatableSecretPicker(props: {
   readonly onSelect: (secretId: string) => void;
   readonly secrets: readonly SecretPickerSecret[];
   readonly placeholder?: string;
-  readonly targetScope?: ScopeId;
+  readonly targetScope: ScopeId;
   readonly suggestedId?: string;
   /**
    * Display name of the source the secret belongs to (e.g. "Stripe").
@@ -271,7 +275,6 @@ export function CreatableSecretPicker(props: {
   readonly sourceName?: string;
   /** Role of this secret (e.g. "Client ID", "API Token"). */
   readonly secretLabel: string;
-  readonly writeScope?: ScopeId;
 }) {
   const {
     value,
@@ -282,24 +285,24 @@ export function CreatableSecretPicker(props: {
     secretLabel,
     targetScope,
     suggestedId: suggestedIdProp,
-    writeScope,
   } = props;
   const [creating, setCreating] = useState(false);
 
   const suggestedName = [sourceName?.trim(), secretLabel].filter(Boolean).join(" ");
+  const scopedSecrets = secretsForCredentialTarget(secrets, targetScope);
 
   if (creating) {
     return (
       <InlineCreateSecret
         suggestedName={suggestedName}
-        existingSecretIds={secrets.map((secret) => secret.id)}
+        existingSecretIds={scopedSecrets.map((secret) => secret.id)}
         fallbackId={suggestedIdProp?.trim() || "secret"}
         onCreated={(id) => {
           onSelect(id);
           setCreating(false);
         }}
         onCancel={() => setCreating(false)}
-        targetScope={targetScope ?? writeScope}
+        targetScope={targetScope}
       />
     );
   }
@@ -308,7 +311,7 @@ export function CreatableSecretPicker(props: {
     <SecretPicker
       value={value}
       onSelect={onSelect}
-      secrets={secrets}
+      secrets={scopedSecrets}
       placeholder={placeholder}
       onCreateNew={() => setCreating(true)}
     />

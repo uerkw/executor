@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import { ConnectionId, ScopeId, SecretId } from "@executor-js/sdk/core";
 import { startOAuth } from "@executor-js/react/api/atoms";
-import { useScope, useUserScope } from "@executor-js/react/api/scope-context";
+import { useScope } from "@executor-js/react/api/scope-context";
 import { connectionWriteKeys, sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 
 // `addSpec` with an oauth2 payload persists a source row AND (for
@@ -28,6 +28,10 @@ import {
   useOAuthPopupFlow,
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
+import {
+  CredentialTargetScopeSelector,
+  useCredentialTargetScope,
+} from "@executor-js/react/plugins/credential-target-scope";
 import {
   CreatableSecretPicker,
   matchPresetKey,
@@ -76,7 +80,6 @@ import {
 } from "../sdk/store";
 import {
   ConfiguredHeaderBinding,
-  OAuth2Auth,
   OAuth2SourceConfig,
   type ServerInfo,
   type ServerVariable,
@@ -115,7 +118,7 @@ export const openApiOAuthConnectionId = (
  * but some specs ship relative paths like `/api/rest/v1/oauth/token`.
  * Resolve them against the source's chosen baseUrl so the backend can
  * fetch them directly and the absolute URL is what gets persisted on
- * OAuth2Auth.
+ * OAuth2SourceConfig.
  */
 export function resolveOAuthUrl(url: string, baseUrl: string): string {
   if (!url) return url;
@@ -244,7 +247,7 @@ export default function AddOpenApiSource(props: {
   const [oauth2SelectedScopes, setOauth2SelectedScopes] = useState<Set<string>>(new Set());
   const [oauth2AuthState, setOauth2AuthState] = useState<{
     readonly fingerprint: string;
-    readonly auth: OAuth2Auth;
+    readonly auth: { readonly connectionId: string };
   } | null>(null);
   const [startingOAuth, setStartingOAuth] = useState(false);
   const [oauth2Error, setOauth2Error] = useState<string | null>(null);
@@ -254,7 +257,8 @@ export default function AddOpenApiSource(props: {
   const [addError, setAddError] = useState<string | null>(null);
 
   const scopeId = useScope();
-  const userScope = useUserScope();
+  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
+    useCredentialTargetScope();
   const doPreview = useAtomSet(previewOpenApiSpec, { mode: "promiseExit" });
   const doAdd = useAtomSet(addOpenApiSpecOptimistic(scopeId), { mode: "promiseExit" });
   const doStartOAuth = useAtomSet(startOAuth, { mode: "promiseExit" });
@@ -490,7 +494,7 @@ export default function AddOpenApiSource(props: {
     if (selectedOAuth2Preset.flow === "clientCredentials") {
       // RFC 6749 §4.4: no user-interactive consent step. The client_secret
       // is mandatory; the backend exchanges tokens inline and returns a
-      // completed OAuth2Auth we can attach to the source directly.
+      // completed Connection we bind to the source's connection slot.
       if (!oauth2ClientSecretSecretId) {
         setOauth2Error("client_credentials requires a client secret");
         return;
@@ -503,7 +507,7 @@ export default function AddOpenApiSource(props: {
           endpoint: tokenUrl,
           redirectUrl: tokenUrl,
           connectionId,
-          tokenScope: scopeId,
+          tokenScope: credentialTargetScope,
           strategy: {
             kind: "client-credentials",
             tokenEndpoint: tokenUrl,
@@ -527,17 +531,7 @@ export default function AddOpenApiSource(props: {
       }
       setOauth2AuthState({
         fingerprint: selectedOAuth2Fingerprint,
-        auth: new OAuth2Auth({
-          kind: "oauth2",
-          connectionId: response.completedConnection.connectionId,
-          securitySchemeName: selectedOAuth2Preset.securitySchemeName,
-          flow: "clientCredentials",
-          tokenUrl,
-          authorizationUrl: null,
-          clientIdSecretId: oauth2ClientIdSecretId,
-          clientSecretSecretId: oauth2ClientSecretSecretId,
-          scopes: [...oauth2SelectedScopes],
-        }),
+        auth: { connectionId: response.completedConnection.connectionId },
       });
       setOauth2Error(null);
       return;
@@ -550,13 +544,14 @@ export default function AddOpenApiSource(props: {
     const issuerUrl = inferOAuthIssuerUrl(authorizationUrl);
 
     await oauth.openAuthorization({
+      tokenScope: credentialTargetScope,
       run: async () => {
         const exit = await doStartOAuth({
           params: { scopeId },
           payload: {
             endpoint: authorizationUrl,
             connectionId: openApiOAuthConnectionId(resolvedSourceId, selectedOAuth2Preset.flow),
-            tokenScope: scopeId,
+            tokenScope: credentialTargetScope,
             redirectUrl: oauth2RedirectUrl,
             strategy: {
               kind: "authorization-code",
@@ -588,18 +583,7 @@ export default function AddOpenApiSource(props: {
       onSuccess: (result) => {
         setOauth2AuthState({
           fingerprint: selectedOAuth2Fingerprint,
-          auth: new OAuth2Auth({
-            kind: "oauth2",
-            connectionId: result.connectionId,
-            securitySchemeName: selectedOAuth2Preset.securitySchemeName,
-            flow: "authorizationCode",
-            tokenUrl,
-            authorizationUrl,
-            issuerUrl,
-            clientIdSecretId: oauth2ClientIdSecretId,
-            clientSecretSecretId: oauth2ClientSecretSecretId,
-            scopes: [...oauth2SelectedScopes],
-          }),
+          auth: { connectionId: result.connectionId },
         });
         setOauth2Error(null);
       },
@@ -622,6 +606,7 @@ export default function AddOpenApiSource(props: {
     resolvedSourceId,
     selectedOAuth2Fingerprint,
     oauth,
+    credentialTargetScope,
   ]);
 
   const handleCancelOAuth2 = useCallback(() => {
@@ -640,6 +625,8 @@ export default function AddOpenApiSource(props: {
     const exit = await doAdd({
       params: { scopeId },
       payload: {
+        targetScope: scopeId,
+        credentialTargetScope,
         spec: specUrl,
         specFetchCredentials: serializeHttpCredentials(specFetchCredentials),
         name: displayName,
@@ -661,7 +648,7 @@ export default function AddOpenApiSource(props: {
 
     const sourceId = exit.value.namespace;
     const sourceScope = ScopeId.make(scopeId);
-    const bindingScope = ScopeId.make(userScope);
+    const bindingScope = ScopeId.make(credentialTargetScope);
 
     for (const binding of headerBindings) {
       const bindingExit = await doSetBinding({
@@ -758,7 +745,13 @@ export default function AddOpenApiSource(props: {
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <h1 className="text-xl font-semibold text-foreground">Add OpenAPI Source</h1>
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">Add OpenAPI Source</h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          Save the source now, then add personal or organization credentials where the API needs
+          them.
+        </p>
+      </div>
 
       {/* ── Spec input ── */}
       <CardStack>
@@ -814,6 +807,7 @@ export default function AddOpenApiSource(props: {
             onChange={setSpecFetchCredentials}
             existingSecrets={secretList}
             sourceName={identity.name}
+            targetScope={credentialTargetScope}
             labels={{
               headers: "Spec fetch headers",
               queryParams: "Spec fetch query parameters",
@@ -868,6 +862,16 @@ export default function AddOpenApiSource(props: {
       {preview && (
         <>
           <SourceIdentityFields identity={identity} />
+
+          <CredentialTargetScopeSelector
+            value={credentialTargetScope}
+            options={credentialScopeOptions}
+            onChange={(targetScope) => {
+              setCredentialTargetScope(targetScope);
+              setOauth2AuthState(null);
+            }}
+            description="Choose where OpenAPI credentials and OAuth connections are saved."
+          />
 
           {/* Base URL */}
           <CardStack>
@@ -1083,7 +1087,7 @@ export default function AddOpenApiSource(props: {
                 onHeadersChange={handleHeadersChange}
                 existingSecrets={secretList}
                 sourceName={identity.name}
-                writeScope={userScope}
+                targetScope={credentialTargetScope}
               />
             )}
 
@@ -1092,7 +1096,7 @@ export default function AddOpenApiSource(props: {
               onChange={setRuntimeCredentials}
               existingSecrets={secretList}
               sourceName={identity.name}
-              writeScope={userScope}
+              targetScope={credentialTargetScope}
               sections={{ headers: false, queryParams: true }}
               labels={{ queryParams: "Runtime query parameters" }}
             />
@@ -1123,7 +1127,7 @@ export default function AddOpenApiSource(props: {
                     secrets={secretList}
                     sourceName={identity.name}
                     secretLabel="Client ID"
-                    writeScope={userScope}
+                    targetScope={credentialTargetScope}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1142,7 +1146,7 @@ export default function AddOpenApiSource(props: {
                     secrets={secretList}
                     sourceName={identity.name}
                     secretLabel="Client Secret"
-                    writeScope={userScope}
+                    targetScope={credentialTargetScope}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1205,8 +1209,8 @@ export default function AddOpenApiSource(props: {
                       Connect via OAuth
                     </Button>
                     <p className="text-[11px] text-muted-foreground">
-                      Optional — you can save the source now and each user can sign in from the
-                      source detail page later.
+                      You can add the source without this OAuth connection. Secured operations will
+                      ask for credentials on the source detail page.
                     </p>
                   </div>
                 )}
@@ -1236,7 +1240,11 @@ export default function AddOpenApiSource(props: {
         {preview && (
           <Button onClick={handleAdd} disabled={!canAdd || adding}>
             {adding && <Spinner className="size-3.5" />}
-            {adding ? "Adding…" : "Add source"}
+            {adding
+              ? "Adding…"
+              : selectedOAuth2Preset && !oauth2Auth
+                ? "Add without credentials"
+                : "Add source"}
           </Button>
         )}
       </FloatActions>

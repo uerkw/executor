@@ -25,7 +25,7 @@ export type OAuthStartPayload = {
   readonly queryParams?: Record<string, SecretBackedValue>;
   readonly redirectUrl?: string;
   readonly connectionId: string;
-  readonly tokenScope?: string;
+  readonly tokenScope: string;
   readonly strategy: OAuthStrategy;
   readonly pluginId: string;
   readonly identityLabel?: string;
@@ -44,6 +44,7 @@ export type OAuthAuthorizationStartResult = {
 };
 
 export type StartOAuthAuthorizationInput<TPayload extends OAuthCompletionPayload> = {
+  readonly tokenScope: string;
   readonly run: () => Promise<OAuthAuthorizationStartResult>;
   readonly onSuccess: (payload: TPayload) => void | Promise<void>;
   readonly onError?: (error: string) => void;
@@ -87,13 +88,15 @@ export function useOAuthPopupFlow<
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const sessionRef = useRef<string | null>(null);
+  const sessionRef = useRef<{ readonly sessionId: string; readonly tokenScope: string } | null>(
+    null,
+  );
 
   const cancelSession = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, tokenScope: string) => {
       void doCancelOAuth({
         params: { scopeId },
-        payload: { sessionId },
+        payload: { sessionId, tokenScope },
       });
     },
     [doCancelOAuth, scopeId],
@@ -104,7 +107,7 @@ export function useOAuthPopupFlow<
     cleanupRef.current?.();
     cleanupRef.current = null;
     sessionRef.current = null;
-    if (sessionId) cancelSession(sessionId);
+    if (sessionId) cancelSession(sessionId.sessionId, sessionId.tokenScope);
     setBusy(false);
   }, [cancelSession]);
 
@@ -114,7 +117,7 @@ export function useOAuthPopupFlow<
       cleanupRef.current?.();
       cleanupRef.current = null;
       sessionRef.current = null;
-      if (sessionId) cancelSession(sessionId);
+      if (sessionId) cancelSession(sessionId.sessionId, sessionId.tokenScope);
     },
     [cancelSession],
   );
@@ -147,7 +150,7 @@ export function useOAuthPopupFlow<
         return;
       }
 
-      sessionRef.current = response.sessionId;
+      sessionRef.current = { sessionId: response.sessionId, tokenScope: input.tokenScope };
       input.onAuthorizationStarted?.(response);
       cleanupRef.current = openOAuthPopup<TPayload>({
         url: response.authorizationUrl,
@@ -181,7 +184,7 @@ export function useOAuthPopupFlow<
         onClosed: () => {
           cleanupRef.current = null;
           sessionRef.current = null;
-          cancelSession(response.sessionId);
+          cancelSession(response.sessionId, input.tokenScope);
           const message =
             popupClosedMessage ??
             "Sign-in cancelled - popup was closed before completing the flow.";
@@ -192,7 +195,7 @@ export function useOAuthPopupFlow<
         onOpenFailed: () => {
           cleanupRef.current = null;
           sessionRef.current = null;
-          cancelSession(response.sessionId);
+          cancelSession(response.sessionId, input.tokenScope);
           const message = popupBlockedMessage ?? "Sign-in popup was blocked by the browser";
           setBusy(false);
           setError(message);
@@ -214,6 +217,7 @@ export function useOAuthPopupFlow<
   const start = useCallback(
     async (input: StartOAuthPopupInput<TPayload>) => {
       await openAuthorization({
+        tokenScope: input.payload.tokenScope,
         onSuccess: input.onSuccess,
         onError: input.onError,
         onAuthorizationStarted: input.onAuthorizationStarted,

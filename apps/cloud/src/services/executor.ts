@@ -43,10 +43,10 @@ const orgPlugins = (): CloudPlugins =>
 // distinct scope row; future workspace scopes can slot in between without
 // conflicting with a hypothetical global user scope.
 //
-// OAuth tokens land at `ctx.scopes[0]` (the user-org scope) by default, so
-// a member's access/refresh tokens can't leak to other members via
-// `secrets.list`, while source rows and org-wide credentials live on the
-// outer scope.
+// OAuth token writes require an explicit `tokenScope`. User sign-in UI passes
+// the user-org scope so a member's access/refresh tokens cannot leak to other
+// members via `secrets.list`, while source rows and org-wide credentials live
+// on the outer scope.
 // ---------------------------------------------------------------------------
 
 export const createScopedExecutor = (

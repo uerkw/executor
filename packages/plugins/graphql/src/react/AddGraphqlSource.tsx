@@ -24,6 +24,10 @@ import {
   useOAuthPopupFlow,
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
+import {
+  CredentialTargetScopeSelector,
+  useCredentialTargetScope,
+} from "@executor-js/react/plugins/credential-target-scope";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
 import { Button } from "@executor-js/react/components/button";
 import { FilterTabs } from "@executor-js/react/components/filter-tabs";
@@ -37,7 +41,7 @@ import { Input } from "@executor-js/react/components/input";
 import { Spinner } from "@executor-js/react/components/spinner";
 import { addGraphqlSourceOptimistic } from "./atoms";
 import { initialGraphqlCredentials } from "./defaults";
-import type { HeaderValue } from "../sdk/types";
+import type { GraphqlCredentialInput } from "../sdk/types";
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
@@ -66,6 +70,8 @@ export default function AddGraphqlSource(props: {
   const [tokens, setTokens] = useState<OAuthCompletionPayload | null>(null);
 
   const scopeId = useScope();
+  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
+    useCredentialTargetScope();
   const doAdd = useAtomSet(addGraphqlSourceOptimistic(scopeId), { mode: "promiseExit" });
   const secretList = useSecretPickerSecrets();
   const oauth = useOAuthPopupFlow({
@@ -101,6 +107,7 @@ export default function AddGraphqlSource(props: {
         ...(Object.keys(queryParams).length > 0 ? { queryParams } : {}),
         redirectUrl: oauthCallbackUrl(),
         connectionId: oauthConnectionId({ pluginId: "graphql", namespace }),
+        tokenScope: credentialTargetScope,
         strategy: { kind: "dynamic-dcr" },
         pluginId: "graphql",
         identityLabel: `${displayName} OAuth`,
@@ -114,7 +121,7 @@ export default function AddGraphqlSource(props: {
       },
       onError: setAddError,
     });
-  }, [endpoint, credentials, oauth, sourceIdentity]);
+  }, [endpoint, credentials, oauth, sourceIdentity, credentialTargetScope]);
 
   const handleAdd = async () => {
     setAdding(true);
@@ -125,13 +132,15 @@ export default function AddGraphqlSource(props: {
     const exit = await doAdd({
       params: { scopeId },
       payload: {
+        targetScope: scopeId,
         endpoint: trimmedEndpoint,
         name: displayName,
         namespace,
         ...(Object.keys(headerMap).length > 0 ? { headers: headerMap } : {}),
         ...(Object.keys(queryParams).length > 0
-          ? { queryParams: queryParams as Record<string, HeaderValue> }
+          ? { queryParams: queryParams as Record<string, GraphqlCredentialInput> }
           : {}),
+        credentialTargetScope,
         ...(authMode === "oauth2" && tokens
           ? {
               auth: {
@@ -173,12 +182,22 @@ export default function AddGraphqlSource(props: {
 
       <SourceIdentityFields identity={identity} namePlaceholder="e.g. Shopify API" />
 
+      <CredentialTargetScopeSelector
+        value={credentialTargetScope}
+        options={credentialScopeOptions}
+        onChange={(targetScope) => {
+          setCredentialTargetScope(targetScope);
+          setTokens(null);
+        }}
+        description="Choose where new GraphQL credentials and OAuth connections are saved."
+      />
+
       <HttpCredentialsEditor
         credentials={credentials}
         onChange={setCredentials}
         existingSecrets={secretList}
         sourceName={identity.name}
-        targetScope={scopeId}
+        targetScope={credentialTargetScope}
       />
 
       <section className="space-y-2.5">

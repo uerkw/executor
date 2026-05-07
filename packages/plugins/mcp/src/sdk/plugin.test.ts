@@ -10,6 +10,7 @@ import {
   Scope,
   ScopeId,
   TokenMaterial,
+  OAUTH2_PROVIDER_KEY,
   createExecutor,
   definePlugin,
   makeTestConfig,
@@ -17,6 +18,7 @@ import {
 } from "@executor-js/sdk";
 
 import { mcpPlugin } from "./plugin";
+import { MCP_OAUTH_CONNECTION_SLOT } from "./types";
 import { extractManifestFromListToolsResult, deriveMcpNamespace, joinToolPath } from "./manifest";
 import { serveMcpServer } from "../testing";
 
@@ -410,6 +412,48 @@ describe("mcpPlugin", () => {
     }),
   );
 
+  it.effect("updateSource removes bindings for credential slots no longer present", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          plugins: [makeMemorySecretsPlugin()(), mcpPlugin()] as const,
+        }),
+      );
+
+      yield* executor.secrets.set({
+        id: SecretId.make("old-token"),
+        scope: ScopeId.make("test-scope"),
+        name: "Old token",
+        value: "old-secret",
+        provider: "memory",
+      });
+
+      yield* executor.mcp
+        .addSource({
+          transport: "remote",
+          scope: "test-scope",
+          name: "stale binding",
+          endpoint: "http://127.0.0.1:1/mcp",
+          namespace: "stale_binding",
+          credentialTargetScope: "test-scope",
+          auth: {
+            kind: "header",
+            headerName: "Authorization",
+            secretId: "old-token",
+            prefix: "Bearer ",
+          },
+        })
+        .pipe(Effect.result);
+
+      yield* executor.mcp.updateSource("stale_binding", "test-scope", {
+        auth: { kind: "none" },
+      });
+
+      const bindings = yield* executor.mcp.listSourceBindings("stale_binding", "test-scope");
+      expect(bindings).toEqual([]);
+    }),
+  );
+
   // -------------------------------------------------------------------------
   // Deferred OAuth — admin saves a source with `{kind: "oauth2",
   // connectionId}` before any user has signed in, so the row lands in
@@ -441,7 +485,7 @@ describe("mcpPlugin", () => {
           namespace: "deferred_oauth",
           auth: {
             kind: "oauth2",
-            connectionId: "mcp-oauth2-deferred_oauth",
+            connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
           },
         })
         .pipe(Effect.result);
@@ -458,7 +502,7 @@ describe("mcpPlugin", () => {
       if (stored?.config.transport !== "remote") return;
       expect(stored.config.auth.kind).toBe("oauth2");
       if (stored.config.auth.kind !== "oauth2") return;
-      expect(stored.config.auth.connectionId).toBe("mcp-oauth2-deferred_oauth");
+      expect(stored.config.auth.connectionSlot).toBe(MCP_OAUTH_CONNECTION_SLOT);
 
       // Source is visible in the shell list too.
       const sources = yield* executor.sources.list();
@@ -486,7 +530,7 @@ describe("mcpPlugin", () => {
           namespace: "needs_auth",
           auth: {
             kind: "oauth2",
-            connectionId: "mcp-oauth2-needs_auth",
+            connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
           },
         })
         .pipe(Effect.result);
@@ -542,7 +586,7 @@ describe("mcpPlugin", () => {
           namespace: "team_mcp",
           auth: {
             kind: "oauth2",
-            connectionId: "mcp-oauth2-team_mcp",
+            connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
           },
         })
         .pipe(Effect.result);
@@ -560,7 +604,7 @@ describe("mcpPlugin", () => {
         new CreateConnectionInput({
           id: connectionId,
           scope: USER_SCOPE_ID,
-          provider: "mcp:oauth2",
+          provider: OAUTH2_PROVIDER_KEY,
           identityLabel: "user@example.com",
           accessToken: new TokenMaterial({
             secretId: SecretId.make(`${connectionId}.access_token`),
@@ -581,6 +625,13 @@ describe("mcpPlugin", () => {
           },
         }),
       );
+      yield* executor.mcp.setSourceBinding({
+        sourceId: "team_mcp",
+        sourceScope: ORG_SCOPE_ID,
+        scope: USER_SCOPE_ID,
+        slot: MCP_OAUTH_CONNECTION_SLOT,
+        value: { kind: "connection", connectionId },
+      });
 
       // After sign-in: the connection exists and its access token
       // resolves. Source auth config is unchanged — the
@@ -601,7 +652,7 @@ describe("mcpPlugin", () => {
       if (stored?.config.transport !== "remote") return;
       expect(stored.config.auth.kind).toBe("oauth2");
       if (stored.config.auth.kind !== "oauth2") return;
-      expect(stored.config.auth.connectionId).toBe("mcp-oauth2-team_mcp");
+      expect(stored.config.auth.connectionSlot).toBe(MCP_OAUTH_CONNECTION_SLOT);
     }),
   );
 
@@ -614,7 +665,23 @@ describe("mcpPlugin", () => {
 
   it.effect("usagesForSecret aggregates header-auth + headers child rows", () =>
     Effect.gen(function* () {
-      const executor = yield* createExecutor(makeTestConfig({ plugins: [mcpPlugin()] as const }));
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [makeMemorySecretsPlugin()(), mcpPlugin()] as const }),
+      );
+      yield* executor.secrets.set({
+        id: SecretId.make("shared-key"),
+        scope: ScopeId.make("test-scope"),
+        name: "Shared Key",
+        value: "shared",
+        provider: "memory",
+      });
+      yield* executor.secrets.set({
+        id: SecretId.make("other-secret"),
+        scope: ScopeId.make("test-scope"),
+        name: "Other Secret",
+        value: "other",
+        provider: "memory",
+      });
 
       yield* executor.mcp
         .addSource({
@@ -623,6 +690,7 @@ describe("mcpPlugin", () => {
           name: "header-auth",
           endpoint: "http://127.0.0.1:1/mcp",
           namespace: "header_auth_source",
+          credentialTargetScope: "test-scope",
           auth: {
             kind: "header",
             headerName: "X-API-Key",
@@ -636,8 +704,9 @@ describe("mcpPlugin", () => {
       const usages = yield* executor.secrets.usages(SecretId.make("shared-key"));
       expect(usages.length).toBe(2);
       const slots = usages.map((u) => u.slot).sort();
-      expect(slots).toEqual(["auth.header", "header:X-Trace"]);
+      expect(slots).toEqual(["auth:header", "header:x-trace"]);
       expect(usages.every((u) => u.pluginId === "mcp")).toBe(true);
+      expect(usages.every((u) => u.ownerKind === "credential-binding")).toBe(true);
 
       const otherUsages = yield* executor.secrets.usages(SecretId.make("other-secret"));
       expect(otherUsages.length).toBe(1);
@@ -647,7 +716,34 @@ describe("mcpPlugin", () => {
 
   it.effect("usagesForConnection finds oauth2-bound mcp sources", () =>
     Effect.gen(function* () {
-      const executor = yield* createExecutor(makeTestConfig({ plugins: [mcpPlugin()] as const }));
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [makeMemorySecretsPlugin()(), mcpPlugin()] as const }),
+      );
+      yield* executor.connections.create(
+        new CreateConnectionInput({
+          id: ConnectionId.make("conn-xyz"),
+          scope: ScopeId.make("test-scope"),
+          provider: OAUTH2_PROVIDER_KEY,
+          identityLabel: "OAuth Source",
+          accessToken: new TokenMaterial({
+            secretId: SecretId.make("conn-xyz.access_token"),
+            name: "MCP Access Token",
+            value: "access-token-value",
+          }),
+          refreshToken: null,
+          expiresAt: null,
+          oauthScope: null,
+          providerState: {
+            endpoint: "http://127.0.0.1:1/mcp",
+            tokenType: "Bearer",
+            clientInformation: { client_id: "fake" },
+            authorizationServerUrl: null,
+            authorizationServerMetadata: null,
+            resourceMetadataUrl: null,
+            resourceMetadata: null,
+          },
+        }),
+      );
 
       yield* executor.mcp
         .addSource({
@@ -656,6 +752,7 @@ describe("mcpPlugin", () => {
           name: "oauth-source",
           endpoint: "http://127.0.0.1:1/mcp",
           namespace: "oauth_ref",
+          credentialTargetScope: "test-scope",
           auth: { kind: "oauth2", connectionId: "conn-xyz" },
         })
         .pipe(Effect.result);
@@ -664,9 +761,9 @@ describe("mcpPlugin", () => {
       expect(usages.length).toBe(1);
       expect(usages[0]).toMatchObject({
         pluginId: "mcp",
-        ownerKind: "mcp-source",
+        ownerKind: "credential-binding",
         ownerId: "oauth_ref",
-        slot: "auth.oauth2.connection",
+        slot: MCP_OAUTH_CONNECTION_SLOT,
       });
     }),
   );

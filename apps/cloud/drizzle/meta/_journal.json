@@ -64,6 +64,13 @@
       "when": 1778004191000,
       "tag": "0008_normalize_plugin_secret_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778128200000,
+      "tag": "0009_scoped_credentials_cutover",
+      "breakpoints": true
     }
   ]
 }

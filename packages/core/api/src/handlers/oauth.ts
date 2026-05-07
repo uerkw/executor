@@ -100,7 +100,6 @@ export const OAuthHandlers = HttpApiBuilder.group(ExecutorApi, "oauth", (handler
       capture(
         Effect.gen(function* () {
           const executor = yield* ExecutorService;
-          const tokenScope = payload.tokenScope ?? String(executor.scopes[0]!.id);
           const headers = yield* resolveOAuthSecretBackedMap(
             executor,
             payload.headers,
@@ -117,7 +116,7 @@ export const OAuthHandlers = HttpApiBuilder.group(ExecutorApi, "oauth", (handler
             queryParams,
             redirectUrl: payload.redirectUrl,
             connectionId: payload.connectionId,
-            tokenScope,
+            tokenScope: payload.tokenScope,
             strategy: payload.strategy as OAuthStrategy,
             pluginId: payload.pluginId,
             identityLabel: payload.identityLabel,
@@ -141,7 +140,7 @@ export const OAuthHandlers = HttpApiBuilder.group(ExecutorApi, "oauth", (handler
       capture(
         Effect.gen(function* () {
           const executor = yield* ExecutorService;
-          yield* executor.oauth.cancel(payload.sessionId);
+          yield* executor.oauth.cancel(payload.sessionId, payload.tokenScope);
           return { cancelled: true };
         }),
       ),

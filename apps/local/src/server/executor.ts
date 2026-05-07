@@ -14,7 +14,6 @@ import {
   readLegacySecrets,
   type LegacySecret,
 } from "./db-upgrade";
-import { migrateLegacyConnections } from "./migrate-connections";
 
 import { Scope, ScopeId, type AnyPlugin, collectSchemas, createExecutor } from "@executor-js/sdk";
 import { makeSqliteAdapter, makeSqliteBlobStore } from "@executor-js/storage-file";
@@ -151,10 +150,6 @@ const createLocalExecutorLayer = () => {
       if (legacySecrets.length > 0) {
         importLegacySecrets(sqlite, scopeId, legacySecrets);
       }
-      // Upgrade pre-connection openapi/mcp/google-discovery rows onto the
-      // new Connection pointer shape. Idempotent + no-op when there's
-      // nothing to migrate.
-      yield* Effect.promise(() => migrateLegacyConnections(sqlite));
       const configPath = resolveConfigPath(cwd);
       const configFile = makeFileConfigSink({
         path: configPath,
@@ -206,7 +201,7 @@ const createLocalExecutorLayer = () => {
       // Runs after plugins are wired so sources added here round-trip
       // back through configFile — harmless because the file already
       // contains them.
-      yield* syncFromConfig(executor, configPath);
+      yield* syncFromConfig({ executor, configPath, targetScope: scope.id });
 
       return { executor, plugins };
     }),

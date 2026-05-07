@@ -49,11 +49,16 @@ import {
   useOAuthPopupFlow,
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
+import {
+  CredentialTargetScopeSelector,
+  useCredentialTargetScope,
+} from "@executor-js/react/plugins/credential-target-scope";
 
 type RemoteAuthMode = "none" | "header" | "oauth2";
 import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import { probeMcpEndpoint, addMcpSourceOptimistic } from "./atoms";
 import { mcpPresets, type McpPreset } from "../sdk/presets";
+import { MCP_OAUTH_CONNECTION_SLOT } from "../sdk/types";
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
@@ -129,6 +134,7 @@ type Action =
   | { type: "oauth-ok"; tokens: OAuthTokens }
   | { type: "oauth-fail"; error: string }
   | { type: "oauth-cancelled" }
+  | { type: "oauth-reset" }
   | { type: "add-start" }
   | { type: "add-fail"; error: string }
   | { type: "retry" };
@@ -194,6 +200,12 @@ function reducer(state: State, action: Action): State {
     case "oauth-cancelled":
       if (state.step !== "oauth-waiting") return state;
       return { step: "probed", url: state.url, probe: state.probe };
+
+    case "oauth-reset":
+      if ("probe" in state && state.probe) {
+        return { step: "probed", url: state.url, probe: state.probe };
+      }
+      return state;
 
     case "add-start": {
       const tokens =
@@ -279,6 +291,8 @@ export default function AddMcpSource(props: {
   );
 
   const scopeId = useScope();
+  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
+    useCredentialTargetScope();
   const doProbe = useAtomSet(probeMcpEndpoint, { mode: "promiseExit" });
   const doAdd = useAtomSet(addMcpSourceOptimistic(scopeId), { mode: "promiseExit" });
   const secretList = useSecretPickerSecrets();
@@ -317,16 +331,12 @@ export default function AddMcpSource(props: {
     (header) => header.name.trim() && header.value.trim(),
   );
   const remoteCredentialsComplete = httpCredentialsValid(remoteCredentials);
-  // OAuth is "ready to save" even without tokens — the source is stored
-  // with a stable connectionId pointer, and each user completes their
-  // own sign-in via McpSignInButton on the source detail page (per-user
-  // scope shadowing means each user's tokens land at their own scope).
   const authReady =
     remoteAuthMode === "none"
       ? canUseNone
       : remoteAuthMode === "header"
         ? headerAuthComplete
-        : true;
+        : tokens !== null;
   const canAdd =
     Boolean(probe) &&
     authReady &&
@@ -408,6 +418,7 @@ export default function AddMcpSource(props: {
           pluginId: "mcp",
           namespace: namespaceSlug,
         }),
+        tokenScope: credentialTargetScope,
         strategy: { kind: "dynamic-dcr" },
         pluginId: "mcp",
         identityLabel: `${remoteIdentity.name.trim() || probe?.serverName || probe?.name || "MCP"} OAuth`,
@@ -426,7 +437,7 @@ export default function AddMcpSource(props: {
         dispatch({ type: "oauth-waiting", sessionId: result.sessionId }),
       onError: (error) => dispatch({ type: "oauth-fail", error }),
     });
-  }, [state.url, remoteIdentity, probe, remoteCredentials, oauth]);
+  }, [state.url, remoteIdentity, probe, remoteCredentials, oauth, credentialTargetScope]);
 
   const handleCancelOAuth = useCallback(() => {
     oauth.cancel();
@@ -437,19 +448,6 @@ export default function AddMcpSource(props: {
     if (!probe) return;
     dispatch({ type: "add-start" });
     const headerAuth = remoteAuthHeaders[0];
-    // For oauth2 sources saved without completing the flow, use the
-    // same stable connectionId the handleOAuth path would have used.
-    // This pins the source's auth pointer, so when a per-user sign-in
-    // runs later (via McpSignInButton) it mints the connection at the
-    // user scope against the same id — innermost-wins shadowing then
-    // resolves tokens per-user at invoke time.
-    const deferredOAuthConnectionId = oauthConnectionId({
-      pluginId: "mcp",
-      namespace:
-        slugifyNamespace(remoteIdentity.namespace) ||
-        slugifyNamespace(probe.namespace ?? "") ||
-        "mcp",
-    });
     const auth =
       remoteAuthMode === "header" && headerAuth?.secretId
         ? {
@@ -459,10 +457,15 @@ export default function AddMcpSource(props: {
             ...(headerAuth.prefix ? { prefix: headerAuth.prefix } : {}),
           }
         : remoteAuthMode === "oauth2"
-          ? {
-              kind: "oauth2" as const,
-              connectionId: tokens?.connectionId ?? deferredOAuthConnectionId,
-            }
+          ? tokens
+            ? {
+                kind: "oauth2" as const,
+                connectionId: tokens.connectionId,
+              }
+            : {
+                kind: "oauth2" as const,
+                connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
+              }
           : { kind: "none" as const };
     const headers = Object.fromEntries(
       remoteHeaders
@@ -479,11 +482,13 @@ export default function AddMcpSource(props: {
     const exit = await doAdd({
       params: { scopeId },
       payload: {
+        targetScope: scopeId,
         transport: "remote" as const,
         name: displayName,
         namespace: slugNamespace || undefined,
         endpoint: state.url.trim(),
         auth,
+        credentialTargetScope,
         ...(Object.keys(remoteRequestHeaders).length > 0 ? { headers: remoteRequestHeaders } : {}),
         ...(Object.keys(credentials.queryParams).length > 0
           ? { queryParams: credentials.queryParams }
@@ -511,6 +516,7 @@ export default function AddMcpSource(props: {
     doAdd,
     props,
     scopeId,
+    credentialTargetScope,
   ]);
 
   // ---- Stdio actions ----
@@ -548,6 +554,7 @@ export default function AddMcpSource(props: {
     const exit = await doAdd({
       params: { scopeId },
       payload: {
+        targetScope: scopeId,
         transport: "stdio" as const,
         name: displayName,
         namespace: slugNamespace || undefined,
@@ -706,21 +713,31 @@ export default function AddMcpSource(props: {
             </CardStackContent>
           </CardStack>
 
+          {probe && (
+            <SourceIdentityFields identity={remoteIdentity} namePlaceholder="e.g. Linear" />
+          )}
+
+          <CredentialTargetScopeSelector
+            value={credentialTargetScope}
+            options={credentialScopeOptions}
+            onChange={(targetScope) => {
+              setCredentialTargetScope(targetScope);
+              dispatch({ type: "oauth-reset" });
+            }}
+            description="Choose where MCP request credentials and OAuth connections are saved."
+          />
+
           <HttpCredentialsEditor
             credentials={remoteCredentials}
             onChange={handleRemoteCredentialsChange}
             existingSecrets={secretList}
             sourceName={remoteIdentity.name}
-            targetScope={scopeId}
+            targetScope={credentialTargetScope}
             labels={{
               headers: "Request headers",
               queryParams: "Query parameters",
             }}
           />
-
-          {probe && (
-            <SourceIdentityFields identity={remoteIdentity} namePlaceholder="e.g. Linear" />
-          )}
 
           {/* Authentication */}
           {probe && (
@@ -751,6 +768,7 @@ export default function AddMcpSource(props: {
                   existingSecrets={secretList}
                   singleHeader
                   sourceName={remoteIdentity.name}
+                  targetScope={credentialTargetScope}
                 />
               )}
 
@@ -762,8 +780,7 @@ export default function AddMcpSource(props: {
                         Sign in
                       </Button>
                       <p className="text-[11px] text-muted-foreground">
-                        Optional — you can save the source now and each user can sign in from the
-                        source detail page later.
+                        Sign in before adding so Executor can discover and save the tool catalog.
                       </p>
                     </div>
                   )}

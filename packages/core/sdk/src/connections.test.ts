@@ -7,6 +7,7 @@ import { makeInMemoryBlobStore } from "./blob";
 import {
   ConnectionRefreshError,
   CreateConnectionInput,
+  RemoveConnectionInput,
   TokenMaterial,
   UpdateConnectionTokensInput,
   type ConnectionProvider,
@@ -17,7 +18,7 @@ import { collectSchemas, createExecutor } from "./executor";
 import { ConnectionId, ScopeId, SecretId } from "./ids";
 import { definePlugin } from "./plugin";
 import { Scope } from "./scope";
-import { SetSecretInput, type SecretProvider } from "./secrets";
+import { RemoveSecretInput, SetSecretInput, type SecretProvider } from "./secrets";
 import { makeTestConfig } from "./testing";
 
 // ---------------------------------------------------------------------------
@@ -275,7 +276,14 @@ describe("connections", () => {
           }),
         );
 
-        const err = yield* executor.secrets.remove("conn-1.access").pipe(Effect.flip);
+        const err = yield* executor.secrets
+          .remove(
+            new RemoveSecretInput({
+              id: sid("conn-1.access"),
+              targetScope: scpid("test-scope"),
+            }),
+          )
+          .pipe(Effect.flip);
         expect(Predicate.isTagged(err, "SecretOwnedByConnectionError")).toBe(true);
       }),
   );
@@ -316,7 +324,9 @@ describe("connections", () => {
       expect(yield* secretProvider.get!("conn-1.access", "test-scope")).toBe("access-v1");
       expect(yield* secretProvider.get!("conn-1.refresh", "test-scope")).toBe("refresh-v1");
 
-      yield* executor.connections.remove("conn-1");
+      yield* executor.connections.remove(
+        new RemoveConnectionInput({ id: cid("conn-1"), targetScope: scpid("test-scope") }),
+      );
 
       // Connection row gone.
       expect(yield* executor.connections.get("conn-1")).toBeNull();
@@ -969,7 +979,9 @@ describe("connections — multi-scope behaviour", () => {
         }),
       );
 
-      yield* execInner.connections.remove("shared");
+      yield* execInner.connections.remove(
+        new RemoveConnectionInput({ id: cid("shared"), targetScope: innerId }),
+      );
 
       const outerStill = yield* execOuter.connections.get("shared");
       expect(outerStill?.identityLabel).toBe("outer");

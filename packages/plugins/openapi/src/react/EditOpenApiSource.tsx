@@ -234,12 +234,11 @@ export default function EditOpenApiSource(props: {
       setError(null);
       void (async () => {
         const exit = await doUpdate({
-          params: { scopeId: ScopeId.make(sourceScopeId), namespace: props.sourceId },
+          params: { scopeId: displayScope, namespace: props.sourceId },
           payload: {
+            sourceScope,
             name: nextName || undefined,
             baseUrl: nextBaseUrl || undefined,
-            headers: source.config.headers,
-            oauth2: source.config.oauth2,
           },
           reactivityKeys: openApiWriteKeys,
         });
@@ -257,7 +256,17 @@ export default function EditOpenApiSource(props: {
     }, 600);
 
     return () => window.clearTimeout(timeout);
-  }, [baseUrl, doUpdate, loadedSourceKey, name, props.sourceId, source, sourceScopeId]);
+  }, [
+    baseUrl,
+    displayScope,
+    doUpdate,
+    loadedSourceKey,
+    name,
+    props.sourceId,
+    source,
+    sourceScope,
+    sourceScopeId,
+  ]);
 
   const secretSlots = useMemo(() => {
     if (!source) return [] as SlotDef[];
@@ -514,6 +523,7 @@ export default function EditOpenApiSource(props: {
     }
 
     await oauth.openAuthorization({
+      tokenScope: targetScope,
       run: async () => ({
         sessionId: response.sessionId,
         authorizationUrl: response.authorizationUrl,

@@ -2,13 +2,17 @@ import { useState } from "react";
 import { useAtomValue, useAtomSet } from "@effect/atom-react";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Exit from "effect/Exit";
-import { mcpSourceAtom, updateMcpSource } from "./atoms";
+import { mcpSourceAtom, mcpSourceBindingsAtom, updateMcpSource } from "./atoms";
 import { useScope } from "@executor-js/react/api/scope-context";
 import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import {
   SourceIdentityFields,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";
+import {
+  CredentialTargetScopeSelector,
+  useCredentialTargetScope,
+} from "@executor-js/react/plugins/credential-target-scope";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
 import {
   HttpCredentialsEditor,
@@ -24,7 +28,42 @@ import {
 } from "@executor-js/react/components/card-stack";
 import { Input } from "@executor-js/react/components/input";
 import { Badge } from "@executor-js/react/components/badge";
+import { ScopeId } from "@executor-js/sdk/core";
+import type {
+  ConfiguredMcpCredentialValue,
+  McpCredentialInput,
+  McpSourceBindingRef,
+  SecretBackedValue,
+} from "../sdk/types";
 import type { McpStoredSourceSchemaType } from "../sdk/stored-source";
+
+const valuesForEditor = (
+  values: Record<string, ConfiguredMcpCredentialValue> | undefined,
+  bindings: readonly McpSourceBindingRef[],
+): Record<string, SecretBackedValue> => {
+  const bySlot = new Map(bindings.map((binding) => [binding.slot, binding]));
+  const out: Record<string, SecretBackedValue> = {};
+  for (const [name, value] of Object.entries(values ?? {})) {
+    if (typeof value === "string") {
+      out[name] = value;
+      continue;
+    }
+    const binding = bySlot.get(value.slot);
+    if (binding?.value.kind === "secret") {
+      out[name] = value.prefix
+        ? { secretId: binding.value.secretId, prefix: value.prefix }
+        : { secretId: binding.value.secretId };
+    } else if (binding?.value.kind === "text") {
+      out[name] = binding.value.text;
+    }
+  }
+  return out;
+};
+
+const initialCredentialTargetScope = (
+  sourceScope: ScopeId,
+  bindings: readonly McpSourceBindingRef[],
+): ScopeId => bindings[0]?.scopeId ?? sourceScope;
 
 // ---------------------------------------------------------------------------
 // Remote edit form
@@ -33,9 +72,16 @@ import type { McpStoredSourceSchemaType } from "../sdk/stored-source";
 function RemoteEditForm(props: {
   sourceId: string;
   initial: McpStoredSourceSchemaType & { config: { transport: "remote" } };
+  bindings: readonly McpSourceBindingRef[];
   onSave: () => void;
 }) {
-  const scopeId = useScope();
+  const displayScope = useScope();
+  const sourceScope = ScopeId.make(props.initial.scope);
+  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
+    useCredentialTargetScope({
+      sourceScope,
+      initialTargetScope: initialCredentialTargetScope(sourceScope, props.bindings),
+    });
   const doUpdate = useAtomSet(updateMcpSource, { mode: "promiseExit" });
   const secretList = useSecretPickerSecrets();
 
@@ -46,33 +92,47 @@ function RemoteEditForm(props: {
   const [endpoint, setEndpoint] = useState(props.initial.config.endpoint);
   const [credentials, setCredentials] = useState<HttpCredentialsState>(() =>
     httpCredentialsFromValues({
-      headers: props.initial.config.headers,
-      queryParams: props.initial.config.queryParams,
+      headers: valuesForEditor(props.initial.config.headers, props.bindings),
+      queryParams: valuesForEditor(props.initial.config.queryParams, props.bindings),
     }),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [credentialsDirty, setCredentialsDirty] = useState(false);
 
   const identityDirty = identity.name.trim() !== props.initial.name.trim();
+  const metadataDirty = identityDirty || endpoint.trim() !== props.initial.config.endpoint.trim();
+  const dirty = metadataDirty || credentialsDirty;
 
   const handleCredentialsChange = (next: HttpCredentialsState) => {
     setCredentials(next);
-    setDirty(true);
+    setCredentialsDirty(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     const { headers, queryParams } = serializeHttpCredentials(credentials);
+    const payload: {
+      sourceScope: ScopeId;
+      name?: string;
+      endpoint?: string;
+      headers?: Record<string, McpCredentialInput>;
+      queryParams?: Record<string, McpCredentialInput>;
+      credentialTargetScope?: ScopeId;
+    } = {
+      sourceScope,
+      name: metadataDirty ? identity.name.trim() || undefined : undefined,
+      endpoint: metadataDirty ? endpoint.trim() || undefined : undefined,
+    };
+    if (credentialsDirty) {
+      payload.headers = headers;
+      payload.queryParams = queryParams as Record<string, McpCredentialInput>;
+      payload.credentialTargetScope = credentialTargetScope;
+    }
     const exit = await doUpdate({
-      params: { scopeId, namespace: props.sourceId },
-      payload: {
-        name: identity.name.trim() || undefined,
-        endpoint: endpoint.trim() || undefined,
-        headers,
-        queryParams,
-      },
+      params: { scopeId: displayScope, namespace: props.sourceId },
+      payload,
       reactivityKeys: sourceWriteKeys,
     });
     if (Exit.isFailure(exit)) {
@@ -80,7 +140,7 @@ function RemoteEditForm(props: {
       setSaving(false);
       return;
     }
-    setDirty(false);
+    setCredentialsDirty(false);
     setSaving(false);
     props.onSave();
   };
@@ -113,7 +173,6 @@ function RemoteEditForm(props: {
               value={endpoint}
               onChange={(e) => {
                 setEndpoint((e.target as HTMLInputElement).value);
-                setDirty(true);
               }}
               placeholder="https://mcp.example.com"
               className="font-mono text-sm"
@@ -122,11 +181,22 @@ function RemoteEditForm(props: {
         </CardStackContent>
       </CardStack>
 
+      <CredentialTargetScopeSelector
+        value={credentialTargetScope}
+        options={credentialScopeOptions}
+        onChange={(targetScope) => {
+          setCredentialTargetScope(targetScope);
+          setCredentialsDirty(true);
+        }}
+        description="Choose where updated MCP credentials are saved."
+      />
+
       <HttpCredentialsEditor
         credentials={credentials}
         onChange={handleCredentialsChange}
         existingSecrets={secretList}
         sourceName={identity.name}
+        targetScope={credentialTargetScope}
       />
 
       {error && (
@@ -139,7 +209,7 @@ function RemoteEditForm(props: {
         <Button variant="ghost" onClick={props.onSave}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={(!dirty && !identityDirty) || saving}>
+        <Button onClick={handleSave} disabled={!dirty || saving}>
           {saving ? "Saving…" : "Save changes"}
         </Button>
       </div>
@@ -202,8 +272,12 @@ export default function EditMcpSource({
     McpStoredSourceSchemaType | null,
     unknown
   >;
+  const source =
+    AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
+  const sourceScope = source ? ScopeId.make(source.scope) : scopeId;
+  const bindingsResult = useAtomValue(mcpSourceBindingsAtom(scopeId, sourceId, sourceScope));
 
-  if (!AsyncResult.isSuccess(sourceResult) || !sourceResult.value) {
+  if (!AsyncResult.isSuccess(sourceResult) || !source || !AsyncResult.isSuccess(bindingsResult)) {
     return (
       <div className="space-y-6">
         <div>
@@ -213,8 +287,6 @@ export default function EditMcpSource({
       </div>
     );
   }
-
-  const source = sourceResult.value;
 
   if (source.config.transport === "stdio") {
     return (
@@ -230,6 +302,7 @@ export default function EditMcpSource({
     <RemoteEditForm
       sourceId={sourceId}
       initial={source as McpStoredSourceSchemaType & { config: { transport: "remote" } }}
+      bindings={bindingsResult.value}
       onSave={onSave}
     />
   );

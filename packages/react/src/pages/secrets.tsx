@@ -67,6 +67,7 @@ function AddSecretDialog(props: {
   description: string;
   storageOptions: readonly SecretStorageOption[];
   existingSecretIds: readonly string[];
+  scopeId: ScopeId;
 }) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -76,6 +77,7 @@ function AddSecretDialog(props: {
           description={props.description}
           storageOptions={props.storageOptions}
           existingSecretIds={props.existingSecretIds}
+          scopeId={props.scopeId}
           onClose={() => props.onOpenChange(false)}
         />
       )}
@@ -87,6 +89,7 @@ function AddSecretDialogContent(props: {
   description: string;
   storageOptions: readonly SecretStorageOption[];
   existingSecretIds: readonly string[];
+  scopeId: ScopeId;
   onClose: () => void;
 }) {
   const initialProvider = props.storageOptions[0]?.value ?? "auto";
@@ -95,6 +98,7 @@ function AddSecretDialogContent(props: {
     <SecretForm.Provider
       existingSecretIds={props.existingSecretIds}
       initialProvider={initialProvider}
+      scopeId={props.scopeId}
       onCreated={props.onClose}
     >
       <DialogContent className="sm:max-w-[440px]">
@@ -162,9 +166,9 @@ function SecretUsageFooter(props: { scopeId: ScopeId; secretId: SecretId }) {
 // ---------------------------------------------------------------------------
 
 function SecretRow(props: {
-  scopeId: ScopeId;
+  usageScopeId: ScopeId;
   showProvider: boolean;
-  secret: { id: string; name: string; provider?: string };
+  secret: { id: string; scopeId: ScopeId; name: string; provider?: string };
   onRemove: () => void;
 }) {
   const { secret, showProvider } = props;
@@ -184,7 +188,7 @@ function SecretRow(props: {
           </span>
         </CardStackEntryTitle>
         <Suspense fallback={null}>
-          <SecretUsageFooter scopeId={props.scopeId} secretId={SecretId.make(secret.id)} />
+          <SecretUsageFooter scopeId={props.usageScopeId} secretId={SecretId.make(secret.id)} />
         </Suspense>
       </CardStackEntryContent>
       <CardStackEntryActions>
@@ -248,11 +252,11 @@ export function SecretsPage(props: {
     mode: "promiseExit",
   });
 
-  const handleRemove = async (secretId: string) => {
+  const handleRemove = async (secret: { readonly id: string; readonly scopeId: ScopeId }) => {
     const exit = await doRemove({
       params: {
-        scopeId,
-        secretId: SecretId.make(secretId),
+        scopeId: secret.scopeId,
+        secretId: SecretId.make(secret.id),
       },
       reactivityKeys: secretWriteKeys,
     });
@@ -349,19 +353,21 @@ export function SecretsPage(props: {
                   value.map(
                     (s: {
                       readonly id: string;
+                      readonly scopeId: ScopeId;
                       readonly name: string;
                       readonly provider: string;
                     }) => (
                       <SecretRow
-                        key={s.id}
-                        scopeId={scopeId}
+                        key={`${s.scopeId}:${s.id}`}
+                        usageScopeId={scopeId}
                         showProvider={showProviderInfo}
                         secret={{
                           id: s.id,
+                          scopeId: s.scopeId,
                           name: s.name,
                           provider: s.provider ? String(s.provider) : undefined,
                         }}
-                        onRemove={() => handleRemove(s.id)}
+                        onRemove={() => handleRemove(s)}
                       />
                     ),
                   )
@@ -377,6 +383,7 @@ export function SecretsPage(props: {
           description={addSecretDescription}
           storageOptions={storageOptions}
           existingSecretIds={existingSecretIds}
+          scopeId={scopeId}
         />
       </div>
     </div>

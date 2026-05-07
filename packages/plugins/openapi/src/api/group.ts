@@ -7,7 +7,6 @@ import { OpenApiParseError, OpenApiExtractionError, OpenApiOAuthError } from "..
 import { SpecPreview } from "../sdk/preview";
 import { StoredSourceSchema } from "../sdk/store";
 import {
-  OAuth2Auth,
   OAuth2SourceConfig,
   OpenApiSourceBindingInputSchema,
   OpenApiSourceBindingRef,
@@ -49,6 +48,8 @@ const SpecFetchCredentialsPayload = Schema.Struct({
 // ---------------------------------------------------------------------------
 
 const AddSpecPayload = Schema.Struct({
+  targetScope: ScopeId,
+  credentialTargetScope: Schema.optional(ScopeId),
   spec: Schema.String,
   specFetchCredentials: Schema.optional(SpecFetchCredentialsPayload),
   name: Schema.optional(Schema.String),
@@ -56,7 +57,7 @@ const AddSpecPayload = Schema.Struct({
   namespace: Schema.optional(Schema.String),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   queryParams: Schema.optional(Schema.Record(Schema.String, SecretBackedValue)),
-  oauth2: Schema.optional(Schema.Union([OAuth2Auth, OAuth2SourceConfig])),
+  oauth2: Schema.optional(OAuth2SourceConfig),
 });
 
 const PreviewSpecPayload = Schema.Struct({
@@ -65,13 +66,15 @@ const PreviewSpecPayload = Schema.Struct({
 });
 
 const UpdateSourcePayload = Schema.Struct({
+  sourceScope: ScopeId,
   name: Schema.optional(Schema.String),
   baseUrl: Schema.optional(Schema.String),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   queryParams: Schema.optional(Schema.Record(Schema.String, SecretBackedValue)),
+  credentialTargetScope: Schema.optional(ScopeId),
   // Set after a successful re-authenticate to refresh the source's
   // stored OAuth2 metadata.
-  oauth2: Schema.optional(Schema.Union([OAuth2Auth, OAuth2SourceConfig])),
+  oauth2: Schema.optional(OAuth2SourceConfig),
 });
 
 const UpdateSourceResponse = Schema.Struct({

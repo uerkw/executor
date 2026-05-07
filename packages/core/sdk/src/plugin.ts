@@ -8,10 +8,12 @@ import type {
   ConnectionRef,
   ConnectionRefreshError,
   CreateConnectionInput,
+  RemoveConnectionInput,
   UpdateConnectionTokensInput,
 } from "./connections";
+import type { CredentialBindingsFacade } from "./credential-bindings";
 import type { DefinitionsInput, SourceInput, ToolAnnotations, ToolRow } from "./core-schema";
-import type { SourceDetectionResult } from "./types";
+import type { RemoveSourceInput, SourceDetectionResult } from "./types";
 import type {
   ElicitationDeclinedError,
   ElicitationHandler,
@@ -30,7 +32,7 @@ import type {
 import type { OAuthService } from "./oauth";
 import type { Scope } from "./scope";
 import type { ScopedDBAdapter, ScopedTypedAdapter } from "./scoped-adapter";
-import type { SecretProvider, SecretRef, SetSecretInput } from "./secrets";
+import type { RemoveSecretInput, SecretProvider, SecretRef, SetSecretInput } from "./secrets";
 import type { Usage, UsagesForConnectionInput, UsagesForSecretInput } from "./usages";
 
 // ---------------------------------------------------------------------------
@@ -104,7 +106,7 @@ export interface PluginCtx<TStore = unknown> {
   readonly core: {
     readonly sources: {
       readonly register: (input: SourceInput) => Effect.Effect<void, StorageFailure>;
-      readonly unregister: (sourceId: string) => Effect.Effect<void, StorageFailure>;
+      readonly unregister: (input: RemoveSourceInput) => Effect.Effect<void, StorageFailure>;
       readonly update: (input: {
         readonly id: string;
         readonly scope: string;
@@ -127,6 +129,10 @@ export interface PluginCtx<TStore = unknown> {
     readonly get: (
       id: string,
     ) => Effect.Effect<string | null, SecretOwnedByConnectionError | StorageFailure>;
+    readonly getAtScope: (
+      id: string,
+      scope: string,
+    ) => Effect.Effect<string | null, SecretOwnedByConnectionError | StorageFailure>;
     /** List user-visible secrets. Connection-owned secrets (rows with
      *  `owned_by_connection_id` set) are filtered out so they don't
      *  clutter the UI — users see the Connection instead. */
@@ -148,7 +154,7 @@ export interface PluginCtx<TStore = unknown> {
      *  any plugin reports the secret as in use; the caller should ask
      *  the user to detach the listed sources first. */
     readonly remove: (
-      id: string,
+      input: RemoveSecretInput,
     ) => Effect.Effect<void, SecretOwnedByConnectionError | SecretInUseError | StorageFailure>;
   };
 
@@ -159,6 +165,10 @@ export interface PluginCtx<TStore = unknown> {
    *  keyed by `connection.provider`). */
   readonly connections: {
     readonly get: (id: string) => Effect.Effect<ConnectionRef | null, StorageFailure>;
+    readonly getAtScope: (
+      id: string,
+      scope: string,
+    ) => Effect.Effect<ConnectionRef | null, StorageFailure>;
     readonly list: () => Effect.Effect<readonly ConnectionRef[], StorageFailure>;
     readonly create: (
       input: CreateConnectionInput,
@@ -184,11 +194,27 @@ export interface PluginCtx<TStore = unknown> {
       | ConnectionRefreshError
       | StorageFailure
     >;
+    readonly accessTokenAtScope: (
+      id: string,
+      scope: string,
+    ) => Effect.Effect<
+      string,
+      | ConnectionNotFoundError
+      | ConnectionProviderNotRegisteredError
+      | ConnectionRefreshNotSupportedError
+      | ConnectionReauthRequiredError
+      | ConnectionRefreshError
+      | StorageFailure
+    >;
     /** Refuses with `ConnectionInUseError` if any plugin reports the
      *  connection as in use. Caller surfaces the `usages` list to the
      *  user. */
-    readonly remove: (id: string) => Effect.Effect<void, ConnectionInUseError | StorageFailure>;
+    readonly remove: (
+      input: RemoveConnectionInput,
+    ) => Effect.Effect<void, ConnectionInUseError | StorageFailure>;
   };
+
+  readonly credentialBindings: CredentialBindingsFacade;
 
   /** Shared OAuth service. Plugins use this to probe/start/complete OAuth
    *  flows; invocation should still resolve tokens via `connections.accessToken`. */
@@ -453,10 +479,10 @@ export interface PluginSpec<
     readonly args: UsagesForConnectionInput;
   }) => Effect.Effect<readonly Usage[], unknown>;
 
-  /** Called when `executor.sources.remove(id)` targets a source owned
-   *  by this plugin. Plugin-side cleanup only; the executor deletes
-   *  the core source/tool rows after this callback returns, inside
-   *  the same transaction. */
+  /** Called when `executor.sources.remove({ id, targetScope })` targets
+   *  a source owned by this plugin. Plugin-side cleanup only; the
+   *  executor deletes the core source/tool rows after this callback
+   *  returns, inside the same transaction. */
   readonly removeSource?: (input: SourceLifecycleInput<TStore>) => Effect.Effect<void, unknown>;
 
   readonly refreshSource?: (input: SourceLifecycleInput<TStore>) => Effect.Effect<void, unknown>;

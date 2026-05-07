@@ -151,97 +151,8 @@ const coerceJson = (value: unknown): unknown => {
   return decodeUnknownJsonOption(value).pipe(Option.getOrElse(() => value));
 };
 
-const stringArray = (value: unknown): readonly string[] =>
-  Array.isArray(value) ? value.filter((scope): scope is string => typeof scope === "string") : [];
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object";
-
-const originOrNull = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: URL constructor is the platform parser; invalid legacy issuer values decode to null
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-};
-
-const decodeProviderState = (value: unknown): OAuthProviderState => {
-  const raw = coerceJson(value);
-  const record = isRecord(raw) ? raw : null;
-
-  if (record && !("kind" in record) && "flow" in record && "tokenUrl" in record) {
-    const flow = record.flow;
-    if (flow === "authorizationCode") {
-      return decodeProviderStateSync({
-        kind: "authorization-code",
-        tokenEndpoint: record.tokenUrl,
-        issuerUrl: originOrNull(record.authorizationEndpoint),
-        clientIdSecretId: record.clientIdSecretId,
-        clientSecretSecretId: record.clientSecretSecretId ?? null,
-        clientAuth: "body",
-        scope: stringArray(record.scopes).join(" ") || null,
-      });
-    }
-    if (flow === "clientCredentials") {
-      return decodeProviderStateSync({
-        kind: "client-credentials",
-        tokenEndpoint: record.tokenUrl,
-        clientIdSecretId: record.clientIdSecretId,
-        clientSecretSecretId: record.clientSecretSecretId,
-        scopes: stringArray(record.scopes),
-        clientAuth: "body",
-        scope: stringArray(record.scopes).join(" ") || null,
-      });
-    }
-  }
-
-  if (record && !("kind" in record) && "clientIdSecretId" in record && "scopes" in record) {
-    const scopes = stringArray(record.scopes);
-    return decodeProviderStateSync({
-      kind: "authorization-code",
-      tokenEndpoint: "https://oauth2.googleapis.com/token",
-      issuerUrl: "https://accounts.google.com",
-      clientIdSecretId: record.clientIdSecretId,
-      clientSecretSecretId: record.clientSecretSecretId ?? null,
-      clientAuth: "body",
-      scope: scopes.join(" ") || null,
-    });
-  }
-
-  if (record && !("kind" in record) && "clientInformation" in record && "endpoint" in record) {
-    const clientInformation = isRecord(record.clientInformation) ? record.clientInformation : null;
-    const authorizationServerMetadata = isRecord(record.authorizationServerMetadata)
-      ? record.authorizationServerMetadata
-      : null;
-    return decodeProviderStateSync({
-      kind: "dynamic-dcr",
-      tokenEndpoint:
-        typeof record.tokenEndpoint === "string"
-          ? record.tokenEndpoint
-          : typeof authorizationServerMetadata?.token_endpoint === "string"
-            ? authorizationServerMetadata.token_endpoint
-            : "",
-      issuerUrl:
-        typeof authorizationServerMetadata?.issuer === "string"
-          ? authorizationServerMetadata.issuer
-          : null,
-      authorizationServerUrl:
-        typeof record.authorizationServerUrl === "string" ? record.authorizationServerUrl : null,
-      authorizationServerMetadataUrl:
-        typeof record.authorizationServerMetadataUrl === "string"
-          ? record.authorizationServerMetadataUrl
-          : null,
-      clientId: typeof clientInformation?.client_id === "string" ? clientInformation.client_id : "",
-      clientSecretSecretId: null,
-      clientAuth: "body",
-      scope: null,
-    });
-  }
-
-  return decodeProviderStateSync(raw);
-};
+const decodeProviderState = (value: unknown): OAuthProviderState =>
+  decodeProviderStateSync(coerceJson(value));
 
 // ---------------------------------------------------------------------------
 // Service dependencies — the executor wires these up when it constructs
@@ -996,18 +907,13 @@ export const makeOAuth2Service = (
       };
     });
 
-  const cancel = (sessionId: string): Effect.Effect<void, StorageFailure> =>
+  const cancel = (sessionId: string, tokenScope: string): Effect.Effect<void, StorageFailure> =>
     Effect.gen(function* () {
-      const row = yield* deps.adapter.findOne({
-        model: "oauth2_session",
-        where: [{ field: "id", value: sessionId }],
-      });
-      if (!row) return;
       yield* deps.adapter.delete({
         model: "oauth2_session",
         where: [
           { field: "id", value: sessionId },
-          { field: "scope_id", value: row.scope_id },
+          { field: "scope_id", value: tokenScope },
         ],
       });
     });
@@ -1148,31 +1054,6 @@ export const makeOAuth2Service = (
 
         const tokenEndpoint = yield* (() => {
           if (state.tokenEndpoint) return Effect.succeed(state.tokenEndpoint);
-          if (state.kind === "dynamic-dcr" && state.authorizationServerUrl) {
-            return discoverAuthorizationServerMetadata(state.authorizationServerUrl).pipe(
-              Effect.flatMap((metadata) =>
-                metadata?.metadata.token_endpoint
-                  ? Effect.succeed(metadata.metadata.token_endpoint)
-                  : Effect.fail(
-                      new ConnectionRefreshError({
-                        connectionId: input.connectionId,
-                        message: "oauth2 legacy MCP providerState is missing token endpoint",
-                        reauthRequired: true,
-                      }),
-                    ),
-              ),
-              Effect.catchTag("OAuthDiscoveryError", (cause) =>
-                Effect.fail(
-                  new ConnectionRefreshError({
-                    connectionId: input.connectionId,
-                    message: "Failed to discover token endpoint for legacy MCP OAuth connection",
-                    reauthRequired: true,
-                    cause,
-                  }),
-                ),
-              ),
-            );
-          }
           return Effect.fail(
             new ConnectionRefreshError({
               connectionId: input.connectionId,

@@ -158,9 +158,7 @@ export type OAuthProviderState = typeof OAuthProviderState.Type;
 
 /** The canonical refresh handler key. Every OAuth2-minted connection
  *  registers under this single value; the handler switches on
- *  `providerState.kind`. Historical per-plugin keys (`mcp:oauth2`,
- *  `openapi:oauth2`, `google-discovery:google`) are aliased to this
- *  during migration. */
+ *  `providerState.kind`. */
 export const OAUTH2_PROVIDER_KEY = "oauth2" as const;
 
 // ---------------------------------------------------------------------------
@@ -321,7 +319,7 @@ export interface OAuthService {
   >;
   /** Drop an in-flight session without completing — used when the
    *  user cancels the popup or the source is deleted mid-onboarding. */
-  readonly cancel: (sessionId: string, tokenScope?: string) => Effect.Effect<void, StorageFailure>;
+  readonly cancel: (sessionId: string, tokenScope: string) => Effect.Effect<void, StorageFailure>;
 }
 
 // ---------------------------------------------------------------------------

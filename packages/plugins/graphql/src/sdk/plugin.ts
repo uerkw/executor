@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import type { Layer } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 
@@ -6,11 +6,16 @@ import { GraphqlGroup } from "../api/group";
 import { GraphqlExtensionService, GraphqlHandlers } from "../api/handlers";
 
 import {
+  ConnectionId,
+  ConfiguredCredentialBinding,
+  type CredentialBindingRef,
   definePlugin,
   ScopeId,
+  SecretId,
   SourceDetectionResult,
-  Usage,
+  StorageError,
   type PluginCtx,
+  type StorageFailure,
   type ToolAnnotations,
   type ToolRow,
 } from "@executor-js/sdk/core";
@@ -31,7 +36,7 @@ import {
 } from "./introspect";
 import { extract } from "./extract";
 import { GraphqlIntrospectionError, GraphqlInvocationError } from "./errors";
-import { invokeWithLayer, resolveHeaders } from "./invoke";
+import { invokeWithLayer } from "./invoke";
 import {
   graphqlSchema,
   makeDefaultGraphqlStore,
@@ -41,10 +46,20 @@ import {
 } from "./store";
 import {
   ExtractedField,
-  type GraphqlSourceAuth,
+  GRAPHQL_OAUTH_CONNECTION_SLOT,
+  GraphqlCredentialInput as GraphqlCredentialInputSchema,
+  GraphqlSourceAuthInput as GraphqlSourceAuthInputSchema,
+  GraphqlSourceBindingInput,
+  GraphqlSourceBindingRef,
+  graphqlHeaderSlot,
+  graphqlQueryParamSlot,
   OperationBinding,
+  type ConfiguredGraphqlCredentialValue,
+  type GraphqlCredentialInput,
+  type GraphqlSourceAuth,
   type HeaderValue as HeaderValueValue,
-  type QueryParamValue,
+  type GraphqlSourceAuthInput,
+  type GraphqlSourceBindingValue,
   type GraphqlOperationKind,
 } from "./types";
 
@@ -53,6 +68,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export type HeaderValue = HeaderValueValue;
+export type GraphqlCredentialValue = ConfiguredGraphqlCredentialValue;
 
 export interface GraphqlSourceConfig {
   /** The GraphQL endpoint URL */
@@ -70,13 +86,30 @@ export interface GraphqlSourceConfig {
   readonly introspectionJson?: string;
   /** Namespace for the tools (derived from endpoint if not provided) */
   readonly namespace?: string;
-  /** Headers applied to every request. Values can reference secrets. */
-  readonly headers?: Record<string, HeaderValue>;
-  /** Query parameters applied to every request. Values can reference secrets. */
-  readonly queryParams?: Record<string, QueryParamValue>;
-  /** Optional OAuth2 connection used as a Bearer token for every request. */
-  readonly auth?: GraphqlSourceAuth;
+  /** Headers applied to every request. Direct secrets are rewritten to slots. */
+  readonly headers?: Record<string, GraphqlCredentialInput>;
+  /** Query parameters applied to every request. Direct secrets are rewritten to slots. */
+  readonly queryParams?: Record<string, GraphqlCredentialInput>;
+  /**
+   * Scope that owns any direct credentials supplied on this call. Required
+   * whenever headers/queryParams/auth carry direct secret or connection ids.
+   */
+  readonly credentialTargetScope?: string;
+  /** Optional OAuth2 credential used as a Bearer token for every request. */
+  readonly auth?: GraphqlSourceAuthInput;
 }
+
+const StaticAddSourceInputSchema = Schema.Struct({
+  scope: Schema.String,
+  endpoint: Schema.String,
+  name: Schema.optional(Schema.String),
+  introspectionJson: Schema.optional(Schema.String),
+  namespace: Schema.optional(Schema.String),
+  headers: Schema.optional(Schema.Record(Schema.String, GraphqlCredentialInputSchema)),
+  queryParams: Schema.optional(Schema.Record(Schema.String, GraphqlCredentialInputSchema)),
+  credentialTargetScope: Schema.optional(Schema.String),
+  auth: Schema.optional(GraphqlSourceAuthInputSchema),
+});
 
 // ---------------------------------------------------------------------------
 // Plugin extension
@@ -85,9 +118,10 @@ export interface GraphqlSourceConfig {
 export interface GraphqlUpdateSourceInput {
   readonly name?: string;
   readonly endpoint?: string;
-  readonly headers?: Record<string, HeaderValue>;
-  readonly queryParams?: Record<string, QueryParamValue>;
-  readonly auth?: GraphqlSourceAuth;
+  readonly headers?: Record<string, GraphqlCredentialInput>;
+  readonly queryParams?: Record<string, GraphqlCredentialInput>;
+  readonly credentialTargetScope?: string;
+  readonly auth?: GraphqlSourceAuthInput;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,68 +293,436 @@ export interface GraphqlPluginOptions {
 const toGraphqlConfigEntry = (
   namespace: string,
   config: GraphqlSourceConfig,
-): GraphqlConfigEntry => ({
-  kind: "graphql",
-  endpoint: config.endpoint,
-  introspectionJson: config.introspectionJson,
-  namespace,
-  headers: headersToConfigValues(config.headers),
-});
+): GraphqlConfigEntry => {
+  const headers: Record<string, HeaderValue> = {};
+  for (const [name, value] of Object.entries(config.headers ?? {})) {
+    if (typeof value === "string" || !("kind" in value)) {
+      headers[name] = value;
+    }
+  }
+  return {
+    kind: "graphql",
+    endpoint: config.endpoint,
+    introspectionJson: config.introspectionJson,
+    namespace,
+    headers: headersToConfigValues(Object.keys(headers).length > 0 ? headers : undefined),
+  };
+};
+
+const GRAPHQL_PLUGIN_ID = "graphql";
+
+const scopeRanks = (ctx: PluginCtx<GraphqlStore>): ReadonlyMap<string, number> =>
+  new Map(ctx.scopes.map((scope, index) => [String(scope.id), index]));
+
+const scopeRank = (ranks: ReadonlyMap<string, number>, scopeId: string): number =>
+  ranks.get(scopeId) ?? Infinity;
+
+const coreBindingToGraphqlBinding = (binding: CredentialBindingRef): GraphqlSourceBindingRef =>
+  new GraphqlSourceBindingRef({
+    sourceId: binding.sourceId,
+    sourceScopeId: binding.sourceScopeId,
+    scopeId: binding.scopeId,
+    slot: binding.slotKey,
+    value: binding.value,
+    createdAt: binding.createdAt,
+    updatedAt: binding.updatedAt,
+  });
+
+const listGraphqlSourceBindings = (
+  ctx: PluginCtx<GraphqlStore>,
+  sourceId: string,
+  sourceScope: string,
+): Effect.Effect<readonly GraphqlSourceBindingRef[], StorageFailure> =>
+  Effect.gen(function* () {
+    const ranks = scopeRanks(ctx);
+    const sourceSourceRank = scopeRank(ranks, sourceScope);
+    if (sourceSourceRank === Infinity) return [];
+    const bindings = yield* ctx.credentialBindings.listForSource({
+      pluginId: GRAPHQL_PLUGIN_ID,
+      sourceId,
+      sourceScope: ScopeId.make(sourceScope),
+    });
+    return bindings
+      .filter((binding) => scopeRank(ranks, binding.scopeId) <= sourceSourceRank)
+      .map(coreBindingToGraphqlBinding);
+  });
+
+const resolveGraphqlSourceBinding = (
+  ctx: PluginCtx<GraphqlStore>,
+  sourceId: string,
+  sourceScope: string,
+  slot: string,
+): Effect.Effect<GraphqlSourceBindingRef | null, StorageFailure> =>
+  Effect.gen(function* () {
+    const ranks = scopeRanks(ctx);
+    const sourceSourceRank = scopeRank(ranks, sourceScope);
+    if (sourceSourceRank === Infinity) return null;
+    const bindings = yield* ctx.credentialBindings.listForSource({
+      pluginId: GRAPHQL_PLUGIN_ID,
+      sourceId,
+      sourceScope: ScopeId.make(sourceScope),
+    });
+    const binding = bindings
+      .filter(
+        (candidate) =>
+          candidate.slotKey === slot && scopeRank(ranks, candidate.scopeId) <= sourceSourceRank,
+      )
+      .sort((a, b) => scopeRank(ranks, a.scopeId) - scopeRank(ranks, b.scopeId))[0];
+    return binding ? coreBindingToGraphqlBinding(binding) : null;
+  });
+
+const validateGraphqlBindingTarget = (
+  ctx: PluginCtx<GraphqlStore>,
+  input: {
+    readonly sourceScope: string;
+    readonly targetScope: string;
+    readonly sourceId: string;
+  },
+): Effect.Effect<void, StorageFailure> =>
+  Effect.gen(function* () {
+    const ranks = scopeRanks(ctx);
+    const sourceSourceRank = scopeRank(ranks, input.sourceScope);
+    const targetRank = scopeRank(ranks, input.targetScope);
+    const scopeList = `[${ctx.scopes.map((s) => s.id).join(", ")}]`;
+    if (sourceSourceRank === Infinity) {
+      return yield* new StorageError({
+        message:
+          `GraphQL source binding references source scope "${input.sourceScope}" ` +
+          `which is not in the executor's scope stack ${scopeList}.`,
+        cause: undefined,
+      });
+    }
+    if (targetRank === Infinity) {
+      return yield* new StorageError({
+        message:
+          `GraphQL source binding targets scope "${input.targetScope}" which is not ` +
+          `in the executor's scope stack ${scopeList}.`,
+        cause: undefined,
+      });
+    }
+    if (targetRank > sourceSourceRank) {
+      return yield* new StorageError({
+        message:
+          `GraphQL source bindings for "${input.sourceId}" cannot be written at ` +
+          `outer scope "${input.targetScope}" because the base source lives at ` +
+          `"${input.sourceScope}"`,
+        cause: undefined,
+      });
+    }
+  });
+
+const bindingTargetScope = (
+  targetScope: string | undefined,
+  bindings: readonly unknown[],
+): Effect.Effect<string | undefined, GraphqlIntrospectionError> => {
+  if (bindings.length === 0) return Effect.succeed(undefined);
+  if (targetScope) return Effect.succeed(targetScope);
+  return Effect.fail(
+    new GraphqlIntrospectionError({
+      message: "credentialTargetScope is required when adding direct GraphQL credentials",
+    }),
+  );
+};
+
+const canonicalizeCredentialMap = (
+  values: Record<string, GraphqlCredentialInput> | undefined,
+  slotForName: (name: string) => string,
+): {
+  readonly values: Record<string, ConfiguredGraphqlCredentialValue>;
+  readonly bindings: ReadonlyArray<{
+    readonly slot: string;
+    readonly value: GraphqlSourceBindingValue;
+  }>;
+} => {
+  const nextValues: Record<string, ConfiguredGraphqlCredentialValue> = {};
+  const bindings: Array<{ slot: string; value: GraphqlSourceBindingValue }> = [];
+  for (const [name, value] of Object.entries(values ?? {})) {
+    if (typeof value === "string") {
+      nextValues[name] = value;
+      continue;
+    }
+    if ("kind" in value) {
+      nextValues[name] = value;
+      continue;
+    }
+    const slot = slotForName(name);
+    nextValues[name] = new ConfiguredCredentialBinding({
+      kind: "binding",
+      slot,
+      prefix: value.prefix,
+    });
+    bindings.push({
+      slot,
+      value: {
+        kind: "secret",
+        secretId: SecretId.make(value.secretId),
+      },
+    });
+  }
+  return { values: nextValues, bindings };
+};
+
+const canonicalizeAuth = (
+  auth: GraphqlSourceAuthInput | undefined,
+): {
+  readonly auth: GraphqlSourceAuth;
+  readonly bindings: ReadonlyArray<{
+    readonly slot: string;
+    readonly value: GraphqlSourceBindingValue;
+  }>;
+} => {
+  if (!auth || auth.kind === "none") return { auth: { kind: "none" }, bindings: [] };
+  if ("connectionSlot" in auth) return { auth, bindings: [] };
+  return {
+    auth: { kind: "oauth2", connectionSlot: GRAPHQL_OAUTH_CONNECTION_SLOT },
+    bindings: [
+      {
+        slot: GRAPHQL_OAUTH_CONNECTION_SLOT,
+        value: {
+          kind: "connection",
+          connectionId: ConnectionId.make(auth.connectionId),
+        },
+      },
+    ],
+  };
+};
+
+const resolveGraphqlBindingValueMap = <E>(
+  ctx: PluginCtx<GraphqlStore>,
+  values: Record<string, ConfiguredGraphqlCredentialValue> | undefined,
+  params: {
+    readonly sourceId: string;
+    readonly sourceScope: string;
+    readonly missingLabel: string;
+    readonly makeError: (message: string) => E;
+  },
+): Effect.Effect<Record<string, string> | undefined, E | StorageFailure> =>
+  Effect.gen(function* () {
+    if (!values) return undefined;
+    const resolved: Record<string, string> = {};
+    for (const [name, value] of Object.entries(values)) {
+      if (typeof value === "string") {
+        resolved[name] = value;
+        continue;
+      }
+      const binding = yield* resolveGraphqlSourceBinding(
+        ctx,
+        params.sourceId,
+        params.sourceScope,
+        value.slot,
+      );
+      if (binding?.value.kind === "secret") {
+        const secret = yield* ctx.secrets
+          .getAtScope(binding.value.secretId, binding.scopeId)
+          .pipe(
+            Effect.catchTag("SecretOwnedByConnectionError", () =>
+              Effect.fail(
+                params.makeError(`Secret not found for ${params.missingLabel} "${name}"`),
+              ),
+            ),
+          );
+        if (secret === null) {
+          return yield* Effect.fail(
+            params.makeError(
+              `Missing secret "${binding.value.secretId}" for ${params.missingLabel} "${name}"`,
+            ),
+          );
+        }
+        resolved[name] = value.prefix ? `${value.prefix}${secret}` : secret;
+        continue;
+      }
+      if (binding?.value.kind === "text") {
+        resolved[name] = value.prefix ? `${value.prefix}${binding.value.text}` : binding.value.text;
+        continue;
+      }
+      return yield* Effect.fail(
+        params.makeError(`Missing binding for ${params.missingLabel} "${name}"`),
+      );
+    }
+    return Object.keys(resolved).length > 0 ? resolved : undefined;
+  });
+
+const resolveGraphqlStoredOAuthHeader = (
+  ctx: PluginCtx<GraphqlStore>,
+  sourceId: string,
+  sourceScope: string,
+  auth: GraphqlSourceAuth | undefined,
+) =>
+  Effect.gen(function* () {
+    if (!auth || auth.kind === "none") return undefined;
+    const binding = yield* resolveGraphqlSourceBinding(
+      ctx,
+      sourceId,
+      sourceScope,
+      auth.connectionSlot,
+    );
+    if (binding?.value.kind !== "connection") {
+      return yield* new GraphqlInvocationError({
+        message: `Missing OAuth connection binding for GraphQL source "${sourceId}"`,
+        statusCode: Option.none(),
+      });
+    }
+    const accessToken = yield* ctx.connections.accessTokenAtScope(
+      binding.value.connectionId,
+      binding.scopeId,
+    );
+    return { Authorization: `Bearer ${accessToken}` };
+  });
 
 const makeGraphqlExtension = (
   ctx: PluginCtx<GraphqlStore>,
   httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
   configFile: ConfigFileSink | undefined,
 ) => {
-  const resolveConfigValues = (values: Record<string, HeaderValue> | undefined) =>
+  const resolveCredentialInputMap = <E>(
+    values: Record<string, GraphqlCredentialInput> | undefined,
+    params: {
+      readonly sourceId: string;
+      readonly sourceScope: string;
+      readonly targetScope?: string;
+      readonly missingLabel: string;
+      readonly makeError: (message: string) => E;
+    },
+  ): Effect.Effect<Record<string, string> | undefined, E | StorageFailure> =>
     Effect.gen(function* () {
       if (!values) return undefined;
-      const resolved = yield* resolveHeaders(values, ctx.secrets);
+      const resolved: Record<string, string> = {};
+      for (const [name, value] of Object.entries(values)) {
+        if (typeof value === "string") {
+          resolved[name] = value;
+          continue;
+        }
+        if ("kind" in value) {
+          const slotResolved = yield* resolveGraphqlBindingValueMap(
+            ctx,
+            { [name]: value },
+            {
+              sourceId: params.sourceId,
+              sourceScope: params.sourceScope,
+              missingLabel: params.missingLabel,
+              makeError: params.makeError,
+            },
+          );
+          if (slotResolved?.[name] !== undefined) resolved[name] = slotResolved[name];
+          continue;
+        }
+        const secret = yield* ctx.secrets
+          .getAtScope(SecretId.make(value.secretId), params.targetScope ?? params.sourceScope)
+          .pipe(
+            Effect.catchTag("SecretOwnedByConnectionError", () =>
+              Effect.fail(
+                params.makeError(`Secret not found for ${params.missingLabel} "${name}"`),
+              ),
+            ),
+          );
+        if (secret === null) {
+          return yield* Effect.fail(
+            params.makeError(
+              `Missing secret "${value.secretId}" for ${params.missingLabel} "${name}"`,
+            ),
+          );
+        }
+        resolved[name] = value.prefix ? `${value.prefix}${secret}` : secret;
+      }
       return Object.keys(resolved).length > 0 ? resolved : undefined;
     });
 
-  const resolveOAuthHeader = (auth: GraphqlSourceAuth | undefined) =>
-    Effect.gen(function* () {
-      if (!auth || auth.kind === "none") return undefined;
-      const accessToken = yield* ctx.connections.accessToken(auth.connectionId).pipe(
-        Effect.mapError(
-          () =>
-            new GraphqlIntrospectionError({
-              message: `Failed to resolve OAuth connection "${auth.connectionId}"`,
-            }),
-        ),
-      );
-      return { Authorization: `Bearer ${accessToken}` };
-    });
-
-  const resolveRequestHeaders = (
-    headers: Record<string, HeaderValue> | undefined,
-    auth: GraphqlSourceAuth | undefined,
+  const resolveOAuthInputHeader = (
+    sourceId: string,
+    sourceScope: string,
+    targetScope: string | undefined,
+    auth: GraphqlSourceAuthInput | undefined,
   ) =>
     Effect.gen(function* () {
-      const resolvedHeaders = yield* resolveConfigValues(headers);
-      const oauthHeader = yield* resolveOAuthHeader(auth);
-      return { ...(resolvedHeaders ?? {}), ...(oauthHeader ?? {}) };
+      if (!auth || auth.kind === "none") return undefined;
+      const connection =
+        "connectionId" in auth
+          ? { id: auth.connectionId, scope: targetScope ?? sourceScope }
+          : yield* Effect.gen(function* () {
+              const binding = yield* resolveGraphqlSourceBinding(
+                ctx,
+                sourceId,
+                sourceScope,
+                auth.connectionSlot,
+              );
+              return binding?.value.kind === "connection"
+                ? { id: binding.value.connectionId, scope: binding.scopeId }
+                : null;
+            });
+      if (connection === null) {
+        return yield* new GraphqlIntrospectionError({
+          message: `Missing OAuth connection binding for "${sourceId}"`,
+        });
+      }
+      const accessToken = yield* ctx.connections
+        .accessTokenAtScope(connection.id, connection.scope)
+        .pipe(
+          Effect.mapError(
+            () =>
+              new GraphqlIntrospectionError({
+                message: `Failed to resolve OAuth connection "${connection.id}"`,
+              }),
+          ),
+        );
+      return { Authorization: `Bearer ${accessToken}` };
     });
 
   const addSourceInternal = (config: GraphqlSourceConfig) =>
     ctx.transaction(
       Effect.gen(function* () {
+        const namespace = config.namespace ?? namespaceFromEndpoint(config.endpoint);
+        const canonicalHeaders = canonicalizeCredentialMap(config.headers, graphqlHeaderSlot);
+        const canonicalQueryParams = canonicalizeCredentialMap(
+          config.queryParams,
+          graphqlQueryParamSlot,
+        );
+        const canonicalAuth = canonicalizeAuth(config.auth);
+        const directBindings = [
+          ...canonicalHeaders.bindings,
+          ...canonicalQueryParams.bindings,
+          ...canonicalAuth.bindings,
+        ];
+        const targetScope = yield* bindingTargetScope(config.credentialTargetScope, directBindings);
+        if (targetScope) {
+          yield* validateGraphqlBindingTarget(ctx, {
+            sourceId: namespace,
+            sourceScope: config.scope,
+            targetScope,
+          });
+        }
+
         let introspectionResult: IntrospectionResult;
         if (config.introspectionJson) {
           introspectionResult = yield* parseIntrospectionJson(config.introspectionJson);
         } else {
-          const resolvedHeaders = yield* resolveRequestHeaders(config.headers, config.auth);
-          const resolvedQueryParams = yield* resolveConfigValues(config.queryParams);
+          const resolvedHeaders = yield* resolveCredentialInputMap(config.headers, {
+            sourceId: namespace,
+            sourceScope: config.scope,
+            targetScope,
+            missingLabel: "header",
+            makeError: (message) => new GraphqlIntrospectionError({ message }),
+          });
+          const oauthHeader = yield* resolveOAuthInputHeader(
+            namespace,
+            config.scope,
+            targetScope,
+            config.auth,
+          );
+          const resolvedQueryParams = yield* resolveCredentialInputMap(config.queryParams, {
+            sourceId: namespace,
+            sourceScope: config.scope,
+            targetScope,
+            missingLabel: "query parameter",
+            makeError: (message) => new GraphqlIntrospectionError({ message }),
+          });
           introspectionResult = yield* introspect(
             config.endpoint,
-            Object.keys(resolvedHeaders).length > 0 ? resolvedHeaders : undefined,
+            { ...(resolvedHeaders ?? {}), ...(oauthHeader ?? {}) },
             resolvedQueryParams,
           ).pipe(Effect.provide(httpClientLayer));
         }
 
         const { result, definitions } = yield* extract(introspectionResult);
-        const namespace = config.namespace ?? namespaceFromEndpoint(config.endpoint);
         const prepared = prepareOperations(result.fields, introspectionResult);
 
         const displayName = config.name?.trim() || namespace;
@@ -330,9 +732,9 @@ const makeGraphqlExtension = (
           scope: config.scope,
           name: displayName,
           endpoint: config.endpoint,
-          headers: config.headers ?? {},
-          queryParams: config.queryParams ?? {},
-          auth: config.auth ?? { kind: "none" },
+          headers: canonicalHeaders.values,
+          queryParams: canonicalQueryParams.values,
+          auth: canonicalAuth.auth,
         };
 
         const storedOps: StoredOperation[] = prepared.map((p) => ({
@@ -367,6 +769,19 @@ const makeGraphqlExtension = (
           });
         }
 
+        if (targetScope) {
+          for (const binding of directBindings) {
+            yield* ctx.credentialBindings.set({
+              targetScope: ScopeId.make(targetScope),
+              pluginId: GRAPHQL_PLUGIN_ID,
+              sourceId: namespace,
+              sourceScope: ScopeId.make(config.scope),
+              slotKey: binding.slot,
+              value: binding.value,
+            });
+          }
+        }
+
         return { toolCount: prepared.length, namespace };
       }),
     );
@@ -385,8 +800,13 @@ const makeGraphqlExtension = (
       Effect.gen(function* () {
         yield* ctx.transaction(
           Effect.gen(function* () {
+            yield* ctx.credentialBindings.removeForSource({
+              pluginId: GRAPHQL_PLUGIN_ID,
+              sourceId: namespace,
+              sourceScope: ScopeId.make(scope),
+            });
             yield* ctx.storage.removeSource(namespace, scope);
-            yield* ctx.core.sources.unregister(namespace);
+            yield* ctx.core.sources.unregister({ id: namespace, targetScope: scope });
           }),
         );
         if (configFile) {
@@ -397,12 +817,98 @@ const makeGraphqlExtension = (
     getSource: (namespace: string, scope: string) => ctx.storage.getSource(namespace, scope),
 
     updateSource: (namespace: string, scope: string, input: GraphqlUpdateSourceInput) =>
-      ctx.storage.updateSourceMeta(namespace, scope, {
-        name: input.name?.trim() || undefined,
-        endpoint: input.endpoint,
-        headers: input.headers,
-        queryParams: input.queryParams,
-        auth: input.auth,
+      Effect.gen(function* () {
+        const existing = yield* ctx.storage.getSource(namespace, scope);
+        if (!existing) return;
+        const canonicalHeaders =
+          input.headers !== undefined
+            ? canonicalizeCredentialMap(input.headers, graphqlHeaderSlot)
+            : null;
+        const canonicalQueryParams =
+          input.queryParams !== undefined
+            ? canonicalizeCredentialMap(input.queryParams, graphqlQueryParamSlot)
+            : null;
+        const canonicalAuth = input.auth !== undefined ? canonicalizeAuth(input.auth) : null;
+        const directBindings = [
+          ...(canonicalHeaders?.bindings ?? []),
+          ...(canonicalQueryParams?.bindings ?? []),
+          ...(canonicalAuth?.bindings ?? []),
+        ];
+        const targetScope = yield* bindingTargetScope(input.credentialTargetScope, directBindings);
+        if (targetScope) {
+          yield* validateGraphqlBindingTarget(ctx, {
+            sourceId: namespace,
+            sourceScope: scope,
+            targetScope,
+          });
+        }
+        const affectedPrefixes = [
+          ...(input.headers !== undefined ? ["header:"] : []),
+          ...(input.queryParams !== undefined ? ["query_param:"] : []),
+          ...(input.auth !== undefined ? ["auth:"] : []),
+        ];
+        const replacementTargetScope = targetScope ?? input.credentialTargetScope ?? scope;
+        yield* ctx.transaction(
+          Effect.gen(function* () {
+            yield* ctx.storage.updateSourceMeta(namespace, scope, {
+              name: input.name?.trim() || undefined,
+              endpoint: input.endpoint,
+              headers: canonicalHeaders?.values,
+              queryParams: canonicalQueryParams?.values,
+              auth: canonicalAuth?.auth,
+            });
+            if (affectedPrefixes.length > 0 || directBindings.length > 0) {
+              yield* ctx.credentialBindings.replaceForSource({
+                targetScope: ScopeId.make(replacementTargetScope),
+                pluginId: GRAPHQL_PLUGIN_ID,
+                sourceId: namespace,
+                sourceScope: ScopeId.make(scope),
+                slotPrefixes: affectedPrefixes,
+                bindings: directBindings.map((binding) => ({
+                  slotKey: binding.slot,
+                  value: binding.value,
+                })),
+              });
+            }
+          }),
+        );
+      }),
+
+    listSourceBindings: (sourceId: string, sourceScope: string) =>
+      listGraphqlSourceBindings(ctx, sourceId, sourceScope),
+
+    setSourceBinding: (input: GraphqlSourceBindingInput) =>
+      Effect.gen(function* () {
+        yield* validateGraphqlBindingTarget(ctx, {
+          sourceId: input.sourceId,
+          sourceScope: input.sourceScope,
+          targetScope: input.scope,
+        });
+        const binding = yield* ctx.credentialBindings.set({
+          targetScope: input.scope,
+          pluginId: GRAPHQL_PLUGIN_ID,
+          sourceId: input.sourceId,
+          sourceScope: input.sourceScope,
+          slotKey: input.slot,
+          value: input.value,
+        });
+        return coreBindingToGraphqlBinding(binding);
+      }),
+
+    removeSourceBinding: (sourceId: string, sourceScope: string, slot: string, scope: string) =>
+      Effect.gen(function* () {
+        yield* validateGraphqlBindingTarget(ctx, {
+          sourceId,
+          sourceScope,
+          targetScope: scope,
+        });
+        yield* ctx.credentialBindings.remove({
+          targetScope: ScopeId.make(scope),
+          pluginId: GRAPHQL_PLUGIN_ID,
+          sourceId,
+          sourceScope: ScopeId.make(sourceScope),
+          slotKey: slot,
+        });
       }),
   };
 };
@@ -432,15 +938,17 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
             inputSchema: {
               type: "object",
               properties: {
+                scope: { type: "string" },
                 endpoint: { type: "string" },
                 name: { type: "string" },
                 introspectionJson: { type: "string" },
                 namespace: { type: "string" },
                 headers: { type: "object" },
                 queryParams: { type: "object" },
+                credentialTargetScope: { type: "string" },
                 auth: { type: "object" },
               },
-              required: ["endpoint"],
+              required: ["scope", "endpoint"],
             },
             outputSchema: {
               type: "object",
@@ -449,15 +957,10 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
               },
               required: ["toolCount"],
             },
-            // Static-tool callers don't name a scope. Default to the
-            // outermost scope in the executor's stack — for a single-
-            // scope executor that's the only scope; for a per-user
-            // stack `[user, org]` it writes at `org` so the source is
-            // visible across every user.
-            handler: ({ ctx, args }) =>
-              self.addSource({
-                ...(args as Omit<GraphqlSourceConfig, "scope">),
-                scope: ctx.scopes.at(-1)!.id,
+            handler: ({ args }) =>
+              Effect.gen(function* () {
+                const input = yield* Schema.decodeUnknownEffect(StaticAddSourceInputSchema)(args);
+                return yield* self.addSource(input);
               }),
           },
         ],
@@ -487,12 +990,29 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
           });
         }
 
-        const resolvedHeaders = yield* resolveHeaders(source.headers, ctx.secrets);
-        const resolvedQueryParams = yield* resolveHeaders(source.queryParams, ctx.secrets);
-        if (source.auth.kind === "oauth2") {
-          const accessToken = yield* ctx.connections.accessToken(source.auth.connectionId);
-          resolvedHeaders.Authorization = `Bearer ${accessToken}`;
-        }
+        const resolvedHeaders =
+          (yield* resolveGraphqlBindingValueMap(ctx, source.headers, {
+            sourceId: source.namespace,
+            sourceScope: source.scope,
+            missingLabel: "header",
+            makeError: (message) =>
+              new GraphqlInvocationError({ message, statusCode: Option.none() }),
+          })) ?? {};
+        const resolvedQueryParams =
+          (yield* resolveGraphqlBindingValueMap(ctx, source.queryParams, {
+            sourceId: source.namespace,
+            sourceScope: source.scope,
+            missingLabel: "query parameter",
+            makeError: (message) =>
+              new GraphqlInvocationError({ message, statusCode: Option.none() }),
+          })) ?? {};
+        const oauthHeader = yield* resolveGraphqlStoredOAuthHeader(
+          ctx,
+          source.namespace,
+          source.scope,
+          source.auth,
+        );
+        Object.assign(resolvedHeaders, oauthHeader ?? {});
 
         const result = yield* invokeWithLayer(
           op.binding,
@@ -543,75 +1063,23 @@ export const graphqlPlugin = definePlugin((options?: GraphqlPluginOptions) => {
         return out;
       }),
 
-    removeSource: ({ ctx, sourceId, scope }) => ctx.storage.removeSource(sourceId, scope),
-
-    // Look up every place this secret appears across the plugin's two
-    // child tables (`graphql_source_header`, `graphql_source_query_param`).
-    // The store runs behind the scoped adapter so reads automatically
-    // walk the executor's scope stack — no scope arg needed.
-    usagesForSecret: ({ ctx, args }) =>
+    removeSource: ({ ctx, sourceId, scope }) =>
       Effect.gen(function* () {
-        // Adapter access via the underlying typed view on the store deps.
-        // We thread it through `ctx.storage` rather than re-grabbing it
-        // because the store already owns the typed adapter handle; expose
-        // a single helper rather than re-implementing the where/joins.
-        const headerRows = yield* ctx.storage.findHeaderRowsBySecret(args.secretId);
-        const paramRows = yield* ctx.storage.findQueryParamRowsBySecret(args.secretId);
-
-        // Resolve owner names by joining to graphql_source. We batch the
-        // distinct (source_id, scope_id) pairs to one findMany rather
-        // than N+1 lookups.
-        const sourceKeys = new Set<string>();
-        for (const r of [...headerRows, ...paramRows]) {
-          sourceKeys.add(`${r.scope_id}:${r.source_id}`);
-        }
-        const sources = yield* ctx.storage.lookupSourceNames([...sourceKeys]);
-
-        const out: Usage[] = [];
-        for (const r of headerRows) {
-          out.push(
-            new Usage({
-              pluginId: "graphql",
-              scopeId: ScopeId.make(r.scope_id),
-              ownerKind: "graphql-source-header",
-              ownerId: r.source_id,
-              ownerName: sources.get(`${r.scope_id}:${r.source_id}`) ?? null,
-              slot: `header:${r.name}`,
-            }),
-          );
-        }
-        for (const r of paramRows) {
-          out.push(
-            new Usage({
-              pluginId: "graphql",
-              scopeId: ScopeId.make(r.scope_id),
-              ownerKind: "graphql-source-query-param",
-              ownerId: r.source_id,
-              ownerName: sources.get(`${r.scope_id}:${r.source_id}`) ?? null,
-              slot: `query_param:${r.name}`,
-            }),
-          );
-        }
-        return out;
-      }),
-
-    usagesForConnection: ({ ctx, args }) =>
-      Effect.gen(function* () {
-        // OAuth refs only appear in graphql_source.auth_connection_id —
-        // one indexed lookup. No child tables to scan.
-        const sources = yield* ctx.storage.findSourcesByConnection(args.connectionId);
-        return sources.map(
-          (s) =>
-            new Usage({
-              pluginId: "graphql",
-              scopeId: ScopeId.make(s.scope),
-              ownerKind: "graphql-source-auth",
-              ownerId: s.namespace,
-              ownerName: s.name,
-              slot: "auth.oauth2",
-            }),
+        yield* ctx.transaction(
+          Effect.gen(function* () {
+            yield* ctx.credentialBindings.removeForSource({
+              pluginId: GRAPHQL_PLUGIN_ID,
+              sourceId,
+              sourceScope: ScopeId.make(scope),
+            });
+            yield* ctx.storage.removeSource(sourceId, scope);
+          }),
         );
       }),
+
+    usagesForSecret: () => Effect.succeed([]),
+
+    usagesForConnection: () => Effect.succeed([]),
 
     detect: ({ url }) =>
       Effect.gen(function* () {

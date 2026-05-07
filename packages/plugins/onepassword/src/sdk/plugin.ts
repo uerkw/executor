@@ -55,8 +55,11 @@ export interface OnePasswordStore {
     OnePasswordConfig | null,
     StorageError | OnePasswordError
   >;
-  readonly saveConfig: (config: OnePasswordConfig) => Effect.Effect<void, StorageError>;
-  readonly deleteConfig: () => Effect.Effect<void, StorageError>;
+  readonly saveConfig: (
+    config: OnePasswordConfig,
+    targetScope: string,
+  ) => Effect.Effect<void, StorageError>;
+  readonly deleteConfig: (targetScope: string) => Effect.Effect<void, StorageError>;
 }
 
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(OnePasswordConfig));
@@ -69,13 +72,7 @@ const blobStorageError =
       cause,
     });
 
-export const makeOnePasswordStore = (
-  blobs: PluginBlobStore,
-  /** Scope id that owns the single 1Password config blob. Default is the
-   *  outermost scope (org/workspace) so the config is visible across
-   *  every per-user scope via the blob store's fall-through read. */
-  writeScope: string,
-): OnePasswordStore => ({
+export const makeOnePasswordStore = (blobs: PluginBlobStore): OnePasswordStore => ({
   getConfig: () =>
     blobs.get(CONFIG_KEY).pipe(
       Effect.mapError(blobStorageError("read")),
@@ -93,7 +90,7 @@ export const makeOnePasswordStore = (
       }),
     ),
 
-  saveConfig: (config) =>
+  saveConfig: (config, targetScope) =>
     blobs
       .put(
         CONFIG_KEY,
@@ -102,13 +99,13 @@ export const makeOnePasswordStore = (
           vaultId: config.vaultId,
           name: config.name,
         }),
-        { scope: writeScope },
+        { scope: targetScope },
       )
       .pipe(Effect.mapError(blobStorageError("write"))),
 
-  deleteConfig: () =>
+  deleteConfig: (targetScope) =>
     blobs
-      .delete(CONFIG_KEY, { scope: writeScope })
+      .delete(CONFIG_KEY, { scope: targetScope })
       .pipe(Effect.mapError(blobStorageError("delete"))),
 });
 
@@ -217,11 +214,12 @@ const makeOnePasswordExtension = (
   preferSdk: boolean | undefined,
 ) => {
   return {
-    configure: (config: OnePasswordConfig) => ctx.storage.saveConfig(config),
+    configure: (config: OnePasswordConfig, targetScope: string) =>
+      ctx.storage.saveConfig(config, targetScope),
 
     getConfig: () => ctx.storage.getConfig(),
 
-    removeConfig: () => ctx.storage.deleteConfig(),
+    removeConfig: (targetScope: string) => ctx.storage.deleteConfig(targetScope),
 
     status: () =>
       Effect.gen(function* () {
@@ -289,7 +287,7 @@ export const onepasswordPlugin = definePlugin((options?: OnePasswordPluginOption
   return {
     id: "onepassword" as const,
     packageName: "@executor-js/plugin-onepassword",
-    storage: ({ blobs, scopes }) => makeOnePasswordStore(blobs, scopes.at(-1)!.id),
+    storage: ({ blobs }) => makeOnePasswordStore(blobs),
 
     extension: (ctx) => makeOnePasswordExtension(ctx, timeoutMs, preferSdk),
 

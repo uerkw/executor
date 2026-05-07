@@ -14,6 +14,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "../components/popover";
 
 export interface SecretPickerSecret {
   readonly id: string;
+  readonly scopeId: string;
   readonly name: string;
   readonly provider?: string;
 }

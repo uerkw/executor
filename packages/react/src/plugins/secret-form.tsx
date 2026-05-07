@@ -12,7 +12,6 @@ import * as Exit from "effect/Exit";
 
 import { setSecret } from "../api/atoms";
 import { secretWriteKeys } from "../api/reactivity-keys";
-import { useScope } from "../api/scope-context";
 import { SecretId, type ScopeId } from "@executor-js/sdk";
 import { Button, type buttonVariants } from "../components/button";
 import { Field, FieldError, FieldLabel } from "../components/field";
@@ -91,7 +90,7 @@ interface SecretFormProviderProps {
   readonly suggestedName?: string;
   readonly fallbackId?: string;
   readonly initialProvider?: string;
-  readonly scopeId?: ScopeId;
+  readonly scopeId: ScopeId;
   readonly onCreated: (secretId: string) => void;
   readonly children: ReactNode;
 }
@@ -102,13 +101,11 @@ function SecretFormProvider(props: SecretFormProviderProps) {
     suggestedName = "",
     fallbackId = "secret",
     initialProvider = "auto",
-    scopeId: scopeIdProp,
+    scopeId,
     onCreated,
     children,
   } = props;
 
-  const defaultScope = useScope();
-  const scopeId = scopeIdProp ?? defaultScope;
   const doSet = useAtomSet(setSecret, { mode: "promiseExit" });
 
   const [state, setState] = useState<SecretFormState>(() => ({

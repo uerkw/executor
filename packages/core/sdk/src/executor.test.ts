@@ -9,7 +9,7 @@ import { CreateConnectionInput, TokenMaterial } from "./connections";
 import { collectSchemas, createExecutor } from "./executor";
 import { ElicitationResponse, FormElicitation, UrlElicitation } from "./elicitation";
 import { defineSchema, definePlugin } from "./plugin";
-import { SetSecretInput } from "./secrets";
+import { RemoveSecretInput, SetSecretInput } from "./secrets";
 import { makeTestConfig } from "./testing";
 import type { SecretProvider } from "./secrets";
 import { ConnectionId, ScopeId, SecretId } from "./ids";
@@ -415,7 +415,9 @@ describe("createExecutor", () => {
   it.effect("rejects remove of a static source", () =>
     Effect.gen(function* () {
       const executor = yield* createExecutor(makeTestConfig({ plugins: [testPlugin()] as const }));
-      const err = yield* executor.sources.remove("test.control").pipe(Effect.flip);
+      const err = yield* executor.sources
+        .remove({ id: "test.control", targetScope: "test-scope" })
+        .pipe(Effect.flip);
       expect(Predicate.isTagged(err, "SourceRemovalNotAllowedError")).toBe(true);
     }),
   );
@@ -895,7 +897,12 @@ describe("createExecutor", () => {
             Effect.gen(function* () {
               const old = yield* ctx.secrets.get(id);
               if (old !== null) {
-                yield* ctx.secrets.remove(id);
+                yield* ctx.secrets.remove(
+                  new RemoveSecretInput({
+                    id: SecretId.make(id),
+                    targetScope: ctx.scopes[0]!.id,
+                  }),
+                );
               }
               yield* ctx.secrets.set(
                 new SetSecretInput({
@@ -1163,6 +1170,55 @@ describe("tenant isolation (SDK)", () => {
 
       const value = yield* exec.secrets.get("token");
       expect(value).toBe("user-value");
+    }),
+  );
+
+  it.effect("secrets.listAll keeps exact-scope rows that secrets.list dedupes", () =>
+    Effect.gen(function* () {
+      const plugins = [tenantPlugin()] as const;
+      const schema = collectSchemas(plugins);
+      const adapter = makeMemoryAdapter({ schema });
+      const blobs = makeInMemoryBlobStore();
+
+      const innerScope = ScopeId.make("user-org:u1:o1");
+      const outerScope = ScopeId.make("o1");
+
+      const exec = yield* createExecutor({
+        scopes: [
+          new Scope({ id: innerScope, name: "inner", createdAt: new Date() }),
+          new Scope({ id: outerScope, name: "outer", createdAt: new Date() }),
+        ],
+        adapter,
+        blobs,
+        plugins,
+        onElicitation: "accept-all",
+      });
+
+      yield* exec.secrets.set(
+        new SetSecretInput({
+          id: SecretId.make("token"),
+          scope: outerScope,
+          name: "org token",
+          value: "org-value",
+        }),
+      );
+      yield* exec.secrets.set(
+        new SetSecretInput({
+          id: SecretId.make("token"),
+          scope: innerScope,
+          name: "user token",
+          value: "user-value",
+        }),
+      );
+
+      const runtimeList = yield* exec.secrets.list();
+      const managementList = yield* exec.secrets.listAll();
+
+      expect(runtimeList.filter((ref) => ref.id === "token")).toHaveLength(1);
+      expect(managementList.filter((ref) => ref.id === "token").map((ref) => ref.scopeId)).toEqual([
+        innerScope,
+        outerScope,
+      ]);
     }),
   );
 
@@ -1486,7 +1542,12 @@ describe("cross-scope read precedence + remove isolation (SDK)", () => {
       );
 
       // Inner caller removes — should only drop the inner override.
-      yield* execInner.secrets.remove("api-token");
+      yield* execInner.secrets.remove(
+        new RemoveSecretInput({
+          id: SecretId.make("api-token"),
+          targetScope: innerId,
+        }),
+      );
 
       // Outer-only executor must still see its org-scope row.
       const outerRefs = yield* execOuter.secrets.list();
@@ -1499,14 +1560,14 @@ describe("cross-scope read precedence + remove isolation (SDK)", () => {
     "sources.remove at the inner scope does not wipe the outer-scope source with same id",
     () =>
       Effect.gen(function* () {
-        const { execOuter, execInner } = yield* makeLayeredExecutors();
+        const { execOuter, execInner, innerId } = yield* makeLayeredExecutors();
 
         yield* execOuter.tenant.addSource("shared");
         yield* execInner.tenant.addSource("shared");
 
         // Inner caller removes "shared" via the public API. The outer
         // executor's source row must survive.
-        yield* execInner.sources.remove("shared");
+        yield* execInner.sources.remove({ id: "shared", targetScope: innerId });
 
         const outerSources = yield* execOuter.sources.list();
         expect(outerSources.map((s) => s.id)).toContain("shared");
@@ -1515,7 +1576,7 @@ describe("cross-scope read precedence + remove isolation (SDK)", () => {
 
   it.effect("ctx.core.sources.unregister at the inner scope does not wipe outer-scope row", () =>
     Effect.gen(function* () {
-      const { execOuter, execInner } = yield* makeLayeredExecutors();
+      const { execOuter, execInner, innerId } = yield* makeLayeredExecutors();
 
       yield* execOuter.tenant.addSource("shared");
       yield* execInner.tenant.addSource("shared");
@@ -1525,7 +1586,7 @@ describe("cross-scope read precedence + remove isolation (SDK)", () => {
       // `sources.remove` — which routes through the same deleteSourceById
       // helper — but the real regression is the findOne-before-delete
       // picking the wrong scope's row. The outer row must survive.
-      yield* execInner.sources.remove("shared");
+      yield* execInner.sources.remove({ id: "shared", targetScope: innerId });
 
       const outerSources = yield* execOuter.sources.list();
       expect(outerSources.filter((s) => s.id === "shared")).toHaveLength(1);

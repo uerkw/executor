@@ -96,8 +96,7 @@ export function HttpCredentialsEditor(props: {
   readonly onChange: (credentials: HttpCredentialsState) => void;
   readonly existingSecrets: readonly SecretPickerSecret[];
   readonly sourceName?: string;
-  readonly targetScope?: ScopeId;
-  readonly writeScope?: ScopeId;
+  readonly targetScope: ScopeId;
   readonly sections?: {
     readonly headers?: boolean;
     readonly queryParams?: boolean;
@@ -120,7 +119,7 @@ export function HttpCredentialsEditor(props: {
             onHeadersChange={(headers) => props.onChange({ ...props.credentials, headers })}
             existingSecrets={props.existingSecrets}
             sourceName={props.sourceName}
-            targetScope={props.targetScope ?? props.writeScope}
+            targetScope={props.targetScope}
           />
         </section>
       )}
@@ -135,7 +134,7 @@ export function HttpCredentialsEditor(props: {
             }
             existingSecrets={props.existingSecrets}
             sourceName={props.sourceName}
-            targetScope={props.targetScope ?? props.writeScope}
+            targetScope={props.targetScope}
           />
         </section>
       )}
@@ -148,7 +147,7 @@ function QueryParamsList(props: {
   readonly onQueryParamsChange: (queryParams: QueryParamState[]) => void;
   readonly existingSecrets: readonly SecretPickerSecret[];
   readonly sourceName?: string;
-  readonly targetScope?: ScopeId;
+  readonly targetScope: ScopeId;
 }) {
   const addParam = () => {
     props.onQueryParamsChange([...props.queryParams, { name: "", secretId: null }]);
@@ -192,7 +191,7 @@ function QueryParamRow(props: {
   readonly param: QueryParamState;
   readonly existingSecrets: readonly SecretPickerSecret[];
   readonly sourceName?: string;
-  readonly targetScope?: ScopeId;
+  readonly targetScope: ScopeId;
   readonly onChange: (update: Partial<QueryParamState>) => void;
   readonly onRemove: () => void;
 }) {
