@@ -85,6 +85,20 @@
       "when": 1778178300000,
       "tag": "0011_repair_openapi_connection_binding_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778179000000,
+      "tag": "0012_repair_openapi_secret_binding_scopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778179800000,
+      "tag": "0013_cleanup_orphan_oauth_rows",
+      "breakpoints": true
     }
   ]
 }
