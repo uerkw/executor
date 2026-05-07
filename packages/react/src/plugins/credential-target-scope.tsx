@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import type { ScopeId } from "@executor-js/sdk";
 
@@ -129,5 +130,27 @@ export function CredentialTargetScopeSelector(props: {
         </CardStackEntry>
       </CardStackContent>
     </CardStack>
+  );
+}
+
+export function CredentialScopeSection(props: {
+  readonly value: ScopeId;
+  readonly options: readonly CredentialTargetScopeOption[];
+  readonly onChange: (scope: ScopeId) => void;
+  readonly children: ReactNode;
+  readonly title?: string;
+  readonly description?: string;
+}) {
+  return (
+    <div className="space-y-3">
+      <CredentialTargetScopeSelector
+        value={props.value}
+        options={props.options}
+        onChange={props.onChange}
+        title={props.title ?? "Save credentials to"}
+        description={props.description ?? "Choose who can use the credentials attached below."}
+      />
+      {props.children}
+    </div>
   );
 }

@@ -39,6 +39,7 @@ import { type HeaderState } from "@executor-js/react/plugins/secret-header-auth"
 import {
   displayNameFromUrl,
   slugifyNamespace,
+  SourceIdentityFieldRows,
   SourceIdentityFields,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";
@@ -50,7 +51,7 @@ import {
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
 import {
-  CredentialTargetScopeSelector,
+  CredentialScopeSection,
   useCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-target-scope";
 
@@ -294,7 +295,9 @@ export default function AddMcpSource(props: {
   const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
     useCredentialTargetScope();
   const doProbe = useAtomSet(probeMcpEndpoint, { mode: "promiseExit" });
-  const doAdd = useAtomSet(addMcpSourceOptimistic(scopeId), { mode: "promiseExit" });
+  const doAdd = useAtomSet(addMcpSourceOptimistic(scopeId), {
+    mode: "promiseExit",
+  });
   const secretList = useSecretPickerSecrets();
   const oauth = useOAuthPopupFlow<OAuthCompletionPayload>({
     popupName: "mcp-oauth",
@@ -649,6 +652,20 @@ export default function AddMcpSource(props: {
                     )}
                   </CardStackEntryActions>
                 </CardStackEntry>
+                <SourceIdentityFieldRows identity={remoteIdentity} namePlaceholder="e.g. Linear" />
+                <CardStackEntryField label="Server URL">
+                  <Input
+                    value={state.url}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "set-url",
+                        url: (e.target as HTMLInputElement).value,
+                      })
+                    }
+                    placeholder="https://mcp.example.com"
+                    className="w-full font-mono text-sm"
+                  />
+                </CardStackEntryField>
               </CardStackContent>
             </CardStack>
           ) : isProbing ? (
@@ -670,62 +687,46 @@ export default function AddMcpSource(props: {
             </CardStack>
           ) : null}
 
-          {/* URL input */}
-          <CardStack>
-            <CardStackContent className="border-t-0">
-              <CardStackEntryField
-                label="Server URL"
-                hint={probeError ? undefined : "Supports Streamable HTTP and SSE transports."}
-              >
-                <div className="relative">
-                  <Input
-                    value={state.url}
-                    onChange={(e) =>
-                      dispatch({
-                        type: "set-url",
-                        url: (e.target as HTMLInputElement).value,
-                      })
-                    }
-                    placeholder="https://mcp.example.com"
-                    className="w-full pr-9 font-mono text-sm"
-                    aria-invalid={probeError ? true : undefined}
-                  />
-                  {isProbing && (
-                    <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
-                      <IOSSpinner className="size-4" />
+          {!probe && (
+            <CardStack>
+              <CardStackContent className="border-t-0">
+                <CardStackEntryField label="Server URL">
+                  <div className="relative">
+                    <Input
+                      value={state.url}
+                      onChange={(e) =>
+                        dispatch({
+                          type: "set-url",
+                          url: (e.target as HTMLInputElement).value,
+                        })
+                      }
+                      placeholder="https://mcp.example.com"
+                      className="w-full pr-9 font-mono text-sm"
+                      aria-invalid={probeError ? true : undefined}
+                    />
+                    {isProbing && (
+                      <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
+                        <IOSSpinner className="size-4" />
+                      </div>
+                    )}
+                  </div>
+                  {probeError && (
+                    <div className="mt-2 space-y-2">
+                      <FieldError>{probeError}</FieldError>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleProbe}
+                        className="h-7 px-2 text-xs"
+                      >
+                        Try again
+                      </Button>
                     </div>
                   )}
-                </div>
-                {probeError && (
-                  <div className="mt-2 space-y-2">
-                    <FieldError>{probeError}</FieldError>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleProbe}
-                      className="h-7 px-2 text-xs"
-                    >
-                      Try again
-                    </Button>
-                  </div>
-                )}
-              </CardStackEntryField>
-            </CardStackContent>
-          </CardStack>
-
-          {probe && (
-            <SourceIdentityFields identity={remoteIdentity} namePlaceholder="e.g. Linear" />
+                </CardStackEntryField>
+              </CardStackContent>
+            </CardStack>
           )}
-
-          <CredentialTargetScopeSelector
-            value={credentialTargetScope}
-            options={credentialScopeOptions}
-            onChange={(targetScope) => {
-              setCredentialTargetScope(targetScope);
-              dispatch({ type: "oauth-reset" });
-            }}
-            description="Choose where MCP request credentials and OAuth connections are saved."
-          />
 
           <HttpCredentialsEditor
             credentials={remoteCredentials}
@@ -762,18 +763,35 @@ export default function AddMcpSource(props: {
               </div>
 
               {remoteAuthMode === "header" && (
-                <HeadersList
-                  headers={remoteAuthHeaders}
-                  onHeadersChange={setRemoteAuthHeaders}
-                  existingSecrets={secretList}
-                  singleHeader
-                  sourceName={remoteIdentity.name}
-                  targetScope={credentialTargetScope}
-                />
+                <CredentialScopeSection
+                  value={credentialTargetScope}
+                  options={credentialScopeOptions}
+                  onChange={(targetScope) => {
+                    setCredentialTargetScope(targetScope);
+                    dispatch({ type: "oauth-reset" });
+                  }}
+                >
+                  <HeadersList
+                    headers={remoteAuthHeaders}
+                    onHeadersChange={setRemoteAuthHeaders}
+                    existingSecrets={secretList}
+                    singleHeader
+                    sourceName={remoteIdentity.name}
+                    targetScope={credentialTargetScope}
+                  />
+                </CredentialScopeSection>
               )}
 
               {remoteAuthMode === "oauth2" && (
-                <>
+                <CredentialScopeSection
+                  value={credentialTargetScope}
+                  options={credentialScopeOptions}
+                  onChange={(targetScope) => {
+                    setCredentialTargetScope(targetScope);
+                    dispatch({ type: "oauth-reset" });
+                  }}
+                  description="Choose who can use the OAuth connection."
+                >
                   {!tokens && state.step === "probed" && (
                     <div className="flex flex-col gap-2">
                       <Button onClick={handleOAuth} variant="outline">
@@ -825,7 +843,7 @@ export default function AddMcpSource(props: {
                       </span>
                     </div>
                   )}
-                </>
+                </CredentialScopeSection>
               )}
             </section>
           )}

@@ -29,7 +29,7 @@ import {
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
 import {
-  CredentialTargetScopeSelector,
+  CredentialScopeSection,
   useCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-target-scope";
 import {
@@ -39,7 +39,7 @@ import {
 } from "@executor-js/react/plugins/secret-header-auth";
 import {
   slugifyNamespace,
-  SourceIdentityFields,
+  SourceIdentityFieldRows,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
@@ -50,6 +50,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@executor-js/react/components/collapsible";
+import { FreeformCombobox } from "@executor-js/react/components/combobox";
 import {
   CardStack,
   CardStackContent,
@@ -63,12 +64,10 @@ import { FieldLabel } from "@executor-js/react/components/field";
 import { FloatActions } from "@executor-js/react/components/float-actions";
 import { Input } from "@executor-js/react/components/input";
 import { Label } from "@executor-js/react/components/label";
-import { NativeSelect, NativeSelectOption } from "@executor-js/react/components/native-select";
 import { Textarea } from "@executor-js/react/components/textarea";
 import { Checkbox } from "@executor-js/react/components/checkbox";
 import { SourceFavicon } from "@executor-js/react/components/source-favicon";
 import { RadioGroup, RadioGroupItem } from "@executor-js/react/components/radio-group";
-import { Skeleton } from "@executor-js/react/components/skeleton";
 import { IOSSpinner, Spinner } from "@executor-js/react/components/spinner";
 import { addOpenApiSpecOptimistic, previewOpenApiSpec, setOpenApiSourceBinding } from "./atoms";
 import type { SpecPreview, HeaderPreset, OAuth2Preset } from "../sdk/preview";
@@ -96,14 +95,6 @@ const errorMessageFromExit = (exit: Exit.Exit<unknown, unknown>, fallback: strin
     onNone: () => fallback,
     onSome: ({ message }) => message,
   });
-
-const substituteUrlVariables = (url: string, values: Record<string, string>): string => {
-  let out = url;
-  for (const [name, value] of Object.entries(values)) {
-    out = out.replaceAll(`{${name}}`, value);
-  }
-  return out;
-};
 
 export const openApiOAuthConnectionId = (
   namespaceSlug: string,
@@ -169,10 +160,16 @@ const parseStrategy = (value: string): StrategySelection => {
   if (value === "none") return { kind: "none" };
   if (value === "custom") return { kind: "custom" };
   if (value.startsWith("header:")) {
-    return { kind: "header", presetIndex: Number(value.slice("header:".length)) };
+    return {
+      kind: "header",
+      presetIndex: Number(value.slice("header:".length)),
+    };
   }
   if (value.startsWith("oauth2:")) {
-    return { kind: "oauth2", presetIndex: Number(value.slice("oauth2:".length)) };
+    return {
+      kind: "oauth2",
+      presetIndex: Number(value.slice("oauth2:".length)),
+    };
   }
   return { kind: "none" };
 };
@@ -220,11 +217,7 @@ export default function AddOpenApiSource(props: {
 
   // After analysis
   const [preview, setPreview] = useState<SpecPreview | null>(null);
-  // -1 means the user is entering a fully custom base URL (no server selected).
-  const [selectedServerIndex, setSelectedServerIndex] = useState<number>(-1);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  // Variable selections for the currently selected server, keyed by variable name.
-  const [variableSelections, setVariableSelections] = useState<Record<string, string>>({});
+  const [baseUrl, setBaseUrl] = useState("");
   const identity = useSourceIdentity({
     fallbackName: preview ? Option.getOrElse(preview.title, () => "") : "",
     fallbackNamespace: props.initialNamespace,
@@ -260,9 +253,13 @@ export default function AddOpenApiSource(props: {
   const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
     useCredentialTargetScope();
   const doPreview = useAtomSet(previewOpenApiSpec, { mode: "promiseExit" });
-  const doAdd = useAtomSet(addOpenApiSpecOptimistic(scopeId), { mode: "promiseExit" });
+  const doAdd = useAtomSet(addOpenApiSpecOptimistic(scopeId), {
+    mode: "promiseExit",
+  });
   const doStartOAuth = useAtomSet(startOAuth, { mode: "promiseExit" });
-  const doSetBinding = useAtomSet(setOpenApiSourceBinding, { mode: "promiseExit" });
+  const doSetBinding = useAtomSet(setOpenApiSourceBinding, {
+    mode: "promiseExit",
+  });
   const secretList = useSecretPickerSecrets();
   const oauth = useOAuthPopupFlow<OAuthCompletionPayload>({
     popupName: OPENAPI_OAUTH_POPUP_NAME,
@@ -289,31 +286,36 @@ export default function AddOpenApiSource(props: {
 
   // ---- Derived state ----
 
-  const servers: readonly ServerInfo[] = preview?.servers ?? [];
-  const selectedServer: ServerInfo | null =
-    selectedServerIndex >= 0 ? (servers[selectedServerIndex] ?? null) : null;
-
-  const serverVariables: Record<string, ServerVariable> = selectedServer
-    ? Option.getOrElse(selectedServer.variables, () => ({}) as Record<string, ServerVariable>)
-    : {};
-  const serverVariableEntries: Array<[string, ServerVariable]> = Object.entries(serverVariables);
-
-  const resolvedBaseUrl =
-    selectedServer !== null
-      ? substituteUrlVariables(selectedServer.url, variableSelections)
-      : customBaseUrl.trim();
-
-  // Helper used by analyze + server selection: build a default selection map
-  // from a server's variable defaults.
-  const defaultSelectionsFor = (server: ServerInfo): Record<string, string> => {
+  const expandServerOptions = (server: ServerInfo) => {
     const vars: Record<string, ServerVariable> = Option.getOrElse(
       server.variables,
       () => ({}) as Record<string, ServerVariable>,
     );
-    const out: Record<string, string> = {};
-    for (const [name, v] of Object.entries(vars)) out[name] = v.default;
-    return out;
+    const variableEntries = Object.entries(vars);
+    const expanded = variableEntries.reduce(
+      (urls, [name, variable]) => {
+        const enumValues: readonly string[] = Option.getOrElse(
+          variable.enum,
+          () => [] as readonly string[],
+        );
+        const values = enumValues.length > 0 ? enumValues : [variable.default];
+        return urls.flatMap((url) => values.map((value) => url.replaceAll(`{${name}}`, value)));
+      },
+      [server.url],
+    );
+
+    return expanded.map((value) => ({
+      value,
+      label: value,
+    }));
   };
+
+  const servers: readonly ServerInfo[] = preview?.servers ?? [];
+  const baseUrlOptions = Array.from(
+    new Map(servers.flatMap(expandServerOptions).map((option) => [option.value, option])).values(),
+  );
+
+  const resolvedBaseUrl = baseUrl.trim();
 
   const configuredHeaders: Record<string, ConfiguredHeaderBinding> = {};
   const headerBindings: Array<{ slot: string; secretId: string }> = [];
@@ -404,20 +406,16 @@ export default function AddOpenApiSource(props: {
     setPreview(result);
 
     const firstServer = result.servers[0];
-    if (firstServer) {
-      setSelectedServerIndex(0);
-      setVariableSelections(defaultSelectionsFor(firstServer));
-      setCustomBaseUrl("");
-    } else {
-      setSelectedServerIndex(-1);
-      setVariableSelections({});
-      setCustomBaseUrl("");
-    }
+    setBaseUrl(firstServer ? (expandServerOptions(firstServer)[0]?.value ?? "") : "");
 
     const firstPreset = result.headerPresets[0];
     if (firstPreset) {
       setStrategy({ kind: "header", presetIndex: 0 });
       setCustomHeaders(entriesFromSpecPreset(firstPreset));
+    } else if (result.oauth2Presets[0]) {
+      setStrategy({ kind: "oauth2", presetIndex: 0 });
+      setCustomHeaders([]);
+      setOauth2SelectedScopes(new Set(Object.keys(result.oauth2Presets[0].scopes)));
     } else {
       // No header presets — default to "custom" so the headers editor is
       // visible immediately. Specs with no `security` block (e.g. Microsoft
@@ -634,7 +632,9 @@ export default function AddOpenApiSource(props: {
         baseUrl: resolvedBaseUrl || undefined,
         ...(hasHeaders ? { headers: configuredHeaders } : {}),
         ...(Object.keys(serializeHttpCredentials(runtimeCredentials).queryParams).length > 0
-          ? { queryParams: serializeHttpCredentials(runtimeCredentials).queryParams }
+          ? {
+              queryParams: serializeHttpCredentials(runtimeCredentials).queryParams,
+            }
           : {}),
         ...(configuredOAuth2 ? { oauth2: configuredOAuth2 } : {}),
       },
@@ -753,70 +753,64 @@ export default function AddOpenApiSource(props: {
         </p>
       </div>
 
-      {/* ── Spec input ── */}
-      <CardStack>
-        <CardStackContent className="border-t-0">
-          <CardStackEntryField
-            label="OpenAPI Spec"
-            hint={!preview ? "Paste a URL or raw JSON/YAML content." : undefined}
-          >
-            <div className="relative">
-              <Textarea
-                value={specUrl}
-                onChange={(e) => {
-                  setSpecUrl((e.target as HTMLTextAreaElement).value);
-                  if (preview) {
-                    setPreview(null);
-                    setSelectedServerIndex(-1);
-                    setCustomBaseUrl("");
-                    setVariableSelections({});
-                    setCustomHeaders([]);
-                    setStrategy({ kind: "none" });
-                    setOauth2AuthState(null);
-                    setOauth2Error(null);
-                  }
-                }}
-                placeholder="https://api.example.com/openapi.json"
-                rows={3}
-                maxRows={10}
-                className="font-mono text-sm"
-              />
-              {analyzing && (
-                <div className="pointer-events-none absolute right-2 top-2">
-                  <IOSSpinner className="size-4" />
+      {!preview && (
+        <>
+          {/* ── Spec input ── */}
+          <CardStack>
+            <CardStackContent className="border-t-0">
+              <CardStackEntryField
+                label="OpenAPI Spec"
+                hint="Paste a URL or raw JSON/YAML content."
+              >
+                <div className="relative">
+                  <Textarea
+                    value={specUrl}
+                    onChange={(e) => {
+                      setSpecUrl((e.target as HTMLTextAreaElement).value);
+                    }}
+                    placeholder="https://api.example.com/openapi.json"
+                    rows={3}
+                    maxRows={10}
+                    className="font-mono text-sm"
+                  />
+                  {analyzing && (
+                    <div className="pointer-events-none absolute right-2 top-2">
+                      <IOSSpinner className="size-4" />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </CardStackEntryField>
-        </CardStackContent>
-      </CardStack>
+              </CardStackEntryField>
+            </CardStackContent>
+          </CardStack>
 
-      <Collapsible
-        open={specFetchCredentialsOpen}
-        onOpenChange={setSpecFetchCredentialsOpen}
-        className="space-y-3"
-      >
-        <CollapsibleTrigger asChild>
-          <Button variant="outline" size="sm" className="self-start">
-            {specFetchCredentialsOpen ? "Hide spec credentials" : "Add spec credentials"}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <HttpCredentialsEditor
-            credentials={specFetchCredentials}
-            onChange={setSpecFetchCredentials}
-            existingSecrets={secretList}
-            sourceName={identity.name}
-            targetScope={credentialTargetScope}
-            labels={{
-              headers: "Spec fetch headers",
-              queryParams: "Spec fetch query parameters",
-            }}
-          />
-        </CollapsibleContent>
-      </Collapsible>
+          <Collapsible
+            open={specFetchCredentialsOpen}
+            onOpenChange={setSpecFetchCredentialsOpen}
+            className="space-y-3"
+          >
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" size="sm" className="self-start">
+                {specFetchCredentialsOpen ? "Hide spec credentials" : "Add spec credentials"}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <HttpCredentialsEditor
+                credentials={specFetchCredentials}
+                onChange={setSpecFetchCredentials}
+                existingSecrets={secretList}
+                sourceName={identity.name}
+                targetScope={credentialTargetScope}
+                labels={{
+                  headers: "Spec fetch headers",
+                  queryParams: "Spec fetch query parameters",
+                }}
+              />
+            </CollapsibleContent>
+          </Collapsible>
+        </>
+      )}
 
-      {/* ── Title card (shown below spec input after analysis) ── */}
+      {/* ── Source information card (shown after analysis) ── */}
       {preview ? (
         <CardStack>
           <CardStackContent className="border-t-0">
@@ -836,18 +830,42 @@ export default function AddOpenApiSource(props: {
                 </CardStackEntryDescription>
               </CardStackEntryContent>
             </CardStackEntry>
-          </CardStackContent>
-        </CardStack>
-      ) : analyzing ? (
-        <CardStack>
-          <CardStackContent className="border-t-0">
-            <CardStackEntry>
-              <Skeleton className="size-4 shrink-0 rounded" />
-              <CardStackEntryContent>
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="mt-1 h-3 w-56" />
-              </CardStackEntryContent>
-            </CardStackEntry>
+            <SourceIdentityFieldRows identity={identity} />
+            <div className="grid grid-cols-1 md:grid-cols-2">
+              <CardStackEntryField label="Base URL">
+                <FreeformCombobox
+                  value={resolvedBaseUrl}
+                  onValueChange={setBaseUrl}
+                  options={baseUrlOptions}
+                  placeholder="https://api.example.com"
+                  emptyLabel="Use the custom URL you typed."
+                  className="w-full"
+                  inputClassName="font-mono text-sm"
+                />
+
+                {!resolvedBaseUrl && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    A base URL is required to make requests.
+                  </p>
+                )}
+              </CardStackEntryField>
+              <CardStackEntryField label="Spec URL">
+                <Input
+                  value={specUrl}
+                  onChange={(e) => {
+                    setSpecUrl((e.target as HTMLInputElement).value);
+                    setPreview(null);
+                    setBaseUrl("");
+                    setCustomHeaders([]);
+                    setStrategy({ kind: "none" });
+                    setOauth2AuthState(null);
+                    setOauth2Error(null);
+                  }}
+                  placeholder="https://api.example.com/openapi.json"
+                  className="font-mono text-sm"
+                />
+              </CardStackEntryField>
+            </div>
           </CardStackContent>
         </CardStack>
       ) : null}
@@ -861,147 +879,6 @@ export default function AddOpenApiSource(props: {
       {/* ── Everything below appears after analysis ── */}
       {preview && (
         <>
-          <SourceIdentityFields identity={identity} />
-
-          <CredentialTargetScopeSelector
-            value={credentialTargetScope}
-            options={credentialScopeOptions}
-            onChange={(targetScope) => {
-              setCredentialTargetScope(targetScope);
-              setOauth2AuthState(null);
-            }}
-            description="Choose where OpenAPI credentials and OAuth connections are saved."
-          />
-
-          {/* Base URL */}
-          <CardStack>
-            <CardStackContent className="border-t-0">
-              <CardStackEntryField label="Base URL">
-                {servers.length >= 1 && (
-                  <RadioGroup
-                    value={String(selectedServerIndex)}
-                    onValueChange={(value) => {
-                      const idx = Number(value);
-                      setSelectedServerIndex(idx);
-                      if (idx >= 0) {
-                        const s = servers[idx];
-                        if (s) setVariableSelections(defaultSelectionsFor(s));
-                      } else {
-                        setVariableSelections({});
-                      }
-                    }}
-                    className="gap-1.5"
-                  >
-                    {servers.map((s, i) => (
-                      <Label
-                        key={i}
-                        className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                          selectedServerIndex === i
-                            ? "border-primary/50 bg-primary/[0.03]"
-                            : "border-border hover:bg-accent/50"
-                        }`}
-                      >
-                        <RadioGroupItem value={String(i)} className="mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <div className="font-mono text-xs text-foreground truncate">{s.url}</div>
-                          {Option.isSome(s.description) && (
-                            <div className="mt-0.5 text-[10px] text-muted-foreground">
-                              {s.description.value}
-                            </div>
-                          )}
-                        </div>
-                      </Label>
-                    ))}
-                    <Label
-                      className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                        selectedServerIndex === -1
-                          ? "border-primary/50 bg-primary/[0.03]"
-                          : "border-border hover:bg-accent/50"
-                      }`}
-                    >
-                      <RadioGroupItem value="-1" />
-                      <span className="text-xs font-medium text-foreground">Custom</span>
-                    </Label>
-                  </RadioGroup>
-                )}
-
-                {/* Per-variable pickers for the selected server */}
-                {selectedServer && serverVariableEntries.length > 0 && (
-                  <div className="mt-2 space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
-                    {serverVariableEntries.map(([name, variable]) => {
-                      const enumValues: readonly string[] = Option.getOrElse(
-                        variable.enum,
-                        () => [] as readonly string[],
-                      );
-                      const current = variableSelections[name] ?? variable.default;
-                      return (
-                        <div key={name} className="space-y-1">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <Label className="font-mono text-[11px] text-foreground">
-                              {`{${name}}`}
-                            </Label>
-                            {Option.isSome(variable.description) && (
-                              <span className="text-[10px] text-muted-foreground truncate">
-                                {variable.description.value}
-                              </span>
-                            )}
-                          </div>
-                          {enumValues.length > 0 ? (
-                            <NativeSelect
-                              value={current}
-                              onChange={(e) =>
-                                setVariableSelections((prev) => ({
-                                  ...prev,
-                                  [name]: (e.target as HTMLSelectElement).value,
-                                }))
-                              }
-                            >
-                              {enumValues.map((v) => (
-                                <NativeSelectOption key={v} value={v}>
-                                  {v}
-                                </NativeSelectOption>
-                              ))}
-                            </NativeSelect>
-                          ) : (
-                            <Input
-                              value={current}
-                              onChange={(e) =>
-                                setVariableSelections((prev) => ({
-                                  ...prev,
-                                  [name]: (e.target as HTMLInputElement).value,
-                                }))
-                              }
-                              className="font-mono text-xs"
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {selectedServerIndex === -1 ? (
-                  <Input
-                    value={customBaseUrl}
-                    onChange={(e) => setCustomBaseUrl((e.target as HTMLInputElement).value)}
-                    placeholder="https://api.example.com"
-                    className="font-mono text-sm"
-                  />
-                ) : (
-                  <div className="rounded-md bg-muted/30 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
-                    {resolvedBaseUrl || "\u00A0"}
-                  </div>
-                )}
-
-                {!resolvedBaseUrl && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    A base URL is required to make requests.
-                  </p>
-                )}
-              </CardStackEntryField>
-            </CardStackContent>
-          </CardStack>
-
           <section className="space-y-2.5">
             <FieldLabel>Authentication</FieldLabel>
             {/* RadioGroup always renders so the static Custom + None radios
@@ -1082,13 +959,22 @@ export default function AddOpenApiSource(props: {
 
             {/* Header-based auth input */}
             {strategy.kind !== "none" && strategy.kind !== "oauth2" && (
-              <HeadersList
-                headers={customHeaders}
-                onHeadersChange={handleHeadersChange}
-                existingSecrets={secretList}
-                sourceName={identity.name}
-                targetScope={credentialTargetScope}
-              />
+              <CredentialScopeSection
+                value={credentialTargetScope}
+                options={credentialScopeOptions}
+                onChange={(targetScope) => {
+                  setCredentialTargetScope(targetScope);
+                  setOauth2AuthState(null);
+                }}
+              >
+                <HeadersList
+                  headers={customHeaders}
+                  onHeadersChange={handleHeadersChange}
+                  existingSecrets={secretList}
+                  sourceName={identity.name}
+                  targetScope={credentialTargetScope}
+                />
+              </CredentialScopeSection>
             )}
 
             <HttpCredentialsEditor
@@ -1104,122 +990,134 @@ export default function AddOpenApiSource(props: {
             {/* OAuth2 configuration */}
             {selectedOAuth2Preset && (
               <div className="space-y-3 rounded-lg border border-border/60 bg-muted/10 p-3">
-                <div className="space-y-1.5">
-                  <FieldLabel className="text-[11px]">
-                    Redirect URL{" "}
-                    <span className="text-muted-foreground">
-                      · add this to your OAuth app's allowed redirects
-                    </span>
-                  </FieldLabel>
-                  <div className="flex items-center gap-1 rounded-md border border-border bg-background/50 px-2.5 py-1.5 font-mono text-[11px]">
-                    <span className="truncate flex-1 text-foreground">{oauth2RedirectUrl}</span>
-                    <CopyButton value={oauth2RedirectUrl} />
+                <CredentialScopeSection
+                  value={credentialTargetScope}
+                  options={credentialScopeOptions}
+                  onChange={(targetScope) => {
+                    setCredentialTargetScope(targetScope);
+                    setOauth2AuthState(null);
+                  }}
+                  description="Choose who can use the OAuth client secrets and connection."
+                >
+                  <div className="space-y-1.5">
+                    <FieldLabel className="text-[11px]">
+                      Redirect URL{" "}
+                      <span className="text-muted-foreground">
+                        · add this to your OAuth app's allowed redirects
+                      </span>
+                    </FieldLabel>
+                    <div className="flex items-center gap-1 rounded-md border border-border bg-background/50 px-2.5 py-1.5 font-mono text-[11px]">
+                      <span className="truncate flex-1 text-foreground">{oauth2RedirectUrl}</span>
+                      <CopyButton value={oauth2RedirectUrl} />
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel className="text-[11px]">Client ID secret</FieldLabel>
-                  <CreatableSecretPicker
-                    value={oauth2ClientIdSecretId}
-                    onSelect={(id: string) => {
-                      setOauth2ClientIdSecretId(id);
-                      setOauth2AuthState(null);
-                    }}
-                    secrets={secretList}
-                    sourceName={identity.name}
-                    secretLabel="Client ID"
-                    targetScope={credentialTargetScope}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel className="text-[11px]">
-                    Client secret{" "}
-                    <span className="text-muted-foreground">
-                      · optional for public clients with PKCE
-                    </span>
-                  </FieldLabel>
-                  <CreatableSecretPicker
-                    value={oauth2ClientSecretSecretId}
-                    onSelect={(id: string) => {
-                      setOauth2ClientSecretSecretId(id);
-                      setOauth2AuthState(null);
-                    }}
-                    secrets={secretList}
-                    sourceName={identity.name}
-                    secretLabel="Client Secret"
-                    targetScope={credentialTargetScope}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel className="text-[11px]">Scopes</FieldLabel>
-                  <div className="space-y-1 rounded-md border border-border/50 bg-background/50 p-2">
-                    {Object.keys(selectedOAuth2Preset.scopes).length === 0 ? (
-                      <div className="text-[11px] italic text-muted-foreground">
-                        No scopes declared by the spec.
+                  <div className="space-y-1.5">
+                    <FieldLabel className="text-[11px]">Client ID secret</FieldLabel>
+                    <CreatableSecretPicker
+                      value={oauth2ClientIdSecretId}
+                      onSelect={(id: string) => {
+                        setOauth2ClientIdSecretId(id);
+                        setOauth2AuthState(null);
+                      }}
+                      secrets={secretList}
+                      sourceName={identity.name}
+                      secretLabel="Client ID"
+                      targetScope={credentialTargetScope}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <FieldLabel className="text-[11px]">
+                      Client secret{" "}
+                      <span className="text-muted-foreground">
+                        · optional for public clients with PKCE
+                      </span>
+                    </FieldLabel>
+                    <CreatableSecretPicker
+                      value={oauth2ClientSecretSecretId}
+                      onSelect={(id: string) => {
+                        setOauth2ClientSecretSecretId(id);
+                        setOauth2AuthState(null);
+                      }}
+                      secrets={secretList}
+                      sourceName={identity.name}
+                      secretLabel="Client Secret"
+                      targetScope={credentialTargetScope}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <FieldLabel className="text-[11px]">Scopes</FieldLabel>
+                    <div className="space-y-1 rounded-md border border-border/50 bg-background/50 p-2">
+                      {Object.keys(selectedOAuth2Preset.scopes).length === 0 ? (
+                        <div className="text-[11px] italic text-muted-foreground">
+                          No scopes declared by the spec.
+                        </div>
+                      ) : (
+                        Object.entries(selectedOAuth2Preset.scopes).map(([scope, description]) => (
+                          <Label key={scope} className="flex items-start gap-2 cursor-pointer py-1">
+                            <Checkbox
+                              checked={oauth2SelectedScopes.has(scope)}
+                              onCheckedChange={() => toggleOAuth2Scope(scope)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-mono text-[11px] text-foreground">{scope}</div>
+                              {description && (
+                                <div className="text-[10px] text-muted-foreground">
+                                  {description}
+                                </div>
+                              )}
+                            </div>
+                          </Label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {oauth2Auth ? (
+                    <div className="flex items-center justify-between rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2">
+                      <div className="text-[11px] text-green-700 dark:text-green-400">
+                        Connected · {oauth2SelectedScopes.size} scope
+                        {oauth2SelectedScopes.size === 1 ? "" : "s"} granted
                       </div>
-                    ) : (
-                      Object.entries(selectedOAuth2Preset.scopes).map(([scope, description]) => (
-                        <Label key={scope} className="flex items-start gap-2 cursor-pointer py-1">
-                          <Checkbox
-                            checked={oauth2SelectedScopes.has(scope)}
-                            onCheckedChange={() => toggleOAuth2Scope(scope)}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="font-mono text-[11px] text-foreground">{scope}</div>
-                            {description && (
-                              <div className="text-[10px] text-muted-foreground">{description}</div>
-                            )}
-                          </div>
-                        </Label>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {oauth2Auth ? (
-                  <div className="flex items-center justify-between rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2">
-                    <div className="text-[11px] text-green-700 dark:text-green-400">
-                      Connected · {oauth2SelectedScopes.size} scope
-                      {oauth2SelectedScopes.size === 1 ? "" : "s"} granted
+                      <Button variant="ghost" size="sm" onClick={() => setOauth2AuthState(null)}>
+                        Disconnect
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => setOauth2AuthState(null)}>
-                      Disconnect
-                    </Button>
-                  </div>
-                ) : oauth2Busy ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex flex-1 items-center gap-2 rounded-md border border-border/60 bg-background/50 px-3 py-2 text-[11px] text-muted-foreground">
-                      <Spinner className="size-3.5" />
-                      Waiting for OAuth… complete the flow in the popup, or cancel to retry.
+                  ) : oauth2Busy ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex flex-1 items-center gap-2 rounded-md border border-border/60 bg-background/50 px-3 py-2 text-[11px] text-muted-foreground">
+                        <Spinner className="size-3.5" />
+                        Waiting for OAuth… complete the flow in the popup, or cancel to retry.
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={handleCancelOAuth2}>
+                        Cancel
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={handleConnectOAuth2}>
+                        Retry
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={handleCancelOAuth2}>
-                      Cancel
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={handleConnectOAuth2}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    <Button
-                      variant="secondary"
-                      onClick={handleConnectOAuth2}
-                      disabled={!oauth2ClientIdSecretId || resolvedBaseUrl.length === 0}
-                      className="w-full"
-                    >
-                      Connect via OAuth
-                    </Button>
-                    <p className="text-[11px] text-muted-foreground">
-                      You can add the source without this OAuth connection. Secured operations will
-                      ask for credentials on the source detail page.
-                    </p>
-                  </div>
-                )}
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <Button
+                        variant="secondary"
+                        onClick={handleConnectOAuth2}
+                        disabled={!oauth2ClientIdSecretId || resolvedBaseUrl.length === 0}
+                        className="w-full"
+                      >
+                        Connect via OAuth
+                      </Button>
+                      <p className="text-[11px] text-muted-foreground">
+                        You can add the source without this OAuth connection. Secured operations
+                        will ask for credentials on the source detail page.
+                      </p>
+                    </div>
+                  )}
 
-                {oauth2Error && (
-                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-                    <p className="text-[11px] text-destructive">{oauth2Error}</p>
-                  </div>
-                )}
+                  {oauth2Error && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                      <p className="text-[11px] text-destructive">{oauth2Error}</p>
+                    </div>
+                  )}
+                </CredentialScopeSection>
               </div>
             )}
           </section>
