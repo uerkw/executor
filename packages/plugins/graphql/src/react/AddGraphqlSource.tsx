@@ -15,7 +15,7 @@ import {
 import {
   displayNameFromUrl,
   slugifyNamespace,
-  SourceIdentityFields,
+  SourceIdentityFieldRows,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";
 import {
@@ -25,7 +25,7 @@ import {
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
 import {
-  CredentialTargetScopeSelector,
+  CredentialScopeSection,
   useCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-target-scope";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
@@ -72,7 +72,9 @@ export default function AddGraphqlSource(props: {
   const scopeId = useScope();
   const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
     useCredentialTargetScope();
-  const doAdd = useAtomSet(addGraphqlSourceOptimistic(scopeId), { mode: "promiseExit" });
+  const doAdd = useAtomSet(addGraphqlSourceOptimistic(scopeId), {
+    mode: "promiseExit",
+  });
   const secretList = useSecretPickerSecrets();
   const oauth = useOAuthPopupFlow({
     popupName: "graphql-oauth",
@@ -138,7 +140,9 @@ export default function AddGraphqlSource(props: {
         namespace,
         ...(Object.keys(headerMap).length > 0 ? { headers: headerMap } : {}),
         ...(Object.keys(queryParams).length > 0
-          ? { queryParams: queryParams as Record<string, GraphqlCredentialInput> }
+          ? {
+              queryParams: queryParams as Record<string, GraphqlCredentialInput>,
+            }
           : {}),
         credentialTargetScope,
         ...(authMode === "oauth2" && tokens
@@ -177,28 +181,26 @@ export default function AddGraphqlSource(props: {
               className="font-mono text-sm"
             />
           </CardStackEntryField>
+          <SourceIdentityFieldRows identity={identity} namePlaceholder="e.g. Shopify API" />
         </CardStackContent>
       </CardStack>
 
-      <SourceIdentityFields identity={identity} namePlaceholder="e.g. Shopify API" />
-
-      <CredentialTargetScopeSelector
+      <CredentialScopeSection
         value={credentialTargetScope}
         options={credentialScopeOptions}
         onChange={(targetScope) => {
           setCredentialTargetScope(targetScope);
           setTokens(null);
         }}
-        description="Choose where new GraphQL credentials and OAuth connections are saved."
-      />
-
-      <HttpCredentialsEditor
-        credentials={credentials}
-        onChange={setCredentials}
-        existingSecrets={secretList}
-        sourceName={identity.name}
-        targetScope={credentialTargetScope}
-      />
+      >
+        <HttpCredentialsEditor
+          credentials={credentials}
+          onChange={setCredentials}
+          existingSecrets={secretList}
+          sourceName={identity.name}
+          targetScope={credentialTargetScope}
+        />
+      </CredentialScopeSection>
 
       <section className="space-y-2.5">
         <div className="flex items-center justify-between gap-3">
