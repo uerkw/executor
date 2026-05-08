@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 
 import { cancelOAuth, startOAuth } from "../api/atoms";
-import { openOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
+import { openOAuthPopup, reserveOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
 import { Button } from "../components/button";
 import {
   OAUTH_POPUP_MESSAGE_TYPE,
@@ -133,6 +133,14 @@ export function useOAuthPopupFlow<
       cancel();
       setBusy(true);
       setError(null);
+      const reservedPopup = reserveOAuthPopup({ popupName });
+      if (!reservedPopup) {
+        const message = popupBlockedMessage ?? "Sign-in popup was blocked by the browser";
+        setBusy(false);
+        setError(message);
+        input.onError?.(message);
+        return;
+      }
       const startExit = await Effect.runPromiseExit(
         Effect.tryPromise({
           try: input.run,
@@ -141,6 +149,7 @@ export function useOAuthPopupFlow<
       );
       if (Exit.isFailure(startExit)) {
         const message = startErrorMessage ?? "Failed to start sign-in";
+        reservedPopup.popup.close();
         setBusy(false);
         setError(message);
         input.onError?.(message);
@@ -150,6 +159,7 @@ export function useOAuthPopupFlow<
       if (response.authorizationUrl === null) {
         const message =
           noAuthorizationUrlMessage ?? "OAuth start did not produce an authorization URL";
+        reservedPopup.popup.close();
         setBusy(false);
         setError(message);
         input.onError?.(message);
@@ -163,6 +173,7 @@ export function useOAuthPopupFlow<
         popupName,
         channelName: OAUTH_POPUP_MESSAGE_TYPE,
         expectedSessionId: response.sessionId,
+        reservedPopup,
         onResult: async (result: OAuthPopupResult<TPayload>) => {
           cleanupRef.current = null;
           sessionRef.current = null;
