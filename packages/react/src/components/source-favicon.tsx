@@ -3,38 +3,15 @@ import { useState } from "react";
 import { getDomain } from "tldts";
 
 // ---------------------------------------------------------------------------
-// SourceFavicon — renders the source site's own public favicon.
-// Do not fetch third-party favicon services here; source URLs may be private.
+// SourceFavicon — renders a small favicon derived from a source URL.
+// Falls back to a neutral icon if the URL is missing or the image fails to load.
 // ---------------------------------------------------------------------------
-
-const IPV4_PATTERN = /^\d{1,3}(?:\.\d{1,3}){3}$/;
-
-const isIpHostname = (hostname: string): boolean =>
-  IPV4_PATTERN.test(hostname) || hostname.includes(":");
 
 export function sourceFaviconUrl(url: string | undefined, size: number): string | null {
   if (!url) return null;
-  if (!URL.canParse(url)) return null;
-
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-
-  const hostname = parsed.hostname.toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local") ||
-    isIpHostname(hostname)
-  ) {
-    return null;
-  }
-
-  const domain = getDomain(hostname);
+  const domain = getDomain(url) ?? (URL.canParse(url) ? getDomain(new URL(url).hostname) : null);
   if (!domain) return null;
-
-  const favicon = new URL(`https://${domain}/favicon.ico`);
-  favicon.searchParams.set("sz", String(size * 2));
-  return favicon.toString();
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size * 2}`;
 }
 
 export function SourceFavicon({ url, size = 16 }: { url?: string; size?: number }) {
