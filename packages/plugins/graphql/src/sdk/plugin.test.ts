@@ -1,5 +1,6 @@
 import { describe, it, expect } from "@effect/vitest";
 import { Effect, Predicate } from "effect";
+import { HttpServerResponse } from "effect/unstable/http";
 
 import {
   ConnectionId,
@@ -14,9 +15,11 @@ import {
   SecretId,
   TokenMaterial,
 } from "@executor-js/sdk";
-import { memorySecretsPlugin } from "@executor-js/sdk/testing";
+import { memorySecretsPlugin, serveTestHttpApp } from "@executor-js/sdk/testing";
 
 import { graphqlPlugin } from "./plugin";
+import { endpointForTelemetry } from "./invoke";
+import { introspect } from "./introspect";
 import { GraphqlSourceBindingInput, graphqlHeaderSlot, graphqlQueryParamSlot } from "./types";
 import type { IntrospectionResult } from "./introspect";
 import { makeGreetingGraphqlSchema, serveGraphqlTestServer } from "../testing";
@@ -121,6 +124,33 @@ const sampleDataPlugin = definePlugin(() => ({
 }));
 
 describe("graphqlPlugin real protocol server", () => {
+  it("uses query-free endpoints for invocation attributes", () => {
+    expect(endpointForTelemetry("https://api.example.test/graphql?token=secret#section")).toBe(
+      "https://api.example.test/graphql",
+    );
+  });
+
+  it.effect("does not include upstream response bodies in introspection status errors", () =>
+    Effect.gen(function* () {
+      const server = yield* serveTestHttpApp(() =>
+        Effect.succeed(
+          HttpServerResponse.text("internal token value", {
+            status: 500,
+            contentType: "text/plain",
+          }),
+        ),
+      );
+
+      const error = yield* introspect(server.url("/graphql")).pipe(
+        Effect.provide(server.httpClientLayer),
+        Effect.flip,
+      );
+
+      expect(error).toHaveProperty("message", "Introspection failed with status 500");
+      expect(error).not.toHaveProperty("message", expect.stringContaining("internal token value"));
+    }),
+  );
+
   it.effect("adds a source by introspecting the live GraphQL endpoint", () =>
     Effect.gen(function* () {
       const server = yield* serveGreetingServer;

@@ -48,6 +48,9 @@ export interface SecretProvider {
     readonly { readonly id: string; readonly name: string }[],
     StorageFailure
   >;
+  /** If false, `get` only runs for routed secret rows owned by this
+   *  provider and is skipped by provider-enumeration fallback lookup. */
+  readonly allowFallback?: boolean;
 }
 
 // ---------------------------------------------------------------------------

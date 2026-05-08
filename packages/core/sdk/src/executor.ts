@@ -1,4 +1,14 @@
-import { Context, Deferred, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
+import {
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Layer,
+  Option,
+  Result,
+  Schema,
+  Semaphore,
+} from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
 import type { OAuthEndpointUrlPolicy } from "./oauth-helpers";
 import { generateKeyBetween } from "fractional-indexing";
@@ -114,6 +124,10 @@ import {
   type ScopeContext,
   type ScopedDBAdapter,
 } from "./scoped-adapter";
+import { validateHostedOutboundUrl } from "./hosted-http-client";
+
+const MAX_ANNOTATION_GROUPS = 64;
+const MAX_APPROVAL_ARGUMENT_PREVIEW_CHARS = 4_000;
 
 // ---------------------------------------------------------------------------
 // Elicitation handler — set once at `createExecutor({ onElicitation })`
@@ -345,6 +359,13 @@ export interface ExecutorConfig<TPlugins extends readonly AnyPlugin[] = []> {
   readonly onElicitation: OnElicitation;
   readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   readonly oauthEndpointUrlPolicy?: OAuthEndpointUrlPolicy;
+  readonly sourceDetection?: {
+    readonly maxUrlLength?: number;
+    readonly maxDetectors?: number;
+    readonly maxResults?: number;
+    readonly timeout?: Duration.Input;
+    readonly hostedOutboundPolicy?: boolean;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -476,11 +497,17 @@ const writeSourceInput = (
       forceAllowId: true,
     });
 
-    if (input.tools.length > 0) {
+    const toolsById = new Map<string, (typeof input.tools)[number]>();
+    for (const tool of input.tools) {
+      toolsById.set(`${input.id}.${tool.name}`, tool);
+    }
+    const tools = [...toolsById.entries()];
+
+    if (tools.length > 0) {
       yield* core.createMany({
         model: "tool",
-        data: input.tools.map((tool) => ({
-          id: `${input.id}.${tool.name}`,
+        data: tools.map(([id, tool]) => ({
+          id,
           scope_id: input.scope,
           source_id: input.id,
           plugin_id: pluginId,
@@ -598,6 +625,13 @@ const activeRawAdapterRef = Context.Reference<DBTransactionAdapter | null>(
     defaultValue: () => null,
   },
 );
+
+const approvalArgumentPreview = (args: unknown): string => {
+  const text = JSON.stringify(args ?? {}, null, 2) ?? "null";
+  return text.length > MAX_APPROVAL_ARGUMENT_PREVIEW_CHARS
+    ? `${text.slice(0, MAX_APPROVAL_ARGUMENT_PREVIEW_CHARS)}...`
+    : text;
+};
 
 // A `DBAdapter` whose methods dispatch to the active adapter (tx handle or
 // root) on every call. Stable identity for consumers (plugin storage,
@@ -846,22 +880,23 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           if (value !== null) return value;
         }
 
-        // Fallback: ask every enumerating provider in parallel. First
-        // non-null in registration order wins. Providers that throw
+        // Fallback: ask enumerating providers in registration order. First
+        // non-null wins. Providers that throw
         // are treated as "don't have it" so one flaky provider can't
         // block resolution via others. Scope-partitioning providers
         // get asked at the innermost scope as a display default — the
         // enumeration fallback doesn't know which scope the value
         // lives in; flat providers ignore the arg.
         const fallbackScope = scopeIds[0]!;
-        const candidates = [...secretProviders.values()].filter((p) => p.list);
-        const values = yield* Effect.all(
-          candidates.map((p) =>
-            p.get(id, fallbackScope).pipe(Effect.catch(() => Effect.succeed(null))),
-          ),
-          { concurrency: "unbounded" },
+        const candidates = [...secretProviders.values()].filter(
+          (p) => p.list && p.allowFallback !== false,
         );
-        for (const value of values) if (value !== null) return value;
+        for (const provider of candidates) {
+          const value = yield* provider
+            .get(id, fallbackScope)
+            .pipe(Effect.catch(() => Effect.succeed(null)));
+          if (value !== null) return value;
+        }
         return null;
       });
 
@@ -1253,9 +1288,6 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         // deny-set so provider `list()` results for the same id can't
         // leak them back in below.
         const allRows = yield* core.findMany({ model: "secret" });
-        const connectionOwnedIds = new Set(
-          allRows.filter((r) => r.owned_by_connection_id).map((r) => r.id),
-        );
         const rows = allRows.filter((r) => !r.owned_by_connection_id);
         const pick = (row: (typeof rows)[number]) => {
           const existing = byId.get(row.id);
@@ -1281,48 +1313,12 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           if (hasBackingValue) pick(row);
         }
 
-        // Then every provider that can enumerate itself, in parallel.
-        // If a provider fails to list (unlocked vault, network error),
-        // swallow the failure so one flaky provider can't block the
-        // whole list. Merge in registration order afterwards so the
-        // "first provider wins" precedence stays deterministic.
-        const attribution = scopes[0]!.id;
-        const listers = [...secretProviders.entries()].filter(([, p]) => p.list);
-        const lists = yield* Effect.all(
-          listers.map(([key, p]) =>
-            p.list!().pipe(
-              Effect.catch(() => Effect.succeed([] as const)),
-              Effect.map((entries) => ({ key, entries })),
-            ),
-          ),
-          { concurrency: "unbounded" },
-        );
-        for (const { key, entries } of lists) {
-          for (const entry of entries) {
-            if (byId.has(entry.id)) continue; // core row wins
-            if (connectionOwnedIds.has(entry.id)) continue; // hidden by connection
-            byId.set(
-              entry.id,
-              new SecretRef({
-                id: SecretId.make(entry.id),
-                scopeId: attribution,
-                name: entry.name,
-                provider: key,
-                createdAt: new Date(),
-              }),
-            );
-          }
-        }
-
         return Array.from(byId.values());
       });
 
     const secretsListAll = (): Effect.Effect<readonly SecretRef[], StorageFailure> =>
       Effect.gen(function* () {
         const allRows = yield* core.findMany({ model: "secret" });
-        const connectionOwnedIds = new Set(
-          allRows.filter((r) => r.owned_by_connection_id).map((r) => r.id),
-        );
         const coreIds = new Set<string>();
         const refs: SecretRef[] = [];
 
@@ -1340,33 +1336,6 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
               createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
             }),
           );
-        }
-
-        const attribution = scopes[0]!.id;
-        const listers = [...secretProviders.entries()].filter(([, p]) => p.list);
-        const lists = yield* Effect.all(
-          listers.map(([key, p]) =>
-            p.list!().pipe(
-              Effect.catch(() => Effect.succeed([] as const)),
-              Effect.map((entries) => ({ key, entries })),
-            ),
-          ),
-          { concurrency: "unbounded" },
-        );
-        for (const { key, entries } of lists) {
-          for (const entry of entries) {
-            if (coreIds.has(entry.id)) continue;
-            if (connectionOwnedIds.has(entry.id)) continue;
-            refs.push(
-              new SecretRef({
-                id: SecretId.make(entry.id),
-                scopeId: attribution,
-                name: entry.name,
-                provider: key,
-                createdAt: new Date(),
-              }),
-            );
-          }
         }
 
         return refs.sort((a, b) => {
@@ -2791,7 +2760,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         // ~200-300ms storage round-trips end-to-end and dominates the
         // `executor.tools.list.annotations` span.
         const maps = yield* Effect.forEach(
-          [...groups],
+          [...groups].slice(0, MAX_ANNOTATION_GROUPS),
           ([key, groupRows]) =>
             Effect.gen(function* () {
               const [pluginId, sourceId] = key.split("\u0000") as [string, string];
@@ -3110,8 +3079,11 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
             ? `Approve ${toolId}? (matched policy: ${policy.pattern})`
             : `Approve ${toolId}?`;
         const request = new FormElicitation({
-          message,
-          requestedSchema: {},
+          message: `${message}\n\nArguments:\n${approvalArgumentPreview(args)}`,
+          requestedSchema: {
+            type: "object",
+            properties: {},
+          },
         });
         const response = yield* handler({ toolId: tid, args, request });
         if (response.action !== "accept") {
@@ -3312,10 +3284,18 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         }
       });
 
-    // URL autodetection — fan out across every plugin that declared a
-    // `detect` hook. Collect all non-null results. Plugin-level detect
-    // implementations should swallow fetch errors and return null, so
-    // one flaky plugin doesn't block the whole dispatch.
+    const sourceDetectionMaxUrlLength = config.sourceDetection?.maxUrlLength ?? 2_048;
+    const sourceDetectionMaxDetectors = config.sourceDetection?.maxDetectors ?? 6;
+    const sourceDetectionMaxResults = config.sourceDetection?.maxResults ?? 4;
+    const sourceDetectionTimeout = config.sourceDetection?.timeout ?? "5 seconds";
+    const sourceDetectionHostedOutboundPolicy =
+      config.sourceDetection?.hostedOutboundPolicy ?? config.httpClientLayer !== undefined;
+
+    // URL autodetection — fan out across a bounded set of plugins that
+    // declared a `detect` hook. Collect non-null results up to the
+    // configured cap. Plugin-level detect implementations should
+    // swallow fetch errors and return null, so one flaky plugin doesn't
+    // block the whole dispatch.
     const detectionConfidenceScore = (confidence: SourceDetectionResult["confidence"]) => {
       switch (confidence) {
         case "high":
@@ -3329,17 +3309,40 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
 
     const detectSource = (url: string) =>
       Effect.gen(function* () {
+        const trimmed = url.trim();
+        if (trimmed.length === 0 || trimmed.length > sourceDetectionMaxUrlLength) return [];
+        const parsed = yield* Effect.try({
+          try: () => new URL(trimmed),
+          catch: (error) => error,
+        }).pipe(Effect.option);
+        if (Option.isNone(parsed)) return [];
+        if (parsed.value.protocol !== "http:" && parsed.value.protocol !== "https:") return [];
+        if (sourceDetectionHostedOutboundPolicy) {
+          const allowed = yield* validateHostedOutboundUrl(trimmed).pipe(
+            Effect.as(true),
+            Effect.catch(() => Effect.succeed(false)),
+          );
+          if (!allowed) return [];
+        }
+
         const results: SourceDetectionResult[] = [];
+        let detectorCount = 0;
         for (const runtime of runtimes.values()) {
           if (!runtime.plugin.detect) continue;
+          if (detectorCount >= sourceDetectionMaxDetectors) break;
+          detectorCount++;
           const result = yield* runtime.plugin
-            .detect({ ctx: runtime.ctx, url })
+            .detect({ ctx: runtime.ctx, url: trimmed })
+            .pipe(Effect.timeout(sourceDetectionTimeout))
             .pipe(Effect.catch(() => Effect.succeed(null)));
           if (result) results.push(result);
         }
-        return results.sort(
-          (a, b) => detectionConfidenceScore(b.confidence) - detectionConfidenceScore(a.confidence),
-        );
+        return results
+          .sort(
+            (a, b) =>
+              detectionConfidenceScore(b.confidence) - detectionConfidenceScore(a.confidence),
+          )
+          .slice(0, sourceDetectionMaxResults);
       });
 
     // Per-source definitions accessor — one query, one mapping pass.
@@ -3358,13 +3361,6 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           if (yield* secretRouteHasBackingValue(row)) return "resolved";
         }
 
-        for (const provider of secretProviders.values()) {
-          if (!provider.list) continue;
-          const entries = yield* provider
-            .list()
-            .pipe(Effect.catch(() => Effect.succeed([] as const)));
-          if (entries.some((e) => e.id === id)) return "resolved";
-        }
         return "missing";
       });
 
