@@ -88,6 +88,7 @@ const ProbeEndpointPayload = Schema.Struct({
 const ProbeEndpointResponse = Schema.Struct({
   connected: Schema.Boolean,
   requiresOAuth: Schema.Boolean,
+  supportsDynamicRegistration: Schema.Boolean,
   name: Schema.String,
   namespace: Schema.String,
   toolCount: Schema.NullOr(Schema.Number),
