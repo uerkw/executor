@@ -170,6 +170,8 @@ export function CredentialScopeDropdown(props: {
   readonly onChange: (scope: ScopeId) => void;
   readonly label?: string;
   readonly help?: ReactNode;
+  readonly triggerClassName?: string;
+  readonly size?: "sm" | "default";
 }) {
   const label = props.label ?? "Used by";
   if (props.options.length <= 1) return null;
@@ -186,7 +188,7 @@ export function CredentialScopeDropdown(props: {
         value={String(props.value)}
         onValueChange={(value) => props.onChange(ScopeId.make(value))}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger className={props.triggerClassName ?? "w-full"} size={props.size}>
           <SelectValue placeholder={label} />
         </SelectTrigger>
         <SelectContent>
@@ -238,6 +240,8 @@ export function CredentialUsageRow(props: {
         onChange={props.onChange}
         label={props.label}
         help={props.help}
+        triggerClassName="w-fit min-w-28"
+        size="sm"
       />
     </div>
   );
