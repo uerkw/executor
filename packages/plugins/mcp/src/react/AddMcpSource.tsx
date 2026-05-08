@@ -79,6 +79,7 @@ type OAuthTokens = OAuthCompletionPayload;
 type ProbeResult = {
   connected: boolean;
   requiresOAuth: boolean;
+  supportsDynamicRegistration: boolean;
   name: string;
   namespace: string;
   toolCount: number | null;
@@ -315,7 +316,7 @@ export default function AddMcpSource(props: {
   const isAdding = state.step === "adding";
   const isOAuthBusy =
     state.step === "oauth-starting" || state.step === "oauth-waiting" || oauth.busy;
-  const canUseNone = probe?.requiresOAuth !== true;
+  const canUseNone = probe?.requiresOAuth !== true || probe.supportsDynamicRegistration === false;
   const remoteHeadersComplete = remoteHeaders.every(
     (header) => header.name.trim() && header.value.trim(),
   );
@@ -622,7 +623,7 @@ export default function AddMcpSource(props: {
                 <FieldLabel>Authentication</FieldLabel>
                 <FilterTabs<RemoteAuthMode>
                   tabs={
-                    probe.requiresOAuth
+                    probe.requiresOAuth && probe.supportsDynamicRegistration
                       ? [{ value: "oauth2", label: "OAuth" }]
                       : [
                           { value: "none", label: "None" },
@@ -649,16 +650,24 @@ export default function AddMcpSource(props: {
                     label="Connect via OAuth"
                     help="Start the provider OAuth flow."
                   >
-                    {!tokens && state.step === "probed" && (
-                      <Button
-                        type="button"
-                        onClick={handleOAuth}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        Sign in
-                      </Button>
-                    )}
+                    {!tokens &&
+                      state.step === "probed" &&
+                      (probe.supportsDynamicRegistration ? (
+                        <Button
+                          type="button"
+                          onClick={handleOAuth}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          Sign in
+                        </Button>
+                      ) : (
+                        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                          This server requires OAuth, but its authorization server does not support
+                          dynamic client registration. Use request headers with a bearer token, or
+                          save the source and connect a supported OAuth connection later.
+                        </div>
+                      ))}
 
                     {!tokens && state.step === "oauth-starting" && (
                       <div className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">

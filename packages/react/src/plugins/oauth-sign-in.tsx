@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 
 import { cancelOAuth, startOAuth } from "../api/atoms";
-import { messageFromUnknown, useReportHandledError } from "../api/error-reporting";
+import { messageFromExit, messageFromUnknown, useReportHandledError } from "../api/error-reporting";
 import { openOAuthPopup, reserveOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
 import { Button } from "../components/button";
 import {
@@ -48,6 +48,7 @@ export type OAuthAuthorizationStartResult = {
 
 class OAuthAuthorizationStartError extends Data.TaggedError("OAuthAuthorizationStartError")<{
   readonly cause: unknown;
+  readonly message: string;
 }> {}
 
 export type StartOAuthAuthorizationInput<TPayload extends OAuthCompletionPayload> = {
@@ -153,11 +154,15 @@ export function useOAuthPopupFlow<
       const startExit = await Effect.runPromiseExit(
         Effect.tryPromise({
           try: input.run,
-          catch: (cause) => new OAuthAuthorizationStartError({ cause }),
+          catch: (cause) =>
+            new OAuthAuthorizationStartError({
+              cause,
+              message: messageFromUnknown(cause, startErrorMessage ?? "Failed to start sign-in"),
+            }),
         }),
       );
       if (Exit.isFailure(startExit)) {
-        const message = startErrorMessage ?? "Failed to start sign-in";
+        const message = messageFromExit(startExit, startErrorMessage ?? "Failed to start sign-in");
         reportHandledError(startExit.cause, {
           surface: "oauth",
           action: "start",
@@ -278,7 +283,11 @@ export function useOAuthPopupFlow<
           }).then((exit) =>
             Exit.isSuccess(exit)
               ? exit.value
-              : Effect.runPromise(Effect.fail(startErrorMessage ?? "Failed to start sign-in")),
+              : Effect.runPromise(
+                  Effect.fail({
+                    message: messageFromExit(exit, startErrorMessage ?? "Failed to start sign-in"),
+                  }),
+                ),
           ),
       });
     },

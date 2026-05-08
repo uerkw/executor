@@ -1,5 +1,5 @@
 import type { OpenAPI, OpenAPIV3, OpenAPIV3_1 } from "openapi-types";
-import { Duration, Effect } from "effect";
+import { Duration, Effect, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 import YAML from "yaml";
 
@@ -107,13 +107,14 @@ const parseTextToObject = (text: string): Effect.Effect<OpenAPI.Document, OpenAp
       });
     }
 
-    const parsed = yield* Effect.try({
-      try: () => YAML.parse(trimmed) as unknown,
-      catch: () =>
-        new OpenApiParseError({
-          message: "Failed to parse OpenAPI document",
-        }),
-    });
+    const parsed = yield* parseJsonLike(trimmed).pipe(
+      Effect.mapError(
+        () =>
+          new OpenApiParseError({
+            message: "Failed to parse OpenAPI document",
+          }),
+      ),
+    );
 
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return yield* new OpenApiParseError({
@@ -123,3 +124,14 @@ const parseTextToObject = (text: string): Effect.Effect<OpenAPI.Document, OpenAp
 
     return parsed as OpenAPI.Document;
   });
+
+const parseJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+
+const parseJsonLike = (text: string): Effect.Effect<unknown, unknown> => {
+  const parseYaml = Effect.try({
+    try: () => YAML.parse(text) as unknown,
+    catch: () => "YamlParseFailed" as const,
+  });
+  if (!text.startsWith("{") && !text.startsWith("[")) return parseYaml;
+  return parseJsonText(text).pipe(Effect.catch(() => parseYaml));
+};

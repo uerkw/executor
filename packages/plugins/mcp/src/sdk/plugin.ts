@@ -122,6 +122,7 @@ export type McpSourceConfig = McpRemoteSourceConfig | McpStdioSourceConfig;
 export interface McpProbeResult {
   readonly connected: boolean;
   readonly requiresOAuth: boolean;
+  readonly supportsDynamicRegistration: boolean;
   readonly name: string;
   readonly namespace: string;
   readonly toolCount: number | null;
@@ -1019,6 +1020,7 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
             return {
               connected: true,
               requiresOAuth: false,
+              supportsDynamicRegistration: false,
               name: result.manifest.server?.name ?? name,
               namespace,
               toolCount: result.manifest.tools.length,
@@ -1054,15 +1056,16 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
               queryParams: probeQueryParams,
             })
             .pipe(
-              Effect.map(() => true),
-              Effect.catch(() => Effect.succeed(false)),
+              Effect.map((oauth) => ({ ok: true as const, oauth })),
+              Effect.catch(() => Effect.succeed({ ok: false as const, oauth: null })),
               Effect.withSpan("mcp.plugin.probe_oauth"),
             );
 
-          if (probeResult) {
+          if (probeResult.ok) {
             return {
               connected: false,
               requiresOAuth: true,
+              supportsDynamicRegistration: probeResult.oauth.supportsDynamicRegistration,
               name,
               namespace,
               toolCount: null,
