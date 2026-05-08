@@ -12,10 +12,7 @@ import { connectionsAtom } from "@executor-js/react/api/atoms";
 import { useScope, useScopeStack } from "@executor-js/react/api/scope-context";
 import { connectionWriteKeys, sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import { slugifyNamespace, useSourceIdentity } from "@executor-js/react/plugins/source-identity";
-import {
-  CredentialTargetScopeSelector,
-  useCredentialTargetScope,
-} from "@executor-js/react/plugins/credential-target-scope";
+import { useCredentialTargetScope } from "@executor-js/react/plugins/credential-target-scope";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
 import {
   HttpCredentialsEditor,
@@ -53,11 +50,10 @@ function RemoteEditForm(props: {
   const displayScope = useScope();
   const scopeStack = useScopeStack();
   const sourceScope = ScopeId.make(props.initial.scope);
-  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
-    useCredentialTargetScope({
-      sourceScope,
-      initialTargetScope: initialCredentialTargetScope(sourceScope, props.bindings),
-    });
+  const { credentialTargetScope, credentialScopeOptions } = useCredentialTargetScope({
+    sourceScope,
+    initialTargetScope: initialCredentialTargetScope(sourceScope, props.bindings),
+  });
   const {
     credentialTargetScope: oauthCredentialTargetScope,
     setCredentialTargetScope: setOAuthCredentialTargetScope,
@@ -180,16 +176,6 @@ function RemoteEditForm(props: {
           toolCount: null,
         }}
         namespaceReadOnly
-      />
-
-      <CredentialTargetScopeSelector
-        value={credentialTargetScope}
-        options={credentialScopeOptions}
-        onChange={(targetScope) => {
-          setCredentialTargetScope(targetScope);
-          setCredentialsDirty(true);
-        }}
-        description="Choose where updated MCP credentials are saved."
       />
 
       <HttpCredentialsEditor

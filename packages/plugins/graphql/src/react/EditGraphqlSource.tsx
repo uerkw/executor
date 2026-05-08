@@ -24,10 +24,7 @@ import {
   initialCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-bindings";
 import { slugifyNamespace, useSourceIdentity } from "@executor-js/react/plugins/source-identity";
-import {
-  CredentialTargetScopeSelector,
-  useCredentialTargetScope,
-} from "@executor-js/react/plugins/credential-target-scope";
+import { useCredentialTargetScope } from "@executor-js/react/plugins/credential-target-scope";
 import { Button } from "@executor-js/react/components/button";
 import { FilterTabs } from "@executor-js/react/components/filter-tabs";
 import { SourceOAuthConnectionControl } from "@executor-js/react/plugins/source-oauth-connection";
@@ -58,11 +55,10 @@ function EditForm(props: {
   const displayScope = useScope();
   const scopeStack = useScopeStack();
   const sourceScope = ScopeId.make(props.initial.scope);
-  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
-    useCredentialTargetScope({
-      sourceScope,
-      initialTargetScope: initialCredentialTargetScope(sourceScope, props.bindings),
-    });
+  const { credentialTargetScope, credentialScopeOptions } = useCredentialTargetScope({
+    sourceScope,
+    initialTargetScope: initialCredentialTargetScope(sourceScope, props.bindings),
+  });
   const {
     credentialTargetScope: oauthCredentialTargetScope,
     setCredentialTargetScope: setOAuthCredentialTargetScope,
@@ -198,16 +194,6 @@ function EditForm(props: {
         onEndpointChange={setEndpoint}
         identity={identity}
         namespaceReadOnly
-      />
-
-      <CredentialTargetScopeSelector
-        value={credentialTargetScope}
-        options={credentialScopeOptions}
-        onChange={(targetScope) => {
-          setCredentialTargetScope(targetScope);
-          setCredentialsDirty(true);
-        }}
-        description="Choose where updated GraphQL credentials are saved."
       />
 
       <HttpCredentialsEditor
