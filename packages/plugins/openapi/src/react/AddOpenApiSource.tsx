@@ -76,7 +76,12 @@ import {
   oauth2ConnectionSlot,
   queryParamBindingSlot,
 } from "../sdk/store";
-import { ConfiguredHeaderBinding, OAuth2SourceConfig, type ServerInfo } from "../sdk/types";
+import {
+  ConfiguredHeaderBinding,
+  OAuth2SourceConfig,
+  OpenApiSourceBindingInput,
+  type ServerInfo,
+} from "../sdk/types";
 import { expandServerUrlOptions } from "../sdk/openapi-utils";
 
 export const OPENAPI_OAUTH_POPUP_NAME = "openapi-oauth";
@@ -750,7 +755,7 @@ export default function AddOpenApiSource(props: {
     for (const binding of headerBindings) {
       const bindingExit = await doSetBinding({
         params: { scopeId },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId,
           sourceScope,
           scope: binding.scope,
@@ -760,7 +765,7 @@ export default function AddOpenApiSource(props: {
             secretId: SecretId.make(binding.secretId),
             secretScopeId: binding.secretScope,
           },
-        },
+        }),
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {
@@ -773,7 +778,7 @@ export default function AddOpenApiSource(props: {
     for (const binding of queryParamBindings) {
       const bindingExit = await doSetBinding({
         params: { scopeId },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId,
           sourceScope,
           scope: binding.scope,
@@ -783,7 +788,7 @@ export default function AddOpenApiSource(props: {
             secretId: SecretId.make(binding.secretId),
             secretScopeId: binding.secretScope,
           },
-        },
+        }),
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {
@@ -796,7 +801,7 @@ export default function AddOpenApiSource(props: {
     if (configuredOAuth2 && oauth2ClientIdSecretId) {
       const bindingExit = await doSetBinding({
         params: { scopeId },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId,
           sourceScope,
           scope: bindingScope,
@@ -806,7 +811,7 @@ export default function AddOpenApiSource(props: {
             secretId: SecretId.make(oauth2ClientIdSecretId),
             secretScopeId: clientIdSecretScope,
           },
-        },
+        }),
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {
@@ -819,7 +824,7 @@ export default function AddOpenApiSource(props: {
     if (configuredOAuth2?.clientSecretSlot && oauth2ClientSecretSecretId) {
       const bindingExit = await doSetBinding({
         params: { scopeId },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId,
           sourceScope,
           scope: bindingScope,
@@ -829,7 +834,7 @@ export default function AddOpenApiSource(props: {
             secretId: SecretId.make(oauth2ClientSecretSecretId),
             secretScopeId: clientSecretSecretScope,
           },
-        },
+        }),
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {
@@ -842,7 +847,7 @@ export default function AddOpenApiSource(props: {
     if (configuredOAuth2 && oauth2Auth) {
       const bindingExit = await doSetBinding({
         params: { scopeId },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId,
           sourceScope,
           scope: oauthTokenBindingScope,
@@ -851,7 +856,7 @@ export default function AddOpenApiSource(props: {
             kind: "connection",
             connectionId: ConnectionId.make(oauth2Auth.connectionId),
           },
-        },
+        }),
         reactivityKeys: bindingWriteKeys,
       });
       if (Exit.isFailure(bindingExit)) {

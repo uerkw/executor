@@ -25,6 +25,7 @@ export const isOAuthPopupResult = sharedIsOAuthPopupResult;
 export type OpenOAuthPopupInput<TAuth> = {
   readonly url: string;
   readonly onResult: (data: OAuthPopupResult<TAuth>) => void;
+  readonly reservedPopup?: ReservedOAuthPopup;
   /** Ignore popup messages for any other in-flight OAuth session. */
   readonly expectedSessionId?: string;
   /** `window.open` target name — also used to focus an existing popup. */
@@ -46,10 +47,41 @@ export type OpenOAuthPopupInput<TAuth> = {
   readonly closedPollMs?: number;
 };
 
+export type ReservedOAuthPopup = {
+  readonly popup: Window;
+};
+
 const isHttpPopupUrl = (value: string): boolean => {
   if (!URL.canParse(value)) return false;
   const url = new URL(value);
   return url.protocol === "http:" || url.protocol === "https:";
+};
+
+const oauthPopupFeatures = (input: { readonly width?: number; readonly height?: number }) => {
+  const w = input.width ?? 640;
+  const h = input.height ?? 760;
+  const left = window.screenX + (window.outerWidth - w) / 2;
+  const top = window.screenY + (window.outerHeight - h) / 2;
+  return `width=${w},height=${h},left=${left},top=${top},popup=1`;
+};
+
+export const reserveOAuthPopup = (input: {
+  readonly popupName: string;
+  readonly width?: number;
+  readonly height?: number;
+}): ReservedOAuthPopup | null => {
+  const popup = window.open("about:blank", input.popupName, oauthPopupFeatures(input));
+  if (!popup) return null;
+  // The app keeps a WindowProxy for navigation/closed polling, but the
+  // provider should not receive opener access after the reserved window
+  // is navigated cross-origin. The callback uses BroadcastChannel.
+  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: popup opener access can throw in browser-specific states
+  try {
+    popup.opener = null;
+  } catch {
+    // Best-effort hardening; the popup handle is still usable for the flow.
+  }
+  return { popup };
 };
 
 /**
@@ -70,11 +102,6 @@ export const openOAuthPopup = <TAuth>(input: OpenOAuthPopupInput<TAuth>): (() =>
     queueMicrotask(() => input.onOpenFailed?.());
     return () => {};
   }
-
-  const w = input.width ?? 640;
-  const h = input.height ?? 760;
-  const left = window.screenX + (window.outerWidth - w) / 2;
-  const top = window.screenY + (window.outerHeight - h) / 2;
 
   let settled = false;
   let pollHandle: ReturnType<typeof setInterval> | null = null;
@@ -122,12 +149,25 @@ export const openOAuthPopup = <TAuth>(input: OpenOAuthPopupInput<TAuth>): (() =>
   window.addEventListener("message", onMessage);
   if (channel) channel.onmessage = (event) => handleResult(event.data);
 
-  const popup = window.open(
-    input.url,
-    input.popupName,
-    `width=${w},height=${h},left=${left},top=${top},popup=1,noopener,noreferrer`,
-  );
+  const popup =
+    input.reservedPopup?.popup ??
+    reserveOAuthPopup({
+      popupName: input.popupName,
+      width: input.width,
+      height: input.height,
+    })?.popup ??
+    null;
   if (!popup) {
+    if (!settled) {
+      settle();
+      queueMicrotask(() => input.onOpenFailed?.());
+    }
+    return () => {};
+  }
+  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: popup navigation can fail if the browser has invalidated the handle
+  try {
+    popup.location.href = input.url;
+  } catch {
     if (!settled) {
       settle();
       queueMicrotask(() => input.onOpenFailed?.());

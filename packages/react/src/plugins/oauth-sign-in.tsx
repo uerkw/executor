@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { cancelOAuth, startOAuth } from "../api/atoms";
-import { openOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
+import { openOAuthPopup, reserveOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
 import { Button } from "../components/button";
 import {
   OAUTH_POPUP_MESSAGE_TYPE,
@@ -71,6 +73,16 @@ const oauthRouteParamsForTokenScope = (
   scopeId: ScopeId.make(String(tokenScope)),
 });
 
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
+
+const oauthPersistenceErrorMessage = (cause: unknown): string =>
+  Option.match(decodeErrorMessage(cause), {
+    onNone: () =>
+      typeof cause === "string" && cause.length > 0 ? cause : "Failed to save connection",
+    onSome: ({ message }) => message,
+  });
+
 export function useOAuthPopupFlow<
   TPayload extends OAuthCompletionPayload = OAuthCompletionPayload,
 >(options: {
@@ -94,9 +106,10 @@ export function useOAuthPopupFlow<
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const sessionRef = useRef<{ readonly sessionId: string; readonly tokenScope: string } | null>(
-    null,
-  );
+  const sessionRef = useRef<{
+    readonly sessionId: string;
+    readonly tokenScope: string;
+  } | null>(null);
 
   const cancelSession = useCallback(
     (sessionId: string, tokenScope: string) => {
@@ -133,6 +146,14 @@ export function useOAuthPopupFlow<
       cancel();
       setBusy(true);
       setError(null);
+      const reservedPopup = reserveOAuthPopup({ popupName });
+      if (!reservedPopup) {
+        const message = popupBlockedMessage ?? "Sign-in popup was blocked by the browser";
+        setBusy(false);
+        setError(message);
+        input.onError?.(message);
+        return;
+      }
       const startExit = await Effect.runPromiseExit(
         Effect.tryPromise({
           try: input.run,
@@ -141,6 +162,7 @@ export function useOAuthPopupFlow<
       );
       if (Exit.isFailure(startExit)) {
         const message = startErrorMessage ?? "Failed to start sign-in";
+        reservedPopup.popup.close();
         setBusy(false);
         setError(message);
         input.onError?.(message);
@@ -150,19 +172,24 @@ export function useOAuthPopupFlow<
       if (response.authorizationUrl === null) {
         const message =
           noAuthorizationUrlMessage ?? "OAuth start did not produce an authorization URL";
+        reservedPopup.popup.close();
         setBusy(false);
         setError(message);
         input.onError?.(message);
         return;
       }
 
-      sessionRef.current = { sessionId: response.sessionId, tokenScope: input.tokenScope };
+      sessionRef.current = {
+        sessionId: response.sessionId,
+        tokenScope: input.tokenScope,
+      };
       input.onAuthorizationStarted?.(response);
       cleanupRef.current = openOAuthPopup<TPayload>({
         url: response.authorizationUrl,
         popupName,
         channelName: OAUTH_POPUP_MESSAGE_TYPE,
         expectedSessionId: response.sessionId,
+        reservedPopup,
         onResult: async (result: OAuthPopupResult<TPayload>) => {
           cleanupRef.current = null;
           sessionRef.current = null;
@@ -174,12 +201,12 @@ export function useOAuthPopupFlow<
             return;
           }
 
-          const persisted = await Promise.resolve(input.onSuccess(result)).then(
-            () => true,
-            () => false,
+          const persistenceError = await Promise.resolve(input.onSuccess(result)).then(
+            () => null,
+            (cause: unknown) => cause,
           );
-          if (!persisted) {
-            const message = "Failed to persist new connection";
+          if (persistenceError !== null) {
+            const message = oauthPersistenceErrorMessage(persistenceError);
             setBusy(false);
             setError(message);
             input.onError?.(message);

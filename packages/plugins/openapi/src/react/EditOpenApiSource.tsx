@@ -51,7 +51,11 @@ import {
   resolveOAuthUrl,
 } from "./AddOpenApiSource";
 import { oauth2ClientSecretSlot } from "../sdk/store";
-import { OAuth2SourceConfig, type OpenApiSourceBindingRef } from "../sdk/types";
+import {
+  OAuth2SourceConfig,
+  OpenApiSourceBindingInput,
+  type OpenApiSourceBindingRef,
+} from "../sdk/types";
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
@@ -348,7 +352,7 @@ export default function EditOpenApiSource(props: {
     setError(null);
     const exit = await doSetBinding({
       params: { scopeId: displayScope },
-      payload: {
+      payload: new OpenApiSourceBindingInput({
         sourceId: props.sourceId,
         sourceScope,
         scope: targetScope,
@@ -358,7 +362,7 @@ export default function EditOpenApiSource(props: {
           secretId: SecretId.make(trimmed),
           secretScopeId: secretScope,
         },
-      },
+      }),
       reactivityKeys: sourceWriteKeys,
     });
     if (Exit.isFailure(exit)) {
@@ -475,7 +479,7 @@ export default function EditOpenApiSource(props: {
       }
       const setBindingExit = await doSetBinding({
         params: { scopeId: displayScope },
-        payload: {
+        payload: new OpenApiSourceBindingInput({
           sourceId: props.sourceId,
           sourceScope,
           scope: targetScope,
@@ -484,7 +488,7 @@ export default function EditOpenApiSource(props: {
             kind: "connection",
             connectionId: ConnectionId.make(response.completedConnection.connectionId),
           },
-        },
+        }),
         reactivityKeys: [...sourceWriteKeys, ...connectionWriteKeys],
       });
       if (Exit.isFailure(setBindingExit)) {
@@ -543,7 +547,7 @@ export default function EditOpenApiSource(props: {
       onSuccess: async (result) => {
         const setBindingExit = await doSetBinding({
           params: { scopeId: displayScope },
-          payload: {
+          payload: new OpenApiSourceBindingInput({
             sourceId: props.sourceId,
             sourceScope,
             scope: targetScope,
@@ -552,7 +556,7 @@ export default function EditOpenApiSource(props: {
               kind: "connection",
               connectionId: ConnectionId.make(result.connectionId),
             },
-          },
+          }),
           reactivityKeys: [...sourceWriteKeys, ...connectionWriteKeys],
         });
         if (Exit.isFailure(setBindingExit)) {
