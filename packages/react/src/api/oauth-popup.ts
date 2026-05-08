@@ -46,6 +46,12 @@ export type OpenOAuthPopupInput<TAuth> = {
   readonly closedPollMs?: number;
 };
 
+const isHttpPopupUrl = (value: string): boolean => {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  return url.protocol === "http:" || url.protocol === "https:";
+};
+
 /**
  * Open a centered popup window at `url` and resolve when the popup posts
  * an `OAuthPopupResult` back to the opener. Returns a teardown function
@@ -60,6 +66,11 @@ export type OpenOAuthPopupInput<TAuth> = {
  * `onOpenFailed` on the next microtask and returns a no-op teardown.
  */
 export const openOAuthPopup = <TAuth>(input: OpenOAuthPopupInput<TAuth>): (() => void) => {
+  if (!isHttpPopupUrl(input.url)) {
+    queueMicrotask(() => input.onOpenFailed?.());
+    return () => {};
+  }
+
   const w = input.width ?? 640;
   const h = input.height ?? 760;
   const left = window.screenX + (window.outerWidth - w) / 2;
@@ -114,7 +125,7 @@ export const openOAuthPopup = <TAuth>(input: OpenOAuthPopupInput<TAuth>): (() =>
   const popup = window.open(
     input.url,
     input.popupName,
-    `width=${w},height=${h},left=${left},top=${top},popup=1`,
+    `width=${w},height=${h},left=${left},top=${top},popup=1,noopener,noreferrer`,
   );
   if (!popup) {
     if (!settled) {

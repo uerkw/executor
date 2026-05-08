@@ -195,6 +195,7 @@ const createLocalExecutorLayer = () => {
         blobs,
         plugins,
         onElicitation: "accept-all",
+        oauthEndpointUrlPolicy: { allowHttp: true },
       });
 
       // Sync sources from executor.jsonc (idempotent — plugins upsert).
