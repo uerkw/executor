@@ -129,6 +129,7 @@ export {
   CredentialBindingValue,
   ConfiguredCredentialBinding,
   ConfiguredCredentialValue,
+  ScopedSecretCredentialInput,
   CredentialBindingRef,
   SetCredentialBindingInput,
   CredentialBindingSourceInput,

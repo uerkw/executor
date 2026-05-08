@@ -170,8 +170,12 @@ export default function EditOpenApiSource(props: {
   const secretList = useSecretPickerSecrets();
 
   const doUpdate = useAtomSet(updateOpenApiSource, { mode: "promiseExit" });
-  const doSetBinding = useAtomSet(setOpenApiSourceBinding, { mode: "promiseExit" });
-  const doRemoveBinding = useAtomSet(removeOpenApiSourceBinding, { mode: "promiseExit" });
+  const doSetBinding = useAtomSet(setOpenApiSourceBinding, {
+    mode: "promiseExit",
+  });
+  const doRemoveBinding = useAtomSet(removeOpenApiSourceBinding, {
+    mode: "promiseExit",
+  });
   const doStartOAuth = useAtomSet(startOAuth, { mode: "promiseExit" });
   const oauth = useOAuthPopupFlow<OAuthCompletionPayload>({
     popupName: OPENAPI_OAUTH_POPUP_NAME,
@@ -196,10 +200,14 @@ export default function EditOpenApiSource(props: {
     readonly connectionId: string;
   } | null>(null);
   const [loadedSourceKey, setLoadedSourceKey] = useState<string | null>(null);
-  const [selectedCredentialScope, setSelectedCredentialScope] = useState<string>(
+  const [selectedOAuthTokenScope, setSelectedOAuthTokenScope] = useState<string>(
     userScope !== sourceScopeId ? userScope : sourceScopeId,
   );
   const sourceSaveSeq = useRef(0);
+
+  useEffect(() => {
+    setSelectedOAuthTokenScope(userScope !== sourceScopeId ? userScope : sourceScopeId);
+  }, [sourceScopeId, userScope]);
 
   useEffect(() => {
     if (!source) return;
@@ -210,10 +218,6 @@ export default function EditOpenApiSource(props: {
     setSourceSaveState("idle");
     setLoadedSourceKey(sourceKey);
   }, [loadedSourceKey, source, sourceScopeId]);
-
-  useEffect(() => {
-    setSelectedCredentialScope(userScope !== sourceScopeId ? userScope : sourceScopeId);
-  }, [sourceScopeId, userScope]);
 
   useEffect(() => {
     if (!source) return;
@@ -313,15 +317,39 @@ export default function EditOpenApiSource(props: {
     if (userScope !== sourceScopeId) {
       entries.unshift({ scopeId: ScopeId.make(userScope), label: "Personal" });
     } else {
-      entries[0] = { scopeId: ScopeId.make(sourceScopeId), label: "Credentials" };
+      entries[0] = {
+        scopeId: ScopeId.make(sourceScopeId),
+        label: "Credentials",
+      };
     }
     return entries;
   }, [sourceScopeId, userScope]);
-  const activeCredentialScope =
-    credentialScopes.find((entry) => entry.scopeId === selectedCredentialScope) ??
+  const credentialScopeOptions = useMemo(
+    () =>
+      credentialScopes.map((entry) => ({
+        scopeId: entry.scopeId,
+        label: entry.label,
+        description:
+          entry.label === "Personal"
+            ? "Saved only for your account."
+            : "Shared with everyone who can use this source.",
+      })),
+    [credentialScopes],
+  );
+  const organizationCredentialScope =
+    credentialScopes.find((entry) => entry.label === "Organization") ?? credentialScopes[0]!;
+  const personalCredentialScope =
+    credentialScopes.find((entry) => entry.label === "Personal") ?? null;
+  const secretBindingScopes =
+    personalCredentialScope &&
+    personalCredentialScope.scopeId !== organizationCredentialScope.scopeId
+      ? [organizationCredentialScope, personalCredentialScope]
+      : [organizationCredentialScope];
+  const activeOAuthTokenScope =
+    credentialScopes.find((entry) => entry.scopeId === selectedOAuthTokenScope) ??
     credentialScopes[0]!;
-  const activeCredentialScopeId = activeCredentialScope.scopeId;
-  const activeCredentialScopeLabel = activeCredentialScope.label;
+  const activeOAuthTokenScopeId = activeOAuthTokenScope.scopeId;
+  const activeOAuthTokenScopeLabel = activeOAuthTokenScope.label;
 
   if (!source) {
     return (
@@ -332,7 +360,12 @@ export default function EditOpenApiSource(props: {
     );
   }
 
-  const setSecretBinding = async (targetScope: ScopeId, slot: string, secretId: string) => {
+  const setSecretBinding = async (
+    targetScope: ScopeId,
+    slot: string,
+    secretId: string,
+    secretScope: ScopeId,
+  ) => {
     const inputKey = `${targetScope}:${slot}`;
     const trimmed = secretId.trim();
     if (!trimmed) return;
@@ -345,7 +378,11 @@ export default function EditOpenApiSource(props: {
         sourceScope,
         scope: targetScope,
         slot,
-        value: { kind: "secret", secretId: SecretId.make(trimmed) },
+        value: {
+          kind: "secret",
+          secretId: SecretId.make(trimmed),
+          secretScopeId: secretScope,
+        },
       },
       reactivityKeys: sourceWriteKeys,
     });
@@ -562,10 +599,6 @@ export default function EditOpenApiSource(props: {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-foreground">OpenAPI Source</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Shared source settings stay on the source. Credentials can be saved personally or shared
-          with the organization.
-        </p>
       </div>
 
       <CardStack>
@@ -612,101 +645,110 @@ export default function EditOpenApiSource(props: {
 
       <CardStack>
         <CardStackContent className="border-t-0">
-          {credentialScopes.length > 1 && (
-            <CardStackEntry>
-              <CardStackEntryContent>
-                <CardStackEntryTitle>Credentials</CardStackEntryTitle>
-                <CardStackEntryDescription>
-                  Choose whether each credential is personal or shared with the organization.
-                </CardStackEntryDescription>
-              </CardStackEntryContent>
-              <FilterTabs
-                tabs={credentialScopes.map((entry) => ({
-                  value: entry.scopeId,
-                  label: entry.label,
-                }))}
-                value={activeCredentialScopeId}
-                onChange={setSelectedCredentialScope}
-              />
-            </CardStackEntry>
-          )}
+          <CardStackEntry>
+            <CardStackEntryContent>
+              <CardStackEntryTitle>Secrets</CardStackEntryTitle>
+            </CardStackEntryContent>
+          </CardStackEntry>
 
           {secretSlots
             .filter((slot) => slot.kind === "secret")
             .map((slot) => {
-              const exact = exactBindingForScope(bindingRows, slot.slot, activeCredentialScopeId);
-              const effective = effectiveBindingForScope(
-                bindingRows,
-                slot.slot,
-                activeCredentialScopeId,
-                scopeRanks,
-              );
-              const inputKey = `${activeCredentialScopeId}:${slot.slot}`;
-              const savedHere = !!(exact && isSecretBindingValue(exact.value));
-              const inherited =
-                !savedHere &&
-                effective &&
-                effective.scopeId !== activeCredentialScopeId &&
-                isSecretBindingValue(effective.value);
-              const currentSecretId =
-                exact && isSecretBindingValue(exact.value)
-                  ? exact.value.secretId
-                  : inherited && effective && isSecretBindingValue(effective.value)
-                    ? effective.value.secretId
-                    : null;
               return (
-                <CardStackEntryField
-                  key={`${slot.slot}:${activeCredentialScopeId}`}
-                  label={slot.label}
-                >
-                  <div className="space-y-2">
-                    <CreatableSecretPicker
-                      value={currentSecretId}
-                      onSelect={(secretId) =>
-                        void setSecretBinding(activeCredentialScopeId, slot.slot, secretId)
-                      }
-                      secrets={secretList}
-                      placeholder={
-                        savedHere
-                          ? `Selected in ${activeCredentialScopeLabel.toLowerCase()}`
-                          : inherited
-                            ? "Using organization default"
-                            : "Select or create a secret"
-                      }
-                      targetScope={activeCredentialScopeId}
-                      suggestedId={bindingSecretId(
-                        props.sourceId,
+                <CardStackEntryField key={slot.slot} label={slot.label}>
+                  <div className="space-y-3">
+                    {secretBindingScopes.map((bindingScope) => {
+                      const exact = exactBindingForScope(
+                        bindingRows,
                         slot.slot,
-                        activeCredentialScopeId,
-                      )}
-                      sourceName={source.name}
-                      secretLabel={slot.label}
-                    />
-                    <div className="flex items-center gap-2">
-                      {savedHere && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void clearBinding(activeCredentialScopeId, slot.slot)}
-                          disabled={busyKey === `${activeCredentialScopeId}:${slot.slot}:clear`}
+                        bindingScope.scopeId,
+                      );
+                      const exactSecretId =
+                        exact && isSecretBindingValue(exact.value) ? exact.value.secretId : null;
+                      const inherited =
+                        bindingScope.label === "Personal"
+                          ? effectiveBindingForScope(
+                              bindingRows,
+                              slot.slot,
+                              bindingScope.scopeId,
+                              scopeRanks,
+                            )
+                          : null;
+                      const inheritedSecretId =
+                        inherited &&
+                        inherited.scopeId !== bindingScope.scopeId &&
+                        isSecretBindingValue(inherited.value)
+                          ? inherited.value.secretId
+                          : null;
+                      const inputKey = `${bindingScope.scopeId}:${slot.slot}`;
+                      const clearKey = `${bindingScope.scopeId}:${slot.slot}:clear`;
+                      const rowTitle =
+                        bindingScope.label === "Personal"
+                          ? "My override"
+                          : secretBindingScopes.length === 1
+                            ? "Source credential"
+                            : "Organization default";
+
+                      return (
+                        <div
+                          key={bindingScope.scopeId}
+                          className="space-y-2 rounded-md border border-border bg-background/40 p-3"
                         >
-                          Clear
-                        </Button>
-                      )}
-                      {busyKey === inputKey && (
-                        <span className="text-xs text-muted-foreground">Saving…</span>
-                      )}
-                      {slot.hint && (
-                        <span className="text-xs text-muted-foreground">{slot.hint}</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {savedHere
-                        ? `Saved in ${activeCredentialScopeLabel.toLowerCase()}.`
-                        : inherited
-                          ? "No value saved here. Using the organization default."
-                          : `No ${activeCredentialScopeLabel.toLowerCase()} value saved yet.`}
-                    </p>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <div className="text-sm font-medium text-foreground">{rowTitle}</div>
+                            </div>
+                            {bindingScope.label === "Personal" &&
+                              !exactSecretId &&
+                              inheritedSecretId && (
+                                <span className="text-xs text-muted-foreground">
+                                  Using organization default
+                                </span>
+                              )}
+                          </div>
+                          <CreatableSecretPicker
+                            value={exactSecretId}
+                            onSelect={(secretId, secretScopeId) => {
+                              void setSecretBinding(
+                                bindingScope.scopeId,
+                                slot.slot,
+                                secretId,
+                                secretScopeId ?? bindingScope.scopeId,
+                              );
+                            }}
+                            secrets={secretList}
+                            placeholder="Select or create a secret"
+                            targetScope={bindingScope.scopeId}
+                            credentialScopeOptions={credentialScopeOptions}
+                            suggestedId={bindingSecretId(
+                              props.sourceId,
+                              slot.slot,
+                              bindingScope.scopeId,
+                            )}
+                            sourceName={source.name}
+                            secretLabel={slot.label}
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            {exactSecretId && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void clearBinding(bindingScope.scopeId, slot.slot)}
+                                disabled={busyKey === clearKey}
+                              >
+                                Clear
+                              </Button>
+                            )}
+                            {busyKey === inputKey && (
+                              <span className="text-xs text-muted-foreground">Saving…</span>
+                            )}
+                            {slot.hint && (
+                              <span className="text-xs text-muted-foreground">{slot.hint}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </CardStackEntryField>
               );
@@ -725,19 +767,37 @@ export default function EditOpenApiSource(props: {
                   </p>
                 </div>
               </CardStackEntryField>
+              {credentialScopes.length > 1 && (
+                <CardStackEntry>
+                  <CardStackEntryContent>
+                    <CardStackEntryTitle>OAuth token</CardStackEntryTitle>
+                    <CardStackEntryDescription>
+                      Choose where the signed-in OAuth token is saved.
+                    </CardStackEntryDescription>
+                  </CardStackEntryContent>
+                  <FilterTabs
+                    tabs={credentialScopes.map((entry) => ({
+                      value: entry.scopeId,
+                      label: entry.label,
+                    }))}
+                    value={activeOAuthTokenScopeId}
+                    onChange={setSelectedOAuthTokenScope}
+                  />
+                </CardStackEntry>
+              )}
               <CardStackEntryField label="OAuth Connection">
                 {(() => {
                   const exact = exactBindingForScope(
                     bindingRows,
                     source.config.oauth2!.connectionSlot,
-                    activeCredentialScopeId,
+                    activeOAuthTokenScopeId,
                   );
                   const binding =
                     exact ??
                     effectiveBindingForScope(
                       bindingRows,
                       source.config.oauth2!.connectionSlot,
-                      activeCredentialScopeId,
+                      activeOAuthTokenScopeId,
                       scopeRanks,
                     );
                   const connectionBinding =
@@ -748,9 +808,10 @@ export default function EditOpenApiSource(props: {
                   const bindingScopeId = connectionBinding && binding ? binding.scopeId : null;
                   const isConnecting =
                     busyKey ===
-                    `${activeCredentialScopeId}:${source.config.oauth2.connectionSlot}:connect`;
+                    `${activeOAuthTokenScopeId}:${source.config.oauth2.connectionSlot}:connect`;
                   const isPendingOAuthConnection =
-                    pendingOAuthConnection?.scopeId === activeCredentialScopeId &&
+                    pendingOAuthConnection?.scopeId === activeOAuthTokenScopeId &&
+                    pendingOAuthConnection !== null &&
                     pendingOAuthConnection.slot === source.config.oauth2.connectionSlot;
                   const isConnected = connection !== null && connection !== undefined;
                   const statusText =
@@ -758,24 +819,24 @@ export default function EditOpenApiSource(props: {
                       ? "Saving OAuth connection..."
                       : connectionBinding && bindingScopeId
                         ? connection
-                          ? bindingScopeId === activeCredentialScopeId
-                            ? `Connected in ${activeCredentialScopeLabel.toLowerCase()} as ${
+                          ? bindingScopeId === activeOAuthTokenScopeId
+                            ? `Connected in ${activeOAuthTokenScopeLabel.toLowerCase()} as ${
                                 connection.identityLabel ?? connection.id
                               }`
                             : `Using organization connection ${
                                 connection.identityLabel ?? connection.id
                               }`
-                          : bindingScopeId === activeCredentialScopeId
-                            ? `Saved connection is missing in ${activeCredentialScopeLabel.toLowerCase()}`
+                          : bindingScopeId === activeOAuthTokenScopeId
+                            ? `Saved connection is missing in ${activeOAuthTokenScopeLabel.toLowerCase()}`
                             : "Organization connection is missing"
-                        : `No ${activeCredentialScopeLabel.toLowerCase()} connection`;
+                        : `No ${activeOAuthTokenScopeLabel.toLowerCase()} connection`;
 
                   return (
                     <div className="space-y-2">
                       <div className="text-sm text-muted-foreground">{statusText}</div>
                       <Button
                         size="sm"
-                        onClick={() => void connectOAuth(activeCredentialScopeId)}
+                        onClick={() => void connectOAuth(activeOAuthTokenScopeId)}
                         disabled={isConnecting}
                       >
                         {isConnecting ? "Connecting…" : isConnected ? "Reconnect" : "Connect"}

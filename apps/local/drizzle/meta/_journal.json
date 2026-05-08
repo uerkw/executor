@@ -71,6 +71,13 @@
       "when": 1778192434062,
       "tag": "0009_repair_openapi_oauth_cutover_residue",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1778192434063,
+      "tag": "0010_add_credential_binding_secret_scope",
+      "breakpoints": true
     }
   ]
 }

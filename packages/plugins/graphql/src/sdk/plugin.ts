@@ -424,6 +424,19 @@ const bindingTargetScope = (
   );
 };
 
+const targetScopeForBinding = (
+  fallbackTargetScope: string | undefined,
+  binding: { readonly targetScope?: string },
+): Effect.Effect<string, GraphqlIntrospectionError> => {
+  const targetScope = binding.targetScope ?? fallbackTargetScope;
+  if (targetScope) return Effect.succeed(targetScope);
+  return Effect.fail(
+    new GraphqlIntrospectionError({
+      message: "credentialTargetScope is required when adding direct GraphQL credentials",
+    }),
+  );
+};
+
 const canonicalizeCredentialMap = (
   values: Record<string, GraphqlCredentialInput> | undefined,
   slotForName: (name: string) => string,
@@ -432,10 +445,15 @@ const canonicalizeCredentialMap = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: GraphqlSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   const nextValues: Record<string, ConfiguredGraphqlCredentialValue> = {};
-  const bindings: Array<{ slot: string; value: GraphqlSourceBindingValue }> = [];
+  const bindings: Array<{
+    slot: string;
+    value: GraphqlSourceBindingValue;
+    targetScope?: string;
+  }> = [];
   for (const [name, value] of Object.entries(values ?? {})) {
     if (typeof value === "string") {
       nextValues[name] = value;
@@ -453,9 +471,13 @@ const canonicalizeCredentialMap = (
     });
     bindings.push({
       slot,
+      targetScope: "targetScope" in value ? value.targetScope : undefined,
       value: {
         kind: "secret",
         secretId: SecretId.make(value.secretId),
+        ...("secretScopeId" in value && value.secretScopeId
+          ? { secretScopeId: value.secretScopeId }
+          : {}),
       },
     });
   }
@@ -469,6 +491,7 @@ const canonicalizeAuth = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: GraphqlSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   if (!auth || auth.kind === "none") return { auth: { kind: "none" }, bindings: [] };
@@ -606,8 +629,12 @@ const makeGraphqlExtension = (
           if (slotResolved?.[name] !== undefined) resolved[name] = slotResolved[name];
           continue;
         }
+        const secretScope =
+          "secretScopeId" in value
+            ? (value.secretScopeId ?? value.targetScope)
+            : (params.targetScope ?? params.sourceScope);
         const secret = yield* ctx.secrets
-          .getAtScope(SecretId.make(value.secretId), params.targetScope ?? params.sourceScope)
+          .getAtScope(SecretId.make(value.secretId), secretScope)
           .pipe(
             Effect.catchTag("SecretOwnedByConnectionError", () =>
               Effect.fail(
@@ -682,14 +709,21 @@ const makeGraphqlExtension = (
           ...canonicalQueryParams.bindings,
           ...canonicalAuth.bindings,
         ];
-        const targetScope = yield* bindingTargetScope(config.credentialTargetScope, directBindings);
-        if (targetScope) {
+        for (const binding of directBindings) {
+          const bindingTargetScope = yield* targetScopeForBinding(
+            config.credentialTargetScope,
+            binding,
+          );
           yield* validateGraphqlBindingTarget(ctx, {
             sourceId: namespace,
             sourceScope: config.scope,
-            targetScope,
+            targetScope: bindingTargetScope,
           });
         }
+        const targetScope =
+          directBindings[0] !== undefined
+            ? yield* targetScopeForBinding(config.credentialTargetScope, directBindings[0])
+            : undefined;
 
         let introspectionResult: IntrospectionResult;
         if (config.introspectionJson) {
@@ -769,10 +803,14 @@ const makeGraphqlExtension = (
           });
         }
 
-        if (targetScope) {
+        if (directBindings.length > 0) {
           for (const binding of directBindings) {
+            const bindingTargetScope = yield* targetScopeForBinding(
+              config.credentialTargetScope,
+              binding,
+            );
             yield* ctx.credentialBindings.set({
-              targetScope: ScopeId.make(targetScope),
+              targetScope: ScopeId.make(bindingTargetScope),
               pluginId: GRAPHQL_PLUGIN_ID,
               sourceId: namespace,
               sourceScope: ScopeId.make(config.scope),

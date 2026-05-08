@@ -9,11 +9,12 @@ import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import {
   HttpCredentialsEditor,
   httpCredentialsValid,
+  serializeScopedHttpCredentials,
   serializeHttpCredentials,
   type HttpCredentialsState,
 } from "@executor-js/react/plugins/http-credentials";
 import {
-  displayNameFromUrl,
+  sourceDisplayNameFromUrl,
   slugifyNamespace,
   SourceIdentityFieldRows,
   useSourceIdentity,
@@ -25,7 +26,8 @@ import {
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
 import {
-  CredentialScopeSection,
+  CredentialControlField,
+  CredentialUsageRow,
   useCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-target-scope";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
@@ -61,7 +63,7 @@ export default function AddGraphqlSource(props: {
 }) {
   const [endpoint, setEndpoint] = useState(props.initialUrl ?? "");
   const identity = useSourceIdentity({
-    fallbackName: displayNameFromUrl(endpoint) ?? "",
+    fallbackName: sourceDisplayNameFromUrl(endpoint, "GraphQL") ?? "",
   });
   const [credentials, setCredentials] = useState<HttpCredentialsState>(initialGraphqlCredentials);
   const [adding, setAdding] = useState(false);
@@ -70,8 +72,12 @@ export default function AddGraphqlSource(props: {
   const [tokens, setTokens] = useState<OAuthCompletionPayload | null>(null);
 
   const scopeId = useScope();
-  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
-    useCredentialTargetScope();
+  const { credentialTargetScope: requestCredentialTargetScope } = useCredentialTargetScope();
+  const {
+    credentialTargetScope: oauthCredentialTargetScope,
+    setCredentialTargetScope: setOAuthCredentialTargetScope,
+    credentialScopeOptions,
+  } = useCredentialTargetScope();
   const doAdd = useAtomSet(addGraphqlSourceOptimistic(scopeId), {
     mode: "promiseExit",
   });
@@ -91,9 +97,10 @@ export default function AddGraphqlSource(props: {
     const trimmedEndpoint = endpoint.trim();
     const namespace =
       slugifyNamespace(identity.namespace) ||
-      slugifyNamespace(displayNameFromUrl(trimmedEndpoint) ?? "") ||
+      slugifyNamespace(sourceDisplayNameFromUrl(trimmedEndpoint, "GraphQL") ?? "") ||
       "graphql";
-    const displayName = identity.name.trim() || displayNameFromUrl(trimmedEndpoint) || namespace;
+    const displayName =
+      identity.name.trim() || sourceDisplayNameFromUrl(trimmedEndpoint, "GraphQL") || namespace;
     return { trimmedEndpoint, namespace, displayName };
   }, [endpoint, identity.name, identity.namespace]);
 
@@ -109,7 +116,7 @@ export default function AddGraphqlSource(props: {
         ...(Object.keys(queryParams).length > 0 ? { queryParams } : {}),
         redirectUrl: oauthCallbackUrl(),
         connectionId: oauthConnectionId({ pluginId: "graphql", namespace }),
-        tokenScope: credentialTargetScope,
+        tokenScope: oauthCredentialTargetScope,
         strategy: { kind: "dynamic-dcr" },
         pluginId: "graphql",
         identityLabel: `${displayName} OAuth`,
@@ -123,12 +130,15 @@ export default function AddGraphqlSource(props: {
       },
       onError: setAddError,
     });
-  }, [endpoint, credentials, oauth, sourceIdentity, credentialTargetScope]);
+  }, [endpoint, credentials, oauth, sourceIdentity, oauthCredentialTargetScope]);
 
   const handleAdd = async () => {
     setAdding(true);
     setAddError(null);
-    const { headers: headerMap, queryParams } = serializeHttpCredentials(credentials);
+    const { headers: headerMap, queryParams } = serializeScopedHttpCredentials(
+      credentials,
+      requestCredentialTargetScope,
+    );
 
     const { trimmedEndpoint, namespace, displayName } = sourceIdentity();
     const exit = await doAdd({
@@ -144,7 +154,10 @@ export default function AddGraphqlSource(props: {
               queryParams: queryParams as Record<string, GraphqlCredentialInput>,
             }
           : {}),
-        credentialTargetScope,
+        credentialTargetScope:
+          authMode === "oauth2" && tokens
+            ? oauthCredentialTargetScope
+            : requestCredentialTargetScope,
         ...(authMode === "oauth2" && tokens
           ? {
               auth: {
@@ -185,24 +198,18 @@ export default function AddGraphqlSource(props: {
         </CardStackContent>
       </CardStack>
 
-      <CredentialScopeSection
-        value={credentialTargetScope}
-        options={credentialScopeOptions}
-        onChange={(targetScope) => {
-          setCredentialTargetScope(targetScope);
-          setTokens(null);
-        }}
-      >
-        <HttpCredentialsEditor
-          credentials={credentials}
-          onChange={setCredentials}
-          existingSecrets={secretList}
-          sourceName={identity.name}
-          targetScope={credentialTargetScope}
-        />
-      </CredentialScopeSection>
+      <HttpCredentialsEditor
+        credentials={credentials}
+        onChange={setCredentials}
+        existingSecrets={secretList}
+        sourceName={identity.name}
+        targetScope={requestCredentialTargetScope}
+        credentialScopeOptions={credentialScopeOptions}
+        bindingScopeOptions={credentialScopeOptions}
+      />
 
-      <section className="space-y-2.5">
+      {/* Temporarily hidden while we revisit GraphQL OAuth discovery and UX. */}
+      <section className="hidden space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm font-medium text-foreground">Authentication</span>
           <FilterTabs<AuthMode>
@@ -219,27 +226,38 @@ export default function AddGraphqlSource(props: {
         </div>
 
         {authMode === "oauth2" && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5">
-            {tokens ? (
-              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                Authenticated
-              </span>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                Sign in before adding so Executor can introspect the schema.
-              </span>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="ml-auto h-7 px-2 text-xs"
-              onClick={() => void handleOAuth()}
-              disabled={!endpoint.trim() || !httpCredentialsValid(credentials) || oauth.busy}
-            >
-              {oauth.busy ? "Signing in..." : tokens ? "Reconnect" : "Sign in"}
-            </Button>
-          </div>
+          <CredentialUsageRow
+            value={oauthCredentialTargetScope}
+            options={credentialScopeOptions}
+            onChange={(targetScope) => {
+              setOAuthCredentialTargetScope(targetScope);
+              setTokens(null);
+            }}
+            label="Connection saved to"
+            help="Choose who can use the OAuth connection."
+          >
+            <CredentialControlField label="Connect via OAuth" help="Start the provider OAuth flow.">
+              <div className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+                {tokens ? (
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    Authenticated
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not connected</span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-7 px-2 text-xs"
+                  onClick={() => void handleOAuth()}
+                  disabled={!endpoint.trim() || !httpCredentialsValid(credentials) || oauth.busy}
+                >
+                  {oauth.busy ? "Signing in..." : tokens ? "Reconnect" : "Sign in"}
+                </Button>
+              </div>
+            </CredentialControlField>
+          </CredentialUsageRow>
         )}
       </section>
 

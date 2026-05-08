@@ -45,8 +45,10 @@ import {
   ConfiguredHeaderValue as ConfiguredHeaderValueSchema,
   ConfiguredHeaderBinding,
   OAuth2SourceConfig,
+  OpenApiCredentialInput as OpenApiCredentialInputSchema,
   OpenApiSourceBindingInput,
   OpenApiSourceBindingRef,
+  type OpenApiCredentialInput as OpenApiCredentialInputValue,
   type OpenApiSourceBindingValue,
   OperationBinding,
   type ConfiguredHeaderValue as ConfiguredHeaderValueValue,
@@ -60,7 +62,7 @@ import {
 export type HeaderValue = HeaderValueValue;
 export type ConfiguredHeaderValue = ConfiguredHeaderValueValue;
 export type OpenApiHeaderInput = HeaderValue | ConfiguredHeaderValue;
-export type OpenApiCredentialInput = HeaderValue | ConfiguredHeaderValue;
+export type OpenApiCredentialInput = OpenApiCredentialInputValue;
 export type OpenApiOAuthInput = OAuth2SourceConfig;
 
 export interface OpenApiSpecFetchCredentialsInput {
@@ -86,7 +88,7 @@ export interface OpenApiSpecConfig {
   readonly name?: string;
   readonly baseUrl?: string;
   readonly namespace?: string;
-  readonly headers?: Record<string, OpenApiHeaderInput>;
+  readonly headers?: Record<string, OpenApiCredentialInput>;
   readonly queryParams?: Record<string, OpenApiCredentialInput>;
   readonly oauth2?: OpenApiOAuthInput;
   readonly credentialTargetScope?: string;
@@ -95,7 +97,7 @@ export interface OpenApiSpecConfig {
 export interface OpenApiUpdateSourceInput {
   readonly name?: string;
   readonly baseUrl?: string;
-  readonly headers?: Record<string, OpenApiHeaderInput>;
+  readonly headers?: Record<string, OpenApiCredentialInput>;
   readonly queryParams?: Record<string, OpenApiCredentialInput>;
   readonly credentialTargetScope?: string;
   /** Refresh the source's stored OAuth2 metadata after a successful
@@ -173,7 +175,6 @@ const PreviewSpecInputSchema = Schema.Struct({
 type PreviewSpecInput = typeof PreviewSpecInputSchema.Type;
 
 const OpenApiHeaderInputSchema = Schema.Union([HeaderValueSchema, ConfiguredHeaderValueSchema]);
-const OpenApiCredentialInputSchema = Schema.Union([HeaderValueSchema, ConfiguredHeaderValueSchema]);
 const OpenApiOAuthInputSchema = OAuth2SourceConfig;
 
 const AddSourceInputSchema = Schema.Struct({
@@ -262,16 +263,21 @@ const specFetchQueryParamSlotFromName = (name: string): string =>
   `spec_fetch_query_param:${slotPart(name)}`;
 
 const canonicalizeHeaders = (
-  headers: Record<string, OpenApiHeaderInput> | undefined,
+  headers: Record<string, OpenApiCredentialInput> | undefined,
 ): {
   readonly headers: Record<string, ConfiguredHeaderValue>;
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: OpenApiSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   const nextHeaders: Record<string, ConfiguredHeaderValue> = {};
-  const bindings: Array<{ slot: string; value: OpenApiSourceBindingValue }> = [];
+  const bindings: Array<{
+    slot: string;
+    value: OpenApiSourceBindingValue;
+    targetScope?: string;
+  }> = [];
   for (const [name, value] of Object.entries(headers ?? {})) {
     if (typeof value === "string") {
       nextHeaders[name] = value;
@@ -289,9 +295,13 @@ const canonicalizeHeaders = (
     });
     bindings.push({
       slot,
+      targetScope: "targetScope" in value ? value.targetScope : undefined,
       value: {
         kind: "secret",
         secretId: SecretId.make(value.secretId),
+        ...("secretScopeId" in value && value.secretScopeId
+          ? { secretScopeId: value.secretScopeId }
+          : {}),
       },
     });
   }
@@ -306,10 +316,15 @@ const canonicalizeCredentialMap = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: OpenApiSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   const nextValues: Record<string, ConfiguredHeaderValue> = {};
-  const bindings: Array<{ slot: string; value: OpenApiSourceBindingValue }> = [];
+  const bindings: Array<{
+    slot: string;
+    value: OpenApiSourceBindingValue;
+    targetScope?: string;
+  }> = [];
   for (const [name, value] of Object.entries(values ?? {})) {
     if (typeof value === "string") {
       nextValues[name] = value;
@@ -327,9 +342,13 @@ const canonicalizeCredentialMap = (
     });
     bindings.push({
       slot,
+      targetScope: "targetScope" in value ? value.targetScope : undefined,
       value: {
         kind: "secret",
         secretId: SecretId.make(value.secretId),
+        ...("secretScopeId" in value && value.secretScopeId
+          ? { secretScopeId: value.secretScopeId }
+          : {}),
       },
     });
   }
@@ -348,6 +367,7 @@ const canonicalizeSpecFetchCredentials = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: OpenApiSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   const headers = canonicalizeCredentialMap(credentials?.headers, specFetchHeaderSlotFromName);
@@ -496,11 +516,11 @@ const validateOpenApiBindingTarget = (
     }
   });
 
-const bindingTargetScope = (
-  targetScope: string | undefined,
-  bindings: readonly unknown[],
-): Effect.Effect<string | undefined, OpenApiOAuthError> => {
-  if (bindings.length === 0) return Effect.succeed(undefined);
+const targetScopeForBinding = (
+  fallbackTargetScope: string | undefined,
+  binding: { readonly slot: string; readonly targetScope?: string },
+): Effect.Effect<string, OpenApiOAuthError> => {
+  const targetScope = binding.targetScope ?? fallbackTargetScope;
   if (targetScope) return Effect.succeed(targetScope);
   return Effect.fail(
     new OpenApiOAuthError({
@@ -579,15 +599,17 @@ const resolveConfiguredValueMap = (
         value.slot,
       );
       if (binding?.value.kind === "secret") {
-        const secret = yield* ctx.secrets.getAtScope(binding.value.secretId, binding.scopeId).pipe(
-          Effect.catchTag("SecretOwnedByConnectionError", () =>
-            Effect.fail(
-              new OpenApiOAuthError({
-                message: `Secret not found for header "${name}"`,
-              }),
+        const secret = yield* ctx.secrets
+          .getAtScope(binding.value.secretId, binding.value.secretScopeId ?? binding.scopeId)
+          .pipe(
+            Effect.catchTag("SecretOwnedByConnectionError", () =>
+              Effect.fail(
+                new OpenApiOAuthError({
+                  message: `Secret not found for header "${name}"`,
+                }),
+              ),
             ),
-          ),
-        );
+          );
         if (secret === null) {
           return yield* new OpenApiOAuthError({
             message: `Missing secret "${binding.value.secretId}" for ${params.missingLabel} "${name}"`,
@@ -808,15 +830,17 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
         ...canonicalSpecFetchCredentials.bindings,
         ...canonicalOAuth2.bindings,
       ];
-      const targetScope = yield* bindingTargetScope(input.credentialTargetScope, directBindings);
-      if (targetScope) {
+      for (const binding of directBindings) {
+        const bindingTargetScope = yield* targetScopeForBinding(
+          input.credentialTargetScope,
+          binding,
+        );
         yield* validateOpenApiBindingTarget(ctx, {
           sourceId: namespace,
           sourceScope: input.scope,
-          targetScope,
+          targetScope: bindingTargetScope,
         });
       }
-
       const definitions = compileToolDefinitions(result.operations);
       const sourceName = input.name ?? Option.getOrElse(result.title, () => namespace);
 
@@ -867,10 +891,14 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
             })),
           });
 
-          if (targetScope) {
+          if (directBindings.length > 0) {
             for (const binding of directBindings) {
+              const bindingTargetScope = yield* targetScopeForBinding(
+                input.credentialTargetScope,
+                binding,
+              );
               yield* ctx.credentialBindings.set({
-                targetScope: ScopeId.make(targetScope),
+                targetScope: ScopeId.make(bindingTargetScope),
                 pluginId: OPENAPI_PLUGIN_ID,
                 sourceId: namespace,
                 sourceScope: ScopeId.make(input.scope),
@@ -1000,7 +1028,10 @@ export const openApiPlugin = definePlugin((options?: OpenApiPluginOptions) => {
                   sourceScope: ScopeId.make(scope),
                 });
                 yield* ctx.storage.removeSource(namespace, scope);
-                yield* ctx.core.sources.unregister({ id: namespace, targetScope: scope });
+                yield* ctx.core.sources.unregister({
+                  id: namespace,
+                  targetScope: scope,
+                });
               }),
             );
             if (configFile) {

@@ -308,6 +308,20 @@ const bindingTargetScope = (
   );
 };
 
+const targetScopeForBinding = (
+  fallbackTargetScope: string | undefined,
+  binding: { readonly targetScope?: string },
+): Effect.Effect<string, McpConnectionError> => {
+  const targetScope = binding.targetScope ?? fallbackTargetScope;
+  if (targetScope) return Effect.succeed(targetScope);
+  return Effect.fail(
+    new McpConnectionError({
+      transport: "remote",
+      message: "credentialTargetScope is required when adding direct MCP credentials",
+    }),
+  );
+};
+
 const canonicalizeCredentialMap = (
   values: Record<string, McpCredentialInput> | undefined,
   slotForName: (name: string) => string,
@@ -316,10 +330,11 @@ const canonicalizeCredentialMap = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: McpSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   const nextValues: Record<string, ConfiguredMcpCredentialValue> = {};
-  const bindings: Array<{ slot: string; value: McpSourceBindingValue }> = [];
+  const bindings: Array<{ slot: string; value: McpSourceBindingValue; targetScope?: string }> = [];
   for (const [name, value] of Object.entries(values ?? {})) {
     if (typeof value === "string") {
       nextValues[name] = value;
@@ -337,9 +352,13 @@ const canonicalizeCredentialMap = (
     });
     bindings.push({
       slot,
+      targetScope: "targetScope" in value ? value.targetScope : undefined,
       value: {
         kind: "secret",
         secretId: SecretId.make(value.secretId),
+        ...("secretScopeId" in value && value.secretScopeId
+          ? { secretScopeId: value.secretScopeId }
+          : {}),
       },
     });
   }
@@ -353,6 +372,7 @@ const canonicalizeAuth = (
   readonly bindings: ReadonlyArray<{
     readonly slot: string;
     readonly value: McpSourceBindingValue;
+    readonly targetScope?: string;
   }>;
 } => {
   if (!auth || auth.kind === "none") return { auth: { kind: "none" }, bindings: [] };
@@ -368,13 +388,18 @@ const canonicalizeAuth = (
       bindings: [
         {
           slot: MCP_HEADER_AUTH_SLOT,
-          value: { kind: "secret", secretId: SecretId.make(auth.secretId) },
+          targetScope: auth.targetScope,
+          value: {
+            kind: "secret",
+            secretId: SecretId.make(auth.secretId),
+            ...(auth.secretScopeId ? { secretScopeId: auth.secretScopeId } : {}),
+          },
         },
       ],
     };
   }
   if ("connectionSlot" in auth) return { auth, bindings: [] };
-  const bindings: Array<{ slot: string; value: McpSourceBindingValue }> = [
+  const bindings: Array<{ slot: string; value: McpSourceBindingValue; targetScope?: string }> = [
     {
       slot: MCP_OAUTH_CONNECTION_SLOT,
       value: {
@@ -572,18 +597,20 @@ const resolveMcpCredentialInputMap = (
         if (slotResolved?.[name] !== undefined) resolved[name] = slotResolved[name];
         continue;
       }
-      const secret = yield* ctx.secrets
-        .getAtScope(SecretId.make(value.secretId), params.targetScope ?? params.sourceScope)
-        .pipe(
-          Effect.catchTag("SecretOwnedByConnectionError", () =>
-            Effect.fail(
-              new McpConnectionError({
-                transport: "remote",
-                message: `Failed to resolve secret for ${params.missingLabel} "${name}"`,
-              }),
-            ),
+      const secretScope =
+        "secretScopeId" in value
+          ? (value.secretScopeId ?? value.targetScope)
+          : (params.targetScope ?? params.sourceScope);
+      const secret = yield* ctx.secrets.getAtScope(SecretId.make(value.secretId), secretScope).pipe(
+        Effect.catchTag("SecretOwnedByConnectionError", () =>
+          Effect.fail(
+            new McpConnectionError({
+              transport: "remote",
+              message: `Failed to resolve secret for ${params.missingLabel} "${name}"`,
+            }),
           ),
-        );
+        ),
+      );
       if (secret === null) {
         return yield* new McpConnectionError({
           transport: "remote",
@@ -681,18 +708,17 @@ const resolveMcpInputAuth = (
         const headers = yield* resolveMcpHeaderAuth(ctx, sourceId, sourceScope, auth);
         return { headers };
       }
-      const secret = yield* ctx.secrets
-        .getAtScope(SecretId.make(auth.secretId), targetScope ?? sourceScope)
-        .pipe(
-          Effect.catchTag("SecretOwnedByConnectionError", () =>
-            Effect.fail(
-              new McpConnectionError({
-                transport: "remote",
-                message: `Failed to resolve secret "${auth.secretId}"`,
-              }),
-            ),
+      const secretScope = auth.secretScopeId ?? auth.targetScope ?? targetScope ?? sourceScope;
+      const secret = yield* ctx.secrets.getAtScope(SecretId.make(auth.secretId), secretScope).pipe(
+        Effect.catchTag("SecretOwnedByConnectionError", () =>
+          Effect.fail(
+            new McpConnectionError({
+              transport: "remote",
+              message: `Failed to resolve secret "${auth.secretId}"`,
+            }),
           ),
-        );
+        ),
+      );
       if (secret === null) {
         return yield* new McpConnectionError({
           transport: "remote",
@@ -1074,17 +1100,21 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
                 ...canonicalRemote.auth.bindings,
               ]
             : [];
-          const targetScope =
-            config.transport === "remote"
-              ? yield* bindingTargetScope(config.credentialTargetScope, directBindings)
-              : undefined;
-          if (targetScope) {
+          for (const binding of directBindings) {
+            const bindingTargetScope = yield* targetScopeForBinding(
+              config.transport === "remote" ? config.credentialTargetScope : undefined,
+              binding,
+            );
             yield* validateMcpBindingTarget(ctx, {
               sourceId: namespace,
               sourceScope: config.scope,
-              targetScope,
+              targetScope: bindingTargetScope,
             });
           }
+          const targetScope =
+            config.transport === "remote" && directBindings[0]
+              ? yield* targetScopeForBinding(config.credentialTargetScope, directBindings[0])
+              : undefined;
           const sd = toStoredSourceData(
             config,
             canonicalRemote
@@ -1227,10 +1257,14 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
                   })),
                 });
 
-                if (targetScope) {
+                if (directBindings.length > 0) {
                   for (const binding of directBindings) {
+                    const bindingTargetScope = yield* targetScopeForBinding(
+                      config.transport === "remote" ? config.credentialTargetScope : undefined,
+                      binding,
+                    );
                     yield* ctx.credentialBindings.set({
-                      targetScope: ScopeId.make(targetScope),
+                      targetScope: ScopeId.make(bindingTargetScope),
                       pluginId: MCP_PLUGIN_ID,
                       sourceId: namespace,
                       sourceScope: ScopeId.make(config.scope),

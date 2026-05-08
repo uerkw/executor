@@ -27,17 +27,15 @@ import { Skeleton } from "@executor-js/react/components/skeleton";
 import { SourceFavicon } from "@executor-js/react/components/source-favicon";
 import { IOSSpinner, Spinner } from "@executor-js/react/components/spinner";
 import { Textarea } from "@executor-js/react/components/textarea";
-import { HeadersList } from "@executor-js/react/plugins/headers-list";
 import {
   emptyHttpCredentials,
   httpCredentialsValid,
   HttpCredentialsEditor,
+  serializeScopedHttpCredentials,
   serializeHttpCredentials,
-  type SecretBackedValue,
 } from "@executor-js/react/plugins/http-credentials";
-import { type HeaderState } from "@executor-js/react/plugins/secret-header-auth";
 import {
-  displayNameFromUrl,
+  sourceDisplayNameFromUrl,
   slugifyNamespace,
   SourceIdentityFieldRows,
   SourceIdentityFields,
@@ -51,15 +49,16 @@ import {
   type OAuthCompletionPayload,
 } from "@executor-js/react/plugins/oauth-sign-in";
 import {
-  CredentialScopeSection,
+  CredentialControlField,
+  CredentialUsageRow,
   useCredentialTargetScope,
 } from "@executor-js/react/plugins/credential-target-scope";
 
-type RemoteAuthMode = "none" | "header" | "oauth2";
+type RemoteAuthMode = "none" | "oauth2";
 import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import { probeMcpEndpoint, addMcpSourceOptimistic } from "./atoms";
 import { mcpPresets, type McpPreset } from "../sdk/presets";
-import { MCP_OAUTH_CONNECTION_SLOT } from "../sdk/types";
+import { MCP_OAUTH_CONNECTION_SLOT, type McpCredentialInput } from "../sdk/types";
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
@@ -101,7 +100,7 @@ type PlainHeader = {
 
 type State =
   | { step: "url"; url: string }
-  | { step: "probing"; url: string }
+  | { step: "probing"; url: string; probe: ProbeResult | null }
   | { step: "probed"; url: string; probe: ProbeResult }
   | { step: "oauth-starting"; url: string; probe: ProbeResult }
   | {
@@ -148,7 +147,7 @@ function reducer(state: State, action: Action): State {
       return { step: "url", url: action.url };
 
     case "probe-start":
-      return { step: "probing", url: state.url };
+      return { step: "probing", url: state.url, probe: "probe" in state ? state.probe : null };
 
     case "probe-ok":
       return { step: "probed", url: state.url, probe: action.probe };
@@ -292,8 +291,12 @@ export default function AddMcpSource(props: {
   );
 
   const scopeId = useScope();
-  const { credentialTargetScope, setCredentialTargetScope, credentialScopeOptions } =
-    useCredentialTargetScope();
+  const { credentialTargetScope: requestCredentialTargetScope } = useCredentialTargetScope();
+  const {
+    credentialTargetScope: oauthCredentialTargetScope,
+    setCredentialTargetScope: setOAuthCredentialTargetScope,
+    credentialScopeOptions,
+  } = useCredentialTargetScope();
   const doProbe = useAtomSet(probeMcpEndpoint, { mode: "promiseExit" });
   const doAdd = useAtomSet(addMcpSourceOptimistic(scopeId), {
     mode: "promiseExit",
@@ -306,14 +309,6 @@ export default function AddMcpSource(props: {
   });
 
   const [remoteAuthMode, setRemoteAuthMode] = useState<RemoteAuthMode>("none");
-  const [remoteAuthHeaders, setRemoteAuthHeaders] = useState<HeaderState[]>([
-    {
-      name: "Authorization",
-      prefix: "Bearer ",
-      presetKey: "bearer",
-      secretId: null,
-    },
-  ]);
   const [remoteHeaders, setRemoteHeaders] = useState<PlainHeader[]>([]);
   const [remoteCredentials, setRemoteCredentials] = useState(() => emptyHttpCredentials());
 
@@ -321,25 +316,19 @@ export default function AddMcpSource(props: {
   const tokens = "tokens" in state ? state.tokens : null;
 
   const remoteIdentity = useSourceIdentity({
-    fallbackName: probe?.serverName ?? probe?.name ?? displayNameFromUrl(state.url) ?? "",
+    fallbackName:
+      sourceDisplayNameFromUrl(state.url, "MCP") ?? probe?.serverName ?? probe?.name ?? "",
   });
   const isProbing = state.step === "probing";
   const isAdding = state.step === "adding";
   const isOAuthBusy =
     state.step === "oauth-starting" || state.step === "oauth-waiting" || oauth.busy;
   const canUseNone = probe?.requiresOAuth !== true;
-  const remoteAuthHeader = remoteAuthHeaders[0];
-  const headerAuthComplete = Boolean(remoteAuthHeader?.name.trim() && remoteAuthHeader?.secretId);
   const remoteHeadersComplete = remoteHeaders.every(
     (header) => header.name.trim() && header.value.trim(),
   );
   const remoteCredentialsComplete = httpCredentialsValid(remoteCredentials);
-  const authReady =
-    remoteAuthMode === "none"
-      ? canUseNone
-      : remoteAuthMode === "header"
-        ? headerAuthComplete
-        : tokens !== null;
+  const authReady = remoteAuthMode === "none" ? canUseNone : tokens !== null;
   const canAdd =
     Boolean(probe) &&
     authReady &&
@@ -392,17 +381,11 @@ export default function AddMcpSource(props: {
       handleProbeRef.current();
     }, 400);
     return () => clearTimeout(handle);
-  }, [transport, state.step, state.url, remoteCredentials]);
+  }, [transport, state.step, state.url]);
 
-  const handleRemoteCredentialsChange = useCallback(
-    (next: typeof remoteCredentials) => {
-      setRemoteCredentials(next);
-      if (state.step === "error" || state.step === "probed" || state.step === "oauth-done") {
-        dispatch({ type: "set-url", url: state.url });
-      }
-    },
-    [state],
-  );
+  const handleRemoteCredentialsChange = useCallback((next: typeof remoteCredentials) => {
+    setRemoteCredentials(next);
+  }, []);
 
   const handleOAuth = useCallback(async () => {
     dispatch({ type: "oauth-start" });
@@ -421,7 +404,7 @@ export default function AddMcpSource(props: {
           pluginId: "mcp",
           namespace: namespaceSlug,
         }),
-        tokenScope: credentialTargetScope,
+        tokenScope: oauthCredentialTargetScope,
         strategy: { kind: "dynamic-dcr" },
         pluginId: "mcp",
         identityLabel: `${remoteIdentity.name.trim() || probe?.serverName || probe?.name || "MCP"} OAuth`,
@@ -440,7 +423,7 @@ export default function AddMcpSource(props: {
         dispatch({ type: "oauth-waiting", sessionId: result.sessionId }),
       onError: (error) => dispatch({ type: "oauth-fail", error }),
     });
-  }, [state.url, remoteIdentity, probe, remoteCredentials, oauth, credentialTargetScope]);
+  }, [state.url, remoteIdentity, probe, remoteCredentials, oauth, oauthCredentialTargetScope]);
 
   const handleCancelOAuth = useCallback(() => {
     oauth.cancel();
@@ -450,33 +433,28 @@ export default function AddMcpSource(props: {
   const handleAddRemote = useCallback(async () => {
     if (!probe) return;
     dispatch({ type: "add-start" });
-    const headerAuth = remoteAuthHeaders[0];
     const auth =
-      remoteAuthMode === "header" && headerAuth?.secretId
-        ? {
-            kind: "header" as const,
-            headerName: headerAuth.name.trim(),
-            secretId: headerAuth.secretId,
-            ...(headerAuth.prefix ? { prefix: headerAuth.prefix } : {}),
-          }
-        : remoteAuthMode === "oauth2"
-          ? tokens
-            ? {
-                kind: "oauth2" as const,
-                connectionId: tokens.connectionId,
-              }
-            : {
-                kind: "oauth2" as const,
-                connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
-              }
-          : { kind: "none" as const };
+      remoteAuthMode === "oauth2"
+        ? tokens
+          ? {
+              kind: "oauth2" as const,
+              connectionId: tokens.connectionId,
+            }
+          : {
+              kind: "oauth2" as const,
+              connectionSlot: MCP_OAUTH_CONNECTION_SLOT,
+            }
+        : { kind: "none" as const };
     const headers = Object.fromEntries(
       remoteHeaders
         .map((header) => [header.name.trim(), header.value.trim()] as const)
         .filter(([name, value]) => name && value),
     );
-    const credentials = serializeHttpCredentials(remoteCredentials);
-    const remoteRequestHeaders: Record<string, SecretBackedValue> = {
+    const credentials = serializeScopedHttpCredentials(
+      remoteCredentials,
+      requestCredentialTargetScope,
+    );
+    const remoteRequestHeaders: Record<string, McpCredentialInput> = {
       ...headers,
       ...credentials.headers,
     };
@@ -491,7 +469,10 @@ export default function AddMcpSource(props: {
         namespace: slugNamespace || undefined,
         endpoint: state.url.trim(),
         auth,
-        credentialTargetScope,
+        credentialTargetScope:
+          remoteAuthMode === "oauth2" && tokens
+            ? oauthCredentialTargetScope
+            : requestCredentialTargetScope,
         ...(Object.keys(remoteRequestHeaders).length > 0 ? { headers: remoteRequestHeaders } : {}),
         ...(Object.keys(credentials.queryParams).length > 0
           ? { queryParams: credentials.queryParams }
@@ -510,7 +491,6 @@ export default function AddMcpSource(props: {
   }, [
     probe,
     remoteAuthMode,
-    remoteAuthHeaders,
     remoteHeaders,
     remoteCredentials,
     remoteIdentity,
@@ -519,7 +499,8 @@ export default function AddMcpSource(props: {
     doAdd,
     props,
     scopeId,
-    credentialTargetScope,
+    requestCredentialTargetScope,
+    oauthCredentialTargetScope,
   ]);
 
   // ---- Stdio actions ----
@@ -714,6 +695,7 @@ export default function AddMcpSource(props: {
                     <div className="mt-2 space-y-2">
                       <FieldError>{probeError}</FieldError>
                       <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={handleProbe}
@@ -733,7 +715,9 @@ export default function AddMcpSource(props: {
             onChange={handleRemoteCredentialsChange}
             existingSecrets={secretList}
             sourceName={remoteIdentity.name}
-            targetScope={credentialTargetScope}
+            targetScope={requestCredentialTargetScope}
+            credentialScopeOptions={credentialScopeOptions}
+            bindingScopeOptions={credentialScopeOptions}
             labels={{
               headers: "Request headers",
               queryParams: "Query parameters",
@@ -748,13 +732,10 @@ export default function AddMcpSource(props: {
                 <FilterTabs<RemoteAuthMode>
                   tabs={
                     probe.requiresOAuth
-                      ? [
-                          { value: "header", label: "Header" },
-                          { value: "oauth2", label: "OAuth" },
-                        ]
+                      ? [{ value: "oauth2", label: "OAuth" }]
                       : [
                           { value: "none", label: "None" },
-                          { value: "header", label: "Header" },
+                          { value: "oauth2", label: "OAuth" },
                         ]
                   }
                   value={remoteAuthMode}
@@ -762,88 +743,77 @@ export default function AddMcpSource(props: {
                 />
               </div>
 
-              {remoteAuthMode === "header" && (
-                <CredentialScopeSection
-                  value={credentialTargetScope}
-                  options={credentialScopeOptions}
-                  onChange={(targetScope) => {
-                    setCredentialTargetScope(targetScope);
-                    dispatch({ type: "oauth-reset" });
-                  }}
-                >
-                  <HeadersList
-                    headers={remoteAuthHeaders}
-                    onHeadersChange={setRemoteAuthHeaders}
-                    existingSecrets={secretList}
-                    singleHeader
-                    sourceName={remoteIdentity.name}
-                    targetScope={credentialTargetScope}
-                  />
-                </CredentialScopeSection>
-              )}
-
               {remoteAuthMode === "oauth2" && (
-                <CredentialScopeSection
-                  value={credentialTargetScope}
+                <CredentialUsageRow
+                  value={oauthCredentialTargetScope}
                   options={credentialScopeOptions}
                   onChange={(targetScope) => {
-                    setCredentialTargetScope(targetScope);
+                    setOAuthCredentialTargetScope(targetScope);
                     dispatch({ type: "oauth-reset" });
                   }}
-                  description="Choose who can use the OAuth connection."
+                  label="Connection saved to"
+                  help="Choose who can use the OAuth connection."
                 >
-                  {!tokens && state.step === "probed" && (
-                    <div className="flex flex-col gap-2">
-                      <Button onClick={handleOAuth} variant="outline">
+                  <CredentialControlField
+                    label="Connect via OAuth"
+                    help="Start the provider OAuth flow."
+                  >
+                    {!tokens && state.step === "probed" && (
+                      <Button
+                        type="button"
+                        onClick={handleOAuth}
+                        variant="outline"
+                        className="w-full"
+                      >
                         Sign in
                       </Button>
-                      <p className="text-[11px] text-muted-foreground">
-                        Sign in before adding so Executor can discover and save the tool catalog.
-                      </p>
-                    </div>
-                  )}
+                    )}
 
-                  {!tokens && state.step === "oauth-starting" && (
-                    <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5">
-                      <Spinner className="size-3.5" />
-                      <span className="text-xs text-muted-foreground">Starting authorization…</span>
-                    </div>
-                  )}
+                    {!tokens && state.step === "oauth-starting" && (
+                      <div className="flex min-h-9 items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+                        <Spinner className="size-3.5" />
+                        <span className="text-xs text-muted-foreground">
+                          Starting authorization...
+                        </span>
+                      </div>
+                    )}
 
-                  {!tokens && state.step === "oauth-waiting" && (
-                    <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2.5">
-                      <Spinner className="size-3.5 text-blue-500" />
-                      <span className="text-xs text-blue-600 dark:text-blue-400">
-                        Waiting for authorization in popup…
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCancelOAuth}
-                        className="ml-auto h-7 px-2 text-xs"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
+                    {!tokens && state.step === "oauth-waiting" && (
+                      <div className="flex min-h-9 items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-2">
+                        <Spinner className="size-3.5 text-blue-500" />
+                        <span className="text-xs text-blue-600 dark:text-blue-400">
+                          Waiting for authorization...
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCancelOAuth}
+                          className="ml-auto h-7 px-2 text-xs"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
 
-                  {tokens && (
-                    <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
-                      <svg viewBox="0 0 16 16" fill="none" className="size-3.5 text-emerald-500">
-                        <path
-                          d="M3 8.5l3 3 7-7"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                        Authenticated
-                      </span>
-                    </div>
-                  )}
-                </CredentialScopeSection>
+                    {tokens && (
+                      <div className="flex min-h-9 items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                        <svg viewBox="0 0 16 16" fill="none" className="size-3.5 text-emerald-500">
+                          <path
+                            d="M3 8.5l3 3 7-7"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          Authenticated
+                        </span>
+                      </div>
+                    )}
+                  </CredentialControlField>
+                </CredentialUsageRow>
               )}
             </section>
           )}
@@ -854,8 +824,8 @@ export default function AddMcpSource(props: {
               <div>
                 <Label>Additional headers</Label>
                 <p className="mt-1 text-[12px] text-muted-foreground">
-                  Plaintext headers sent with every request. Use authentication for secret-backed
-                  auth headers.
+                  Plaintext headers sent with every request. Use request headers above for
+                  secret-backed values.
                 </p>
               </div>
 
@@ -957,6 +927,7 @@ export default function AddMcpSource(props: {
                 <p className="text-[12px] text-destructive">{otherError}</p>
               </div>
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => dispatch({ type: "retry" })}
@@ -969,6 +940,7 @@ export default function AddMcpSource(props: {
 
           <FloatActions>
             <Button
+              type="button"
               variant="ghost"
               onClick={() => {
                 oauth.cancel();
@@ -979,7 +951,7 @@ export default function AddMcpSource(props: {
               Cancel
             </Button>
             {(probe || isProbing) && (
-              <Button onClick={handleAddRemote} disabled={!canAdd}>
+              <Button type="button" onClick={handleAddRemote} disabled={!canAdd}>
                 {isAdding ? (
                   <>
                     <Spinner className="size-3.5" /> Adding…
@@ -1046,10 +1018,14 @@ export default function AddMcpSource(props: {
           )}
 
           <FloatActions>
-            <Button variant="ghost" onClick={props.onCancel} disabled={stdioAdding}>
+            <Button type="button" variant="ghost" onClick={props.onCancel} disabled={stdioAdding}>
               Cancel
             </Button>
-            <Button onClick={handleAddStdio} disabled={!stdioCommand.trim() || stdioAdding}>
+            <Button
+              type="button"
+              onClick={handleAddStdio}
+              disabled={!stdioCommand.trim() || stdioAdding}
+            >
               {stdioAdding ? (
                 <>
                   <Spinner className="size-3.5" /> Adding…

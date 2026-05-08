@@ -158,9 +158,7 @@ describe("0009_repair_openapi_oauth_cutover_residue", () => {
       );
     `);
 
-    db.prepare(
-      "INSERT INTO `openapi_source` (id, scope_id, oauth2) VALUES (?, ?, ?)",
-    ).run(
+    db.prepare("INSERT INTO `openapi_source` (id, scope_id, oauth2) VALUES (?, ?, ?)").run(
       "dealcloud_api",
       "org-1",
       JSON.stringify({

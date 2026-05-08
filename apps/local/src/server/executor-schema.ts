@@ -137,6 +137,7 @@ export const credential_binding = sqliteTable(
     kind: text("kind").notNull(),
     text_value: text("text_value"),
     secret_id: text("secret_id"),
+    secret_scope_id: text("secret_scope_id"),
     connection_id: text("connection_id"),
     created_at: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updated_at: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -150,6 +151,7 @@ export const credential_binding = sqliteTable(
     index("credential_binding_slot_key_idx").on(table.slot_key),
     index("credential_binding_kind_idx").on(table.kind),
     index("credential_binding_secret_id_idx").on(table.secret_id),
+    index("credential_binding_secret_scope_id_idx").on(table.secret_scope_id),
     index("credential_binding_connection_id_idx").on(table.connection_id),
   ],
 );

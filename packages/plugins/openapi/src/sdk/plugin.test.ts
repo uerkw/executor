@@ -1122,6 +1122,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
       expect(clientIdBinding?.value).toEqual({
         kind: "secret",
         secretId: SecretId.make("acme-client-id"),
+        secretScopeId: ScopeId.make(TEST_SCOPE),
       });
 
       const connectionBinding = yield* executor.openapi

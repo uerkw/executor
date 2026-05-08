@@ -109,7 +109,7 @@ function SecretFormProvider(props: SecretFormProviderProps) {
   const doSet = useAtomSet(setSecret, { mode: "promiseExit" });
 
   const [state, setState] = useState<SecretFormState>(() => ({
-    name: "",
+    name: suggestedName,
     value: "",
     idOverride: null,
     provider: initialProvider,
@@ -215,7 +215,7 @@ function IdField(props: { placeholder?: string }) {
   );
 }
 
-function ValueField(props: { revealable?: boolean; placeholder?: string }) {
+function ValueField(props: { revealable?: boolean; placeholder?: string; autoFocus?: boolean }) {
   const { state, actions } = useSecretForm();
   const inputId = useId();
   const revealable = props.revealable ?? false;
@@ -231,6 +231,7 @@ function ValueField(props: { revealable?: boolean; placeholder?: string }) {
           value={state.value}
           onChange={(e) => actions.setValue((e.target as HTMLInputElement).value)}
           placeholder={props.placeholder ?? "ghp_xxxxxxxxxxxxxxxxxxxx"}
+          autoFocus={props.autoFocus}
           className={revealable ? "pr-9 font-mono" : "font-mono"}
           style={
             revealable && !state.revealed
