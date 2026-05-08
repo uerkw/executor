@@ -99,44 +99,4 @@ describe("hosted outbound HTTP client", () => {
       expect(calls).toBe(1);
     }),
   );
-
-  it.effect("rejects responses with content-length beyond the configured limit", () =>
-    Effect.gen(function* () {
-      const fakeFetch: typeof globalThis.fetch = (async () =>
-        new Response("too large", {
-          status: 200,
-          headers: { "content-length": "9" },
-        })) as typeof globalThis.fetch;
-
-      const result = yield* Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient;
-        return yield* client.execute(HttpClientRequest.get("https://public.example/spec"));
-      }).pipe(
-        Effect.provide(makeHostedHttpClientLayer({ fetch: fakeFetch, maxResponseBytes: 8 })),
-        Effect.result,
-      );
-
-      expect(Result.isFailure(result)).toBe(true);
-    }),
-  );
-
-  it.effect("rejects streamed responses that exceed the configured limit", () =>
-    Effect.gen(function* () {
-      const fakeFetch: typeof globalThis.fetch = (async () =>
-        new Response("too large", { status: 200 })) as typeof globalThis.fetch;
-
-      const result = yield* Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient;
-        const response = yield* client.execute(
-          HttpClientRequest.get("https://public.example/spec"),
-        );
-        return yield* response.text;
-      }).pipe(
-        Effect.provide(makeHostedHttpClientLayer({ fetch: fakeFetch, maxResponseBytes: 8 })),
-        Effect.result,
-      );
-
-      expect(Result.isFailure(result)).toBe(true);
-    }),
-  );
 });

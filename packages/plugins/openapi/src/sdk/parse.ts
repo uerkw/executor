@@ -20,7 +20,7 @@ class OpenApiExtractionErrorFromParse extends OpenApiExtractionError {}
  * HttpClient so the caller chooses the transport via layer — in Cloudflare
  * Workers, `FetchHttpClient.layer` binds to the Workers-native `fetch` and
  * avoids json-schema-ref-parser's Node-polyfill http resolver, which hangs
- * in production. Bounded by a 20s timeout.
+ * in production. Bounded by a 60s timeout.
  */
 export const fetchSpecText = Effect.fn("OpenApi.fetchSpecText")(function* (
   url: string,
@@ -38,7 +38,7 @@ export const fetchSpecText = Effect.fn("OpenApi.fetchSpecText")(function* (
     request = HttpClientRequest.setHeader(request, name, value);
   }
   const response = yield* client.execute(request).pipe(
-    Effect.timeout(Duration.seconds(20)),
+    Effect.timeout(Duration.seconds(60)),
     Effect.mapError(
       (_cause) =>
         new OpenApiParseError({
