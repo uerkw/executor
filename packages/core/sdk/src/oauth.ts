@@ -246,6 +246,9 @@ export interface OAuthStartResult {
 export interface OAuthCompleteInput {
   /** RFC 6749 `state` parameter — maps to a session row id. */
   readonly state: string;
+  /** Optional scope check for route-scoped completions. Browser callback
+   *  completions omit this because the callback URL has no scope path. */
+  readonly tokenScope?: string;
   readonly code?: string;
   /** RFC 6749 `error` parameter — set when the AS redirected back with
    *  a failure. The service surfaces this as a tagged error. */
@@ -267,22 +270,26 @@ export interface OAuthCompleteResult {
 // capable plugin group `.addError(OAuthStartError)` etc. and the HTTP
 // edge renders them with the annotated status.
 
-export class OAuthProbeError extends Schema.TaggedErrorClass<OAuthProbeError>()("OAuthProbeError", {
-  message: Schema.String,
-}) {
-  static annotations = { httpApiStatus: 400 };
-}
+export class OAuthProbeError extends Schema.TaggedErrorClass<OAuthProbeError>()(
+  "OAuthProbeError",
+  {
+    message: Schema.String,
+  },
+  { httpApiStatus: 400 },
+) {}
 
-export class OAuthStartError extends Schema.TaggedErrorClass<OAuthStartError>()("OAuthStartError", {
-  message: Schema.String,
-  /** RFC 6749 §5.2 / RFC 7591 §3.2.2 error code propagated up from the
-   *  authorization server (e.g. `invalid_client_metadata`). UI surfaces
-   *  it as the structured "AS rejected the registration" reason. */
-  error: Schema.optional(Schema.String),
-  errorDescription: Schema.optional(Schema.String),
-}) {
-  static annotations = { httpApiStatus: 400 };
-}
+export class OAuthStartError extends Schema.TaggedErrorClass<OAuthStartError>()(
+  "OAuthStartError",
+  {
+    message: Schema.String,
+    /** RFC 6749 §5.2 / RFC 7591 §3.2.2 error code propagated up from the
+     *  authorization server (e.g. `invalid_client_metadata`). UI surfaces
+     *  it as the structured "AS rejected the registration" reason. */
+    error: Schema.optional(Schema.String),
+    errorDescription: Schema.optional(Schema.String),
+  },
+  { httpApiStatus: 400 },
+) {}
 
 export class OAuthCompleteError extends Schema.TaggedErrorClass<OAuthCompleteError>()(
   "OAuthCompleteError",
@@ -293,18 +300,16 @@ export class OAuthCompleteError extends Schema.TaggedErrorClass<OAuthCompleteErr
      *  re-auth required) from transient ones. */
     code: Schema.optional(Schema.String),
   },
-) {
-  static annotations = { httpApiStatus: 400 };
-}
+  { httpApiStatus: 400 },
+) {}
 
 export class OAuthSessionNotFoundError extends Schema.TaggedErrorClass<OAuthSessionNotFoundError>()(
   "OAuthSessionNotFoundError",
   {
     sessionId: Schema.String,
   },
-) {
-  static annotations = { httpApiStatus: 404 };
-}
+  { httpApiStatus: 404 },
+) {}
 
 // ---------------------------------------------------------------------------
 // Contract — what `ctx.oauth` exposes. Implementation lives in
