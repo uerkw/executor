@@ -32,13 +32,23 @@ const FrontendErrorReporterContext = React.createContext<FrontendErrorReporter>(
   defaultFrontendErrorReporter,
 );
 
+let currentFrontendErrorReporter = defaultFrontendErrorReporter;
+
+export const reportHandledFrontendError = (error: unknown, context: FrontendErrorContext): void => {
+  currentFrontendErrorReporter(error, context);
+};
+
 export const FrontendErrorReporterProvider = (
   props: React.PropsWithChildren<{ reporter?: FrontendErrorReporter }>,
-) => (
-  <FrontendErrorReporterContext.Provider value={props.reporter ?? defaultFrontendErrorReporter}>
-    {props.children}
-  </FrontendErrorReporterContext.Provider>
-);
+) => {
+  const reporter = props.reporter ?? defaultFrontendErrorReporter;
+  currentFrontendErrorReporter = reporter;
+  return (
+    <FrontendErrorReporterContext.Provider value={reporter}>
+      {props.children}
+    </FrontendErrorReporterContext.Provider>
+  );
+};
 
 export const useReportHandledError = (): FrontendErrorReporter =>
   React.useContext(FrontendErrorReporterContext);
