@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 
 import { cancelOAuth, startOAuth } from "../api/atoms";
+import { messageFromUnknown, useReportHandledError } from "../api/error-reporting";
 import { openOAuthPopup, reserveOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
 import { Button } from "../components/button";
 import {
@@ -46,12 +46,17 @@ export type OAuthAuthorizationStartResult = {
   readonly authorizationUrl: string | null;
 };
 
+class OAuthAuthorizationStartError extends Data.TaggedError("OAuthAuthorizationStartError")<{
+  readonly cause: unknown;
+}> {}
+
 export type StartOAuthAuthorizationInput<TPayload extends OAuthCompletionPayload> = {
   readonly tokenScope: string;
   readonly run: () => Promise<OAuthAuthorizationStartResult>;
   readonly onSuccess: (payload: TPayload) => void | Promise<void>;
   readonly onError?: (error: string) => void;
   readonly onAuthorizationStarted?: (result: OAuthAuthorizationStartResult) => void;
+  readonly reportMetadata?: Record<string, string | number | boolean | null | undefined>;
 };
 
 export function oauthCallbackUrl(path = "/api/oauth/callback"): string {
@@ -73,16 +78,6 @@ const oauthRouteParamsForTokenScope = (
   scopeId: ScopeId.make(String(tokenScope)),
 });
 
-const ErrorMessage = Schema.Struct({ message: Schema.String });
-const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
-
-const oauthPersistenceErrorMessage = (cause: unknown): string =>
-  Option.match(decodeErrorMessage(cause), {
-    onNone: () =>
-      typeof cause === "string" && cause.length > 0 ? cause : "Failed to save connection",
-    onSome: ({ message }) => message,
-  });
-
 export function useOAuthPopupFlow<
   TPayload extends OAuthCompletionPayload = OAuthCompletionPayload,
 >(options: {
@@ -103,6 +98,7 @@ export function useOAuthPopupFlow<
   } = options;
   const doStartOAuth = useAtomSet(startOAuth, { mode: "promiseExit" });
   const doCancelOAuth = useAtomSet(cancelOAuth, { mode: "promiseExit" });
+  const reportHandledError = useReportHandledError();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -157,11 +153,17 @@ export function useOAuthPopupFlow<
       const startExit = await Effect.runPromiseExit(
         Effect.tryPromise({
           try: input.run,
-          catch: (cause) => cause,
+          catch: (cause) => new OAuthAuthorizationStartError({ cause }),
         }),
       );
       if (Exit.isFailure(startExit)) {
         const message = startErrorMessage ?? "Failed to start sign-in";
+        reportHandledError(startExit.cause, {
+          surface: "oauth",
+          action: "start",
+          message,
+          metadata: input.reportMetadata,
+        });
         reservedPopup.popup.close();
         setBusy(false);
         setError(message);
@@ -206,7 +208,13 @@ export function useOAuthPopupFlow<
             (cause: unknown) => cause,
           );
           if (persistenceError !== null) {
-            const message = oauthPersistenceErrorMessage(persistenceError);
+            const message = messageFromUnknown(persistenceError, "Failed to save connection");
+            reportHandledError(persistenceError, {
+              surface: "oauth",
+              action: "persist_connection",
+              message,
+              metadata: input.reportMetadata,
+            });
             setBusy(false);
             setError(message);
             input.onError?.(message);
@@ -243,6 +251,7 @@ export function useOAuthPopupFlow<
       popupBlockedMessage,
       popupClosedMessage,
       popupName,
+      reportHandledError,
       startErrorMessage,
     ],
   );
@@ -254,6 +263,11 @@ export function useOAuthPopupFlow<
         onSuccess: input.onSuccess,
         onError: input.onError,
         onAuthorizationStarted: input.onAuthorizationStarted,
+        reportMetadata: {
+          pluginId: input.payload.pluginId,
+          connectionId: input.payload.connectionId,
+          tokenScope: input.payload.tokenScope,
+        },
         run: () =>
           doStartOAuth({
             params: oauthRouteParamsForTokenScope(input.payload.tokenScope),

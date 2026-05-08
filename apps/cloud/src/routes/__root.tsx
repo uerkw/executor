@@ -4,6 +4,7 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { AutumnProvider } from "autumn-js/react";
 import posthog from "posthog-js";
 import { PostHogProvider } from "posthog-js/react";
+import type { FrontendErrorReporter } from "@executor-js/react/api/error-reporting";
 import { ExecutorProvider } from "@executor-js/react/api/provider";
 import { Skeleton } from "@executor-js/react/components/skeleton";
 import { Toaster } from "@executor-js/react/components/sonner";
@@ -39,6 +40,21 @@ if (typeof window !== "undefined" && import.meta.env.VITE_PUBLIC_POSTHOG_KEY) {
     person_profiles: "identified_only",
   });
 }
+
+const captureFrontendError: FrontendErrorReporter = (error, context) => {
+  Sentry.captureException(error, (scope) => {
+    scope.setTag("executor.ui.surface", context.surface);
+    scope.setTag("executor.ui.action", context.action);
+    scope.setTag("executor.ui.severity", context.severity ?? "error");
+    scope.setContext("executor.ui", {
+      surface: context.surface,
+      action: context.action,
+      message: context.message,
+      metadata: context.metadata,
+    });
+    return scope;
+  });
+};
 
 export const Route = createRootRoute({
   head: () => ({
@@ -168,12 +184,14 @@ function AuthGate() {
 
   return (
     <AutumnProvider pathPrefix="/api/autumn">
-      <ExecutorProvider fallback={<ShellSkeleton />}>
-        <ExecutorPluginsProvider plugins={clientPlugins}>
-          <Shell />
-          <Toaster />
-        </ExecutorPluginsProvider>
-      </ExecutorProvider>
+      <Sentry.ErrorBoundary fallback={<ShellSkeleton />} showDialog={false}>
+        <ExecutorProvider fallback={<ShellSkeleton />} onHandledError={captureFrontendError}>
+          <ExecutorPluginsProvider plugins={clientPlugins}>
+            <Shell />
+            <Toaster />
+          </ExecutorPluginsProvider>
+        </ExecutorProvider>
+      </Sentry.ErrorBoundary>
     </AutumnProvider>
   );
 }

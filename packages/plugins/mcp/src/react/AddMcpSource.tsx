@@ -1,9 +1,8 @@
 import { useReducer, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 
+import { useErrorMessageFromExit } from "@executor-js/react/api/error-reporting";
 import { useScope } from "@executor-js/react/api/scope-context";
 import { Button } from "@executor-js/react/components/button";
 import {
@@ -59,15 +58,6 @@ import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import { probeMcpEndpoint, addMcpSourceOptimistic } from "./atoms";
 import { mcpPresets, type McpPreset } from "../sdk/presets";
 import { MCP_OAUTH_CONNECTION_SLOT, type McpCredentialInput } from "../sdk/types";
-
-const ErrorMessage = Schema.Struct({ message: Schema.String });
-const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
-
-const errorMessageFromExit = (exit: Exit.Exit<unknown, unknown>, fallback: string): string =>
-  Option.match(Option.flatMap(Exit.findErrorOption(exit), decodeErrorMessage), {
-    onNone: () => fallback,
-    onSome: ({ message }) => message,
-  });
 
 // ---------------------------------------------------------------------------
 // Preset lookup
@@ -301,6 +291,7 @@ export default function AddMcpSource(props: {
   const doAdd = useAtomSet(addMcpSourceOptimistic(scopeId), {
     mode: "promiseExit",
   });
+  const errorMessageFromExit = useErrorMessageFromExit();
   const secretList = useSecretPickerSecrets();
   const oauth = useOAuthPopupFlow<OAuthCompletionPayload>({
     popupName: "mcp-oauth",
@@ -357,13 +348,16 @@ export default function AddMcpSource(props: {
     if (Exit.isFailure(exit)) {
       dispatch({
         type: "probe-fail",
-        error: errorMessageFromExit(exit, "Failed to connect"),
+        error: errorMessageFromExit(exit, "Failed to connect", {
+          surface: "mcp_source",
+          action: "probe_remote_source",
+        }),
       });
       return;
     }
     setRemoteAuthMode(exit.value.requiresOAuth ? "oauth2" : "none");
     dispatch({ type: "probe-ok", probe: exit.value });
-  }, [state.url, scopeId, doProbe, remoteCredentials]);
+  }, [state.url, scopeId, doProbe, remoteCredentials, errorMessageFromExit]);
 
   // Keep the latest handleProbe in a ref so the debounced effect can call it
   // without depending on its identity (which changes every render).
@@ -483,7 +477,10 @@ export default function AddMcpSource(props: {
     if (Exit.isFailure(exit)) {
       dispatch({
         type: "add-fail",
-        error: errorMessageFromExit(exit, "Failed to add source"),
+        error: errorMessageFromExit(exit, "Failed to add source", {
+          surface: "mcp_source",
+          action: "add_remote_source",
+        }),
       });
       return;
     }
@@ -499,6 +496,7 @@ export default function AddMcpSource(props: {
     doAdd,
     props,
     scopeId,
+    errorMessageFromExit,
     requestCredentialTargetScope,
     oauthCredentialTargetScope,
   ]);
@@ -549,12 +547,26 @@ export default function AddMcpSource(props: {
       reactivityKeys: sourceWriteKeys,
     });
     if (Exit.isFailure(exit)) {
-      setStdioError(errorMessageFromExit(exit, "Failed to add source"));
+      setStdioError(
+        errorMessageFromExit(exit, "Failed to add source", {
+          surface: "mcp_source",
+          action: "add_stdio_source",
+        }),
+      );
       setStdioAdding(false);
       return;
     }
     props.onComplete();
-  }, [stdioCommand, stdioArgs, stdioEnv, stdioIdentity, doAdd, scopeId, props]);
+  }, [
+    stdioCommand,
+    stdioArgs,
+    stdioEnv,
+    stdioIdentity,
+    doAdd,
+    scopeId,
+    props,
+    errorMessageFromExit,
+  ]);
 
   // ---- Render ----
 
