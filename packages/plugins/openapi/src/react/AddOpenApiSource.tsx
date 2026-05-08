@@ -979,7 +979,6 @@ export default function AddOpenApiSource(props: {
                   onValueChange={setBaseUrl}
                   options={baseUrlOptions}
                   placeholder="https://api.example.com"
-                  emptyLabel="Use the custom URL you typed."
                   className="w-full"
                   inputClassName="font-mono text-sm"
                 />
