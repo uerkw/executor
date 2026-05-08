@@ -64,6 +64,13 @@
       "when": 1778128200000,
       "tag": "0008_scoped_credentials_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1778192434062,
+      "tag": "0009_repair_openapi_oauth_cutover_residue",
+      "breakpoints": true
     }
   ]
 }

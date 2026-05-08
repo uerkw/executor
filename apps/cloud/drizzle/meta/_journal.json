@@ -99,6 +99,13 @@
       "when": 1778179800000,
       "tag": "0013_cleanup_orphan_oauth_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778192434062,
+      "tag": "0014_repair_openapi_oauth_cutover_residue",
+      "breakpoints": true
     }
   ]
 }
