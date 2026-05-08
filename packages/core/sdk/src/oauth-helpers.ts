@@ -121,7 +121,60 @@ export const buildAuthorizationUrl = (input: BuildAuthorizationUrlInput): string
 // to reauth-required) across wrappers.
 // ---------------------------------------------------------------------------
 
+const isOAuth2Error = (cause: unknown): cause is OAuth2Error =>
+  typeof cause === "object" &&
+  cause !== null &&
+  "_tag" in cause &&
+  (cause as { readonly _tag?: unknown })._tag === "OAuth2Error";
+
+const responseFromOAuthErrorCause = (cause: unknown): Response | undefined => {
+  if (cause instanceof Response) return cause;
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const envelope = cause as {
+    readonly cause?: unknown;
+    readonly response?: unknown;
+  };
+  if (envelope.response instanceof Response) return envelope.response;
+  if (envelope.cause instanceof Response) return envelope.cause;
+  return undefined;
+};
+
+const redactTokenEndpointBody = (body: string): string =>
+  body
+    .replaceAll(
+      /("(?:access_token|refresh_token|id_token|client_secret)"\s*:\s*")[^"]*(")/gi,
+      "$1[redacted]$2",
+    )
+    .replaceAll(
+      /((?:access_token|refresh_token|id_token|client_secret|code)=)[^&\s]*/gi,
+      "$1[redacted]",
+    );
+
+const tokenEndpointHttpSummary = async (response: Response): Promise<string> => {
+  const status = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+  const contentType = response.headers.get("content-type");
+  const url = response.url ? ` from ${response.url}` : "";
+  const parts = [`${status}${url}`];
+  if (contentType) parts.push(`content-type ${contentType}`);
+  const preview = await bodyPreviewFromResponse(response);
+  if (preview) parts.push(`body: ${preview}`);
+  return parts.join("; ");
+};
+
+const bodyPreviewFromResponse = async (response: Response): Promise<string | undefined> => {
+  const text = await Promise.resolve()
+    .then(() => response.clone().text())
+    .then(
+      (value) => value.trim(),
+      () => "",
+    );
+  if (!text) return undefined;
+  const redacted = redactTokenEndpointBody(text.replaceAll(/\s+/g, " "));
+  return redacted.length > 500 ? `${redacted.slice(0, 500)}...` : redacted;
+};
+
 const toOAuth2Error = (cause: unknown): OAuth2Error => {
+  if (isOAuth2Error(cause)) return cause;
   if (typeof cause === "object" && cause !== null) {
     const c = cause as {
       error?: unknown;
@@ -143,6 +196,19 @@ const toOAuth2Error = (cause: unknown): OAuth2Error => {
   }
   return new OAuth2Error({
     message: "OAuth token exchange failed",
+    cause,
+  });
+};
+
+const toOAuth2ErrorWithHttpSummary = async (cause: unknown): Promise<OAuth2Error> => {
+  if (isOAuth2Error(cause)) return cause;
+  const base = toOAuth2Error(cause);
+  const response = responseFromOAuthErrorCause(cause);
+  if (!response) return base;
+  const summary = await tokenEndpointHttpSummary(response);
+  return new OAuth2Error({
+    message: `${base.message} (${summary})`,
+    error: base.error,
     cause,
   });
 };
@@ -282,33 +348,37 @@ export const exchangeAuthorizationCode = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
-      });
-      const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-      // `authorizationCodeGrantRequest` requires its `callbackParameters`
-      // to have been returned from `validateAuthResponse`. Our public API
-      // takes the `code` directly (the UI already validated `state` by
-      // looking up the session), so skip the library's state-validation
-      // rail and go through the generic grant request instead.
-      const params = new URLSearchParams({
-        code: input.code,
-        redirect_uri: input.redirectUrl,
-        code_verifier: input.codeVerifier,
-      });
-      if (input.resource) {
-        params.set("resource", input.resource);
+      try {
+        const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
+          idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
+        });
+        const client: oauth.Client = { client_id: input.clientId };
+        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+        // `authorizationCodeGrantRequest` requires its `callbackParameters`
+        // to have been returned from `validateAuthResponse`. Our public API
+        // takes the `code` directly (the UI already validated `state` by
+        // looking up the session), so skip the library's state-validation
+        // rail and go through the generic grant request instead.
+        const params = new URLSearchParams({
+          code: input.code,
+          redirect_uri: input.redirectUrl,
+          code_verifier: input.codeVerifier,
+        });
+        if (input.resource) {
+          params.set("resource", input.resource);
+        }
+        const response = await oauth.genericTokenEndpointRequest(
+          as,
+          client,
+          clientAuth,
+          "authorization_code",
+          params,
+          oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+        );
+        return await processTokenEndpointResponse(as, client, response);
+      } catch (cause) {
+        throw await toOAuth2ErrorWithHttpSummary(cause);
       }
-      const response = await oauth.genericTokenEndpointRequest(
-        as,
-        client,
-        clientAuth,
-        "authorization_code",
-        params,
-        oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-      );
-      return processTokenEndpointResponse(as, client, response);
     },
     catch: toOAuth2Error,
   });
@@ -332,22 +402,26 @@ export const exchangeClientCredentials = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      const as = asFromTokenUrl(input.tokenUrl);
-      const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-      const params = new URLSearchParams();
-      if (input.scopes && input.scopes.length > 0) {
-        params.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
+      try {
+        const as = asFromTokenUrl(input.tokenUrl);
+        const client: oauth.Client = { client_id: input.clientId };
+        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+        const params = new URLSearchParams();
+        if (input.scopes && input.scopes.length > 0) {
+          params.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
+        }
+        const response = await oauth.clientCredentialsGrantRequest(
+          as,
+          client,
+          clientAuth,
+          params,
+          oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+        );
+        const result = await oauth.processClientCredentialsResponse(as, client, response);
+        return tokenResponseFrom(result);
+      } catch (cause) {
+        throw await toOAuth2ErrorWithHttpSummary(cause);
       }
-      const response = await oauth.clientCredentialsGrantRequest(
-        as,
-        client,
-        clientAuth,
-        params,
-        oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-      );
-      const result = await oauth.processClientCredentialsResponse(as, client, response);
-      return tokenResponseFrom(result);
     },
     catch: toOAuth2Error,
   });
@@ -378,36 +452,40 @@ export const refreshAccessToken = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
-      });
-      const client: oauth.Client = { client_id: input.clientId };
-      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-      const extraParams = new URLSearchParams();
-      if (input.scopes && input.scopes.length > 0) {
-        extraParams.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
+      try {
+        const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
+          idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
+        });
+        const client: oauth.Client = { client_id: input.clientId };
+        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+        const extraParams = new URLSearchParams();
+        if (input.scopes && input.scopes.length > 0) {
+          extraParams.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
+        }
+        if (input.resource) {
+          extraParams.set("resource", input.resource);
+        }
+        const additionalParameters =
+          Array.from(extraParams.keys()).length > 0 ? extraParams : undefined;
+        const response = await oauth.refreshTokenGrantRequest(
+          as,
+          client,
+          clientAuth,
+          input.refreshToken,
+          {
+            ...oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+            additionalParameters,
+          },
+        );
+        const result = await oauth.processRefreshTokenResponse(
+          as,
+          client,
+          await stripIdToken(response),
+        );
+        return tokenResponseFrom(result);
+      } catch (cause) {
+        throw await toOAuth2ErrorWithHttpSummary(cause);
       }
-      if (input.resource) {
-        extraParams.set("resource", input.resource);
-      }
-      const additionalParameters =
-        Array.from(extraParams.keys()).length > 0 ? extraParams : undefined;
-      const response = await oauth.refreshTokenGrantRequest(
-        as,
-        client,
-        clientAuth,
-        input.refreshToken,
-        {
-          ...oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-          additionalParameters,
-        },
-      );
-      const result = await oauth.processRefreshTokenResponse(
-        as,
-        client,
-        await stripIdToken(response),
-      );
-      return tokenResponseFrom(result);
     },
     catch: toOAuth2Error,
   });

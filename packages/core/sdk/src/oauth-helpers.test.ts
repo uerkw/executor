@@ -491,6 +491,62 @@ describe("exchangeAuthorizationCode", () => {
         }),
     ),
   );
+
+  it.effect("includes HTTP status and body preview for non-OAuth token endpoint errors", () =>
+    withTokenEndpoint(
+      () => HttpServerResponse.text("route not found", { status: 404 }),
+      ({ tokenUrl }) =>
+        Effect.gen(function* () {
+          const exit = yield* Effect.exit(
+            exchangeAuthorizationCode({
+              tokenUrl,
+              clientId: "cid",
+              redirectUrl: "https://cb",
+              codeVerifier: "v",
+              code: "c",
+            }),
+          );
+          expect(Exit.isFailure(exit)).toBe(true);
+          if (!Exit.isFailure(exit)) return;
+          const failure = JSON.stringify(exit.cause);
+          expect(failure).toContain("HTTP 404");
+          expect(failure).toContain("route not found");
+        }),
+    ),
+  );
+
+  it.effect("preserves provider error codes while redacting token endpoint secrets", () =>
+    withTokenEndpoint(
+      () =>
+        json(400, {
+          error: {
+            code: "invalid_client_id",
+            message: "Invalid client_id",
+          },
+          client_secret: "do-not-log",
+        }),
+      ({ tokenUrl }) =>
+        Effect.gen(function* () {
+          const exit = yield* Effect.exit(
+            exchangeAuthorizationCode({
+              tokenUrl,
+              clientId: "cid",
+              redirectUrl: "https://cb",
+              codeVerifier: "v",
+              code: "c",
+            }),
+          );
+          expect(Exit.isFailure(exit)).toBe(true);
+          if (!Exit.isFailure(exit)) return;
+          const failure = JSON.stringify(exit.cause);
+          expect(failure).toContain("invalid_client_id");
+          expect(failure).toContain("Invalid client_id");
+          expect(failure).toContain("client_secret");
+          expect(failure).toContain("[redacted]");
+          expect(failure).not.toContain("do-not-log");
+        }),
+    ),
+  );
 });
 
 describe("refreshAccessToken", () => {
