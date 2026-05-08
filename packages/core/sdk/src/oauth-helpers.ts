@@ -16,7 +16,7 @@
 //     construction keeps the call sync and lets callers opt out of PAR
 // ---------------------------------------------------------------------------
 
-import { Data, Effect } from "effect";
+import { Data, Effect, Predicate } from "effect";
 import * as oauth from "oauth4webapi";
 
 // ---------------------------------------------------------------------------
@@ -121,11 +121,7 @@ export const buildAuthorizationUrl = (input: BuildAuthorizationUrlInput): string
 // to reauth-required) across wrappers.
 // ---------------------------------------------------------------------------
 
-const isOAuth2Error = (cause: unknown): cause is OAuth2Error =>
-  typeof cause === "object" &&
-  cause !== null &&
-  "_tag" in cause &&
-  (cause as { readonly _tag?: unknown })._tag === "OAuth2Error";
+const isOAuth2Error = Predicate.isTagged("OAuth2Error") as (cause: unknown) => cause is OAuth2Error;
 
 const responseFromOAuthErrorCause = (cause: unknown): Response | undefined => {
   if (cause instanceof Response) return cause;
@@ -200,18 +196,25 @@ const toOAuth2Error = (cause: unknown): OAuth2Error => {
   });
 };
 
-const toOAuth2ErrorWithHttpSummary = async (cause: unknown): Promise<OAuth2Error> => {
-  if (isOAuth2Error(cause)) return cause;
+const toOAuth2ErrorWithHttpSummary = (cause: unknown): Effect.Effect<OAuth2Error> => {
+  if (isOAuth2Error(cause)) return Effect.succeed(cause);
   const base = toOAuth2Error(cause);
   const response = responseFromOAuthErrorCause(cause);
-  if (!response) return base;
-  const summary = await tokenEndpointHttpSummary(response);
-  return new OAuth2Error({
-    message: `${base.message} (${summary})`,
-    error: base.error,
-    cause,
-  });
+  if (!response) return Effect.succeed(base);
+  return Effect.promise(() => tokenEndpointHttpSummary(response)).pipe(
+    Effect.map(
+      (summary) =>
+        new OAuth2Error({
+          message: `${base.message} (${summary})`,
+          error: base.error,
+          cause,
+        }),
+    ),
+  );
 };
+
+const failOAuth2WithHttpSummary = (cause: unknown): Effect.Effect<never, OAuth2Error> =>
+  toOAuth2ErrorWithHttpSummary(cause).pipe(Effect.flatMap((error) => Effect.fail(error)));
 
 // ---------------------------------------------------------------------------
 // oauth4webapi adapter helpers
@@ -348,40 +351,36 @@ export const exchangeAuthorizationCode = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      try {
-        const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-          idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
-        });
-        const client: oauth.Client = { client_id: input.clientId };
-        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-        // `authorizationCodeGrantRequest` requires its `callbackParameters`
-        // to have been returned from `validateAuthResponse`. Our public API
-        // takes the `code` directly (the UI already validated `state` by
-        // looking up the session), so skip the library's state-validation
-        // rail and go through the generic grant request instead.
-        const params = new URLSearchParams({
-          code: input.code,
-          redirect_uri: input.redirectUrl,
-          code_verifier: input.codeVerifier,
-        });
-        if (input.resource) {
-          params.set("resource", input.resource);
-        }
-        const response = await oauth.genericTokenEndpointRequest(
-          as,
-          client,
-          clientAuth,
-          "authorization_code",
-          params,
-          oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-        );
-        return await processTokenEndpointResponse(as, client, response);
-      } catch (cause) {
-        throw await toOAuth2ErrorWithHttpSummary(cause);
+      const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
+        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
+      });
+      const client: oauth.Client = { client_id: input.clientId };
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+      // `authorizationCodeGrantRequest` requires its `callbackParameters`
+      // to have been returned from `validateAuthResponse`. Our public API
+      // takes the `code` directly (the UI already validated `state` by
+      // looking up the session), so skip the library's state-validation
+      // rail and go through the generic grant request instead.
+      const params = new URLSearchParams({
+        code: input.code,
+        redirect_uri: input.redirectUrl,
+        code_verifier: input.codeVerifier,
+      });
+      if (input.resource) {
+        params.set("resource", input.resource);
       }
+      const response = await oauth.genericTokenEndpointRequest(
+        as,
+        client,
+        clientAuth,
+        "authorization_code",
+        params,
+        oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+      );
+      return await processTokenEndpointResponse(as, client, response);
     },
-    catch: toOAuth2Error,
-  });
+    catch: (cause) => cause,
+  }).pipe(Effect.catch(failOAuth2WithHttpSummary));
 
 // ---------------------------------------------------------------------------
 // Exchange client credentials → tokens (RFC 6749 §4.4)
@@ -402,29 +401,25 @@ export const exchangeClientCredentials = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      try {
-        const as = asFromTokenUrl(input.tokenUrl);
-        const client: oauth.Client = { client_id: input.clientId };
-        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-        const params = new URLSearchParams();
-        if (input.scopes && input.scopes.length > 0) {
-          params.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
-        }
-        const response = await oauth.clientCredentialsGrantRequest(
-          as,
-          client,
-          clientAuth,
-          params,
-          oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-        );
-        const result = await oauth.processClientCredentialsResponse(as, client, response);
-        return tokenResponseFrom(result);
-      } catch (cause) {
-        throw await toOAuth2ErrorWithHttpSummary(cause);
+      const as = asFromTokenUrl(input.tokenUrl);
+      const client: oauth.Client = { client_id: input.clientId };
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+      const params = new URLSearchParams();
+      if (input.scopes && input.scopes.length > 0) {
+        params.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
       }
+      const response = await oauth.clientCredentialsGrantRequest(
+        as,
+        client,
+        clientAuth,
+        params,
+        oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+      );
+      const result = await oauth.processClientCredentialsResponse(as, client, response);
+      return tokenResponseFrom(result);
     },
-    catch: toOAuth2Error,
-  });
+    catch: (cause) => cause,
+  }).pipe(Effect.catch(failOAuth2WithHttpSummary));
 
 // ---------------------------------------------------------------------------
 // Refresh access token
@@ -452,43 +447,39 @@ export const refreshAccessToken = (
 ): Effect.Effect<OAuth2TokenResponse, OAuth2Error> =>
   Effect.tryPromise({
     try: async () => {
-      try {
-        const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
-          idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
-        });
-        const client: oauth.Client = { client_id: input.clientId };
-        const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
-        const extraParams = new URLSearchParams();
-        if (input.scopes && input.scopes.length > 0) {
-          extraParams.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
-        }
-        if (input.resource) {
-          extraParams.set("resource", input.resource);
-        }
-        const additionalParameters =
-          Array.from(extraParams.keys()).length > 0 ? extraParams : undefined;
-        const response = await oauth.refreshTokenGrantRequest(
-          as,
-          client,
-          clientAuth,
-          input.refreshToken,
-          {
-            ...oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
-            additionalParameters,
-          },
-        );
-        const result = await oauth.processRefreshTokenResponse(
-          as,
-          client,
-          await stripIdToken(response),
-        );
-        return tokenResponseFrom(result);
-      } catch (cause) {
-        throw await toOAuth2ErrorWithHttpSummary(cause);
+      const as = asFromTokenUrlAndIssuer(input.tokenUrl, input.issuerUrl, {
+        idTokenSigningAlgValuesSupported: input.idTokenSigningAlgValuesSupported,
+      });
+      const client: oauth.Client = { client_id: input.clientId };
+      const clientAuth = pickClientAuth(input.clientSecret, input.clientAuth ?? "body");
+      const extraParams = new URLSearchParams();
+      if (input.scopes && input.scopes.length > 0) {
+        extraParams.set("scope", input.scopes.join(input.scopeSeparator ?? " "));
       }
+      if (input.resource) {
+        extraParams.set("resource", input.resource);
+      }
+      const additionalParameters =
+        Array.from(extraParams.keys()).length > 0 ? extraParams : undefined;
+      const response = await oauth.refreshTokenGrantRequest(
+        as,
+        client,
+        clientAuth,
+        input.refreshToken,
+        {
+          ...oauth4webapiRequestOptions(input.tokenUrl, input.timeoutMs),
+          additionalParameters,
+        },
+      );
+      const result = await oauth.processRefreshTokenResponse(
+        as,
+        client,
+        await stripIdToken(response),
+      );
+      return tokenResponseFrom(result);
     },
-    catch: toOAuth2Error,
-  });
+    catch: (cause) => cause,
+  }).pipe(Effect.catch(failOAuth2WithHttpSummary));
 
 // ---------------------------------------------------------------------------
 // Refresh-needed predicate

@@ -437,7 +437,10 @@ describe("credential bindings", () => {
         sourceId: TEST_SOURCE_ID,
         sourceScope: harness.scopes.org.id,
         slotKey: "oauth.connection",
-        value: { kind: "connection", connectionId: ConnectionId.make("oauth-connection") },
+        value: {
+          kind: "connection",
+          connectionId: ConnectionId.make("oauth-connection"),
+        },
       });
 
       const userB = yield* harness.create([harness.scopes.userWorkspaceB, harness.scopes.org]);
@@ -606,6 +609,129 @@ describe("credential bindings", () => {
       expect(Result.isFailure(result)).toBe(true);
       if (!Result.isFailure(result)) return;
       expect(Predicate.isTagged("SecretInUseError")(result.failure)).toBe(true);
+    }),
+  );
+
+  it.effect("a personal binding can point at an organization-owned secret", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const orgExecutor = yield* harness.create([harness.scopes.org]);
+      yield* orgExecutor.credentialTest.registerSource(harness.scopes.org.id);
+      yield* setSecret(orgExecutor, harness.scopes.org.id, "shared-token-id", "sk-org");
+
+      const userExecutor = yield* harness.create([
+        harness.scopes.userWorkspaceA,
+        harness.scopes.org,
+      ]);
+
+      const binding = yield* userExecutor.credentialBindings.set({
+        targetScope: harness.scopes.userWorkspaceA.id,
+        pluginId: TEST_PLUGIN_ID,
+        sourceId: TEST_SOURCE_ID,
+        sourceScope: harness.scopes.org.id,
+        slotKey: TEST_SLOT,
+        value: {
+          kind: "secret",
+          secretId: SecretId.make("shared-token-id"),
+          secretScopeId: harness.scopes.org.id,
+        },
+      });
+
+      expect(binding.scopeId).toBe(harness.scopes.userWorkspaceA.id);
+      expect(binding.value).toMatchObject({
+        kind: "secret",
+        secretId: SecretId.make("shared-token-id"),
+        secretScopeId: harness.scopes.org.id,
+      });
+
+      const resolved = yield* userExecutor.credentialBindings.resolve({
+        pluginId: TEST_PLUGIN_ID,
+        sourceId: TEST_SOURCE_ID,
+        sourceScope: harness.scopes.org.id,
+        slotKey: TEST_SLOT,
+      });
+
+      expect(resolved.status).toBe("resolved");
+      expect(resolved.bindingScopeId).toBe(harness.scopes.userWorkspaceA.id);
+    }),
+  );
+
+  it.effect(
+    "removing an organization secret is blocked when a personal binding references it",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness();
+        const orgExecutor = yield* harness.create([harness.scopes.org]);
+        yield* orgExecutor.credentialTest.registerSource(harness.scopes.org.id);
+        yield* setSecret(orgExecutor, harness.scopes.org.id, "shared-token-id", "sk-org");
+
+        const userExecutor = yield* harness.create([
+          harness.scopes.userWorkspaceA,
+          harness.scopes.org,
+        ]);
+        yield* userExecutor.credentialBindings.set({
+          targetScope: harness.scopes.userWorkspaceA.id,
+          pluginId: TEST_PLUGIN_ID,
+          sourceId: TEST_SOURCE_ID,
+          sourceScope: harness.scopes.org.id,
+          slotKey: TEST_SLOT,
+          value: {
+            kind: "secret",
+            secretId: SecretId.make("shared-token-id"),
+            secretScopeId: harness.scopes.org.id,
+          },
+        });
+
+        const result = yield* Effect.result(
+          userExecutor.secrets.remove(
+            new RemoveSecretInput({
+              id: SecretId.make("shared-token-id"),
+              targetScope: harness.scopes.org.id,
+            }),
+          ),
+        );
+
+        expect(Result.isFailure(result)).toBe(true);
+        if (!Result.isFailure(result)) return;
+        expect(Predicate.isTagged("SecretInUseError")(result.failure)).toBe(true);
+      }),
+  );
+
+  it.effect("rejects an organization binding to a personal secret", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const orgExecutor = yield* harness.create([harness.scopes.org]);
+      yield* orgExecutor.credentialTest.registerSource(harness.scopes.org.id);
+
+      const userExecutor = yield* harness.create([
+        harness.scopes.userWorkspaceA,
+        harness.scopes.org,
+      ]);
+      yield* setSecret(
+        userExecutor,
+        harness.scopes.userWorkspaceA.id,
+        "personal-token",
+        "sk-user-a",
+      );
+
+      const result = yield* Effect.result(
+        userExecutor.credentialBindings.set({
+          targetScope: harness.scopes.org.id,
+          pluginId: TEST_PLUGIN_ID,
+          sourceId: TEST_SOURCE_ID,
+          sourceScope: harness.scopes.org.id,
+          slotKey: TEST_SLOT,
+          value: {
+            kind: "secret",
+            secretId: SecretId.make("personal-token"),
+            secretScopeId: harness.scopes.userWorkspaceA.id,
+          },
+        }),
+      );
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (!Result.isFailure(result)) return;
+      expect(Predicate.isTagged("StorageError")(result.failure)).toBe(true);
     }),
   );
 });

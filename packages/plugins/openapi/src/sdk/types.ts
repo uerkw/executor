@@ -1,5 +1,11 @@
 import { Schema } from "effect";
-import { ConnectionId, ScopeId, SecretBackedValue, SecretId } from "@executor-js/sdk/core";
+import {
+  ConnectionId,
+  ScopeId,
+  ScopedSecretCredentialInput,
+  SecretBackedValue,
+  SecretId,
+} from "@executor-js/sdk/core";
 
 // ---------------------------------------------------------------------------
 // Branded IDs
@@ -146,10 +152,18 @@ export class ConfiguredHeaderBinding extends Schema.Class<ConfiguredHeaderBindin
 export const ConfiguredHeaderValue = Schema.Union([Schema.String, ConfiguredHeaderBinding]);
 export type ConfiguredHeaderValue = typeof ConfiguredHeaderValue.Type;
 
+export const OpenApiCredentialInput = Schema.Union([
+  ScopedSecretCredentialInput,
+  HeaderValue,
+  ConfiguredHeaderValue,
+]);
+export type OpenApiCredentialInput = typeof OpenApiCredentialInput.Type;
+
 export const OpenApiSourceBindingValue = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("secret"),
     secretId: SecretId,
+    secretScopeId: Schema.optional(ScopeId),
   }),
   Schema.Struct({
     kind: Schema.Literal("connection"),

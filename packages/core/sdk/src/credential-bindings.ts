@@ -17,6 +17,7 @@ export const CredentialBindingValue = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("secret"),
     secretId: SecretId,
+    secretScopeId: Schema.optional(ScopeId),
   }),
   Schema.Struct({
     kind: Schema.Literal("connection"),
@@ -35,6 +36,14 @@ export class ConfiguredCredentialBinding extends Schema.Class<ConfiguredCredenti
 
 export const ConfiguredCredentialValue = Schema.Union([Schema.String, ConfiguredCredentialBinding]);
 export type ConfiguredCredentialValue = typeof ConfiguredCredentialValue.Type;
+
+export const ScopedSecretCredentialInput = Schema.Struct({
+  secretId: Schema.String,
+  prefix: Schema.optional(Schema.String),
+  targetScope: ScopeId,
+  secretScopeId: Schema.optional(ScopeId),
+});
+export type ScopedSecretCredentialInput = typeof ScopedSecretCredentialInput.Type;
 
 export class CredentialBindingRef extends Schema.Class<CredentialBindingRef>(
   "CredentialBindingRef",
@@ -172,9 +181,10 @@ export const credentialBindingValueFromRow = (row: CredentialBindingRow): Creden
       kind: "text" as const,
       text: text_value,
     })),
-    Match.when({ kind: "secret" }, ({ secret_id }) => ({
+    Match.when({ kind: "secret" }, ({ scope_id, secret_id, secret_scope_id }) => ({
       kind: "secret" as const,
       secretId: SecretId.make(secret_id),
+      secretScopeId: ScopeId.make(secret_scope_id ?? scope_id),
     })),
     Match.when({ kind: "connection" }, ({ connection_id }) => ({
       kind: "connection" as const,

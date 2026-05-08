@@ -11,6 +11,7 @@ import { useSecretProviderPlugins } from "@executor-js/sdk/client";
 import { SecretId, SecretInUseError, type ScopeId } from "@executor-js/sdk";
 import { SecretForm } from "../plugins/secret-form";
 import { useScope } from "../hooks/use-scope";
+import { useScopeStack } from "../api/scope-context";
 import {
   Dialog,
   DialogContent,
@@ -169,6 +170,7 @@ function SecretRow(props: {
   usageScopeId: ScopeId;
   showProvider: boolean;
   secret: { id: string; scopeId: ScopeId; name: string; provider?: string };
+  scopeLabel: string;
   onRemove: () => void;
 }) {
   const { secret, showProvider } = props;
@@ -192,6 +194,7 @@ function SecretRow(props: {
         </Suspense>
       </CardStackEntryContent>
       <CardStackEntryActions>
+        <Badge variant="secondary">{props.scopeLabel}</Badge>
         {showProvider && secret.provider && <Badge variant="outline">{secret.provider}</Badge>}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -238,7 +241,14 @@ export function SecretsPage(props: {
   const secretProviderPlugins = useSecretProviderPlugins();
   const [addOpen, setAddOpen] = useState(false);
   const scopeId = useScope();
+  const scopeStack = useScopeStack();
   const secrets = useAtomValue(secretsOptimisticAtom(scopeId));
+  const scopeLabel = (secretScopeId: ScopeId): string => {
+    const index = scopeStack.findIndex((entry) => entry.id === secretScopeId);
+    if (index === 0) return "Personal";
+    if (index > 0) return scopeStack[index]?.name || "Organization";
+    return "Scoped";
+  };
   const existingSecretIds = useMemo(
     () =>
       AsyncResult.match(secrets, {
@@ -367,6 +377,7 @@ export function SecretsPage(props: {
                           name: s.name,
                           provider: s.provider ? String(s.provider) : undefined,
                         }}
+                        scopeLabel={scopeLabel(s.scopeId)}
                         onRemove={() => handleRemove(s)}
                       />
                     ),

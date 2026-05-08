@@ -900,7 +900,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     ): Effect.Effect<string | null, SecretOwnedByConnectionError | StorageFailure> =>
       Effect.gen(function* () {
         yield* assertScopeInStack("secret get scope", scope);
-        const row = yield* findSecretRowAtScope({ secretId: id, scopeId: scope });
+        const row = yield* findSecretRowAtScope({
+          secretId: id,
+          scopeId: scope,
+        });
         if (row?.owned_by_connection_id) {
           return yield* new SecretOwnedByConnectionError({
             secretId: SecretId.make(id),
@@ -922,7 +925,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     ): Effect.Effect<string | null, StorageFailure> =>
       Effect.gen(function* () {
         yield* assertScopeInStack("connection secret get scope", scope);
-        const row = yield* findSecretRowAtScope({ secretId: id, scopeId: scope });
+        const row = yield* findSecretRowAtScope({
+          secretId: id,
+          scopeId: scope,
+        });
         return yield* resolveSecretValueAtScope(row, id);
       });
 
@@ -1423,7 +1429,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     ): Effect.Effect<ConnectionRef | null, StorageFailure> =>
       Effect.gen(function* () {
         yield* assertScopeInStack("connection get scope", scope);
-        const row = yield* findConnectionRowAtScope({ connectionId: id, scopeId: scope });
+        const row = yield* findConnectionRowAtScope({
+          connectionId: id,
+          scopeId: scope,
+        });
         return row ? rowToConnection(row) : null;
       });
 
@@ -1962,7 +1971,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     ): Effect.Effect<string, AccessTokenError> =>
       Effect.gen(function* () {
         yield* assertScopeInStack("connection accessToken scope", scope);
-        const row = yield* findConnectionRowAtScope({ connectionId: id, scopeId: scope });
+        const row = yield* findConnectionRowAtScope({
+          connectionId: id,
+          scopeId: scope,
+        });
         if (!row) {
           return yield* new ConnectionNotFoundError({
             connectionId: ConnectionId.make(id),
@@ -2139,15 +2151,25 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         }
 
         if (input.value.kind === "secret") {
+          const secretScope = input.value.secretScopeId ?? input.targetScope;
+          yield* assertScopeInStack("credential binding secretScope", secretScope);
+          if (scopePrecedence.get(secretScope)! < scopePrecedence.get(input.targetScope)!) {
+            return yield* new StorageError({
+              message:
+                `Cannot bind secret "${input.value.secretId}" from scope "${secretScope}" ` +
+                `to target scope "${input.targetScope}": shared bindings cannot reference inner-scope secrets.`,
+              cause: undefined,
+            });
+          }
           const secret = yield* findSecretRowAtScope({
             secretId: input.value.secretId,
-            scopeId: input.targetScope,
+            scopeId: secretScope,
           });
           if (!secret) {
             return yield* new StorageError({
               message:
-                `Cannot bind secret "${input.value.secretId}" at scope "${input.targetScope}": ` +
-                `the secret must be owned by the same scope as the binding.`,
+                `Cannot bind secret "${input.value.secretId}" from scope "${secretScope}": ` +
+                `the secret must be visible and owned by that scope.`,
               cause: undefined,
             });
           }
@@ -2192,6 +2214,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
             kind: input.value.kind,
             text_value: input.value.kind === "text" ? input.value.text : undefined,
             secret_id: input.value.kind === "secret" ? input.value.secretId : undefined,
+            secret_scope_id:
+              input.value.kind === "secret"
+                ? (input.value.secretScopeId ?? input.targetScope)
+                : undefined,
             connection_id: input.value.kind === "connection" ? input.value.connectionId : undefined,
             created_at: now,
             updated_at: now,
@@ -2208,6 +2234,10 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           kind: input.value.kind,
           text_value: input.value.kind === "text" ? input.value.text : undefined,
           secret_id: input.value.kind === "secret" ? input.value.secretId : undefined,
+          secret_scope_id:
+            input.value.kind === "secret"
+              ? (input.value.secretScopeId ?? input.targetScope)
+              : undefined,
           connection_id: input.value.kind === "connection" ? input.value.connectionId : undefined,
           created_at: now,
           updated_at: now,
@@ -2347,7 +2377,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           if (!row.secret_id) return "missing";
           const secret = yield* findSecretRowAtScope({
             secretId: row.secret_id,
-            scopeId: row.scope_id,
+            scopeId: row.secret_scope_id ?? row.scope_id,
           });
           if (!secret) return "missing";
           return (yield* secretRouteHasBackingValue(secret)) ? "resolved" : "missing";
@@ -2416,7 +2446,9 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           (row) =>
             new Usage({
               pluginId: row.plugin_id,
-              scopeId: ScopeId.make(row.scope_id),
+              scopeId: ScopeId.make(
+                row.kind === "secret" ? (row.secret_scope_id ?? row.scope_id) : row.scope_id,
+              ),
               ownerKind: "credential-binding",
               ownerId: row.source_id,
               ownerName: names.get(`${row.source_scope_id}\u0000${row.source_id}`) ?? null,
@@ -2882,7 +2914,11 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
 
         const defsMap = new Map<string, unknown>(Object.entries(defs));
         const preview = yield* Effect.sync(() =>
-          buildToolTypeScriptPreview({ inputSchema, outputSchema, defs: defsMap }),
+          buildToolTypeScriptPreview({
+            inputSchema,
+            outputSchema,
+            defs: defsMap,
+          }),
         ).pipe(
           Effect.withSpan("schema.compile.preview", {
             attributes: {

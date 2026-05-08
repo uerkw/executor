@@ -3,6 +3,7 @@ import {
   ConfiguredCredentialValue as ConfiguredCredentialValueSchema,
   CredentialBindingValue,
   credentialSlotKey,
+  ScopedSecretCredentialInput,
   ScopeId,
   SecretBackedMap,
   SecretBackedValue,
@@ -24,7 +25,11 @@ export type McpTransport = typeof McpTransport.Type;
 export const ConfiguredMcpCredentialValue = ConfiguredCredentialValueSchema;
 export type ConfiguredMcpCredentialValue = typeof ConfiguredMcpCredentialValue.Type;
 
-export const McpCredentialInput = Schema.Union([SecretBackedValue, ConfiguredMcpCredentialValue]);
+export const McpCredentialInput = Schema.Union([
+  ScopedSecretCredentialInput,
+  SecretBackedValue,
+  ConfiguredMcpCredentialValue,
+]);
 export type McpCredentialInput = typeof McpCredentialInput.Type;
 
 export const mcpHeaderSlot = (name: string): string => credentialSlotKey("header", name);
@@ -69,6 +74,8 @@ export const McpConnectionAuthInput = Schema.Union([
     headerName: Schema.String,
     secretId: Schema.String,
     prefix: Schema.optional(Schema.String),
+    targetScope: Schema.optional(ScopeId),
+    secretScopeId: Schema.optional(ScopeId),
   }),
   Schema.Struct({
     kind: Schema.Literal("oauth2"),

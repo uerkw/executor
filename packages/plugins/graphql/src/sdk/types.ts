@@ -3,6 +3,7 @@ import {
   ConfiguredCredentialValue as ConfiguredCredentialValueSchema,
   CredentialBindingValue,
   credentialSlotKey,
+  ScopedSecretCredentialInput,
   SecretBackedValue,
   ScopeId,
 } from "@executor-js/sdk/core";
@@ -68,7 +69,11 @@ export type QueryParamValue = typeof QueryParamValue.Type;
 
 export const ConfiguredGraphqlCredentialValue = ConfiguredCredentialValueSchema;
 export type ConfiguredGraphqlCredentialValue = typeof ConfiguredGraphqlCredentialValue.Type;
-export const GraphqlCredentialInput = Schema.Union([HeaderValue, ConfiguredGraphqlCredentialValue]);
+export const GraphqlCredentialInput = Schema.Union([
+  ScopedSecretCredentialInput,
+  HeaderValue,
+  ConfiguredGraphqlCredentialValue,
+]);
 export type GraphqlCredentialInput = typeof GraphqlCredentialInput.Type;
 
 export const graphqlHeaderSlot = (name: string): string => credentialSlotKey("header", name);

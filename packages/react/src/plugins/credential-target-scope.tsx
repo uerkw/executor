@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ScopeId } from "@executor-js/sdk";
+import { ScopeId } from "@executor-js/sdk";
 
 import { useScope, useUserScope } from "../api/scope-context";
 import {
@@ -13,6 +13,15 @@ import {
   CardStackEntryTitle,
 } from "../components/card-stack";
 import { FilterTabs } from "../components/filter-tabs";
+import { FieldLabel } from "../components/field";
+import { HelpTooltip } from "../components/help-tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/select";
 
 export interface CredentialTargetScopeOption {
   readonly scopeId: ScopeId;
@@ -147,10 +156,89 @@ export function CredentialScopeSection(props: {
         value={props.value}
         options={props.options}
         onChange={props.onChange}
-        title={props.title ?? "Save credentials to"}
-        description={props.description ?? "Choose who can use the credentials attached below."}
+        title={props.title ?? "Used by"}
+        description={props.description ?? "Choose who can use these credentials."}
       />
       {props.children}
+    </div>
+  );
+}
+
+export function CredentialScopeDropdown(props: {
+  readonly value: ScopeId;
+  readonly options: readonly CredentialTargetScopeOption[];
+  readonly onChange: (scope: ScopeId) => void;
+  readonly label?: string;
+  readonly help?: ReactNode;
+}) {
+  const label = props.label ?? "Used by";
+  if (props.options.length <= 1) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <FieldLabel className="text-[11px]">{label}</FieldLabel>
+        <HelpTooltip label={label}>
+          {props.help ?? "Choose who can use these credentials."}
+        </HelpTooltip>
+      </div>
+      <Select
+        value={String(props.value)}
+        onValueChange={(value) => props.onChange(ScopeId.make(value))}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={label} />
+        </SelectTrigger>
+        <SelectContent>
+          {props.options.map((option) => (
+            <SelectItem key={option.scopeId} value={option.scopeId}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+export function CredentialControlField(props: {
+  readonly label: string;
+  readonly children: ReactNode;
+  readonly help?: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <FieldLabel className="text-[11px]">{props.label}</FieldLabel>
+        {props.help ? <HelpTooltip label={props.label}>{props.help}</HelpTooltip> : null}
+      </div>
+      {props.children}
+    </div>
+  );
+}
+
+export function CredentialUsageRow(props: {
+  readonly value: ScopeId;
+  readonly options: readonly CredentialTargetScopeOption[];
+  readonly onChange: (scope: ScopeId) => void;
+  readonly children: ReactNode;
+  readonly label?: string;
+  readonly help?: ReactNode;
+}) {
+  if (props.options.length <= 1) {
+    return <div className="space-y-2.5">{props.children}</div>;
+  }
+
+  return (
+    <div className="grid gap-2 md:grid-cols-2">
+      <div className="min-w-0 space-y-2.5">{props.children}</div>
+      <CredentialScopeDropdown
+        value={props.value}
+        options={props.options}
+        onChange={props.onChange}
+        label={props.label}
+        help={props.help}
+      />
     </div>
   );
 }

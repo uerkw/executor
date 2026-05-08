@@ -830,6 +830,7 @@ describe("sources api (HTTP)", () => {
           value: {
             kind: "secret",
             secretId: SecretId.make("alice_pat"),
+            secretScopeId: ScopeId.make(aliceScope),
           },
         }),
       );
@@ -858,6 +859,7 @@ describe("sources api (HTTP)", () => {
           value: {
             kind: "secret",
             secretId: SecretId.make("bob_pat"),
+            secretScopeId: ScopeId.make(bobScope),
           },
         }),
       );

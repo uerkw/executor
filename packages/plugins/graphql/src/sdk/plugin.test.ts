@@ -604,6 +604,68 @@ describe("graphqlPlugin", () => {
     }),
   );
 
+  it.effect("addSource stores direct GraphQL credential bindings at each row scope", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [memorySecretsPlugin(), graphqlPlugin()] as const,
+        }),
+      );
+
+      yield* executor.secrets.set({
+        id: SecretId.make("row-user-token"),
+        scope: ScopeId.make(USER_SCOPE),
+        name: "User token",
+        value: "user-secret",
+        provider: "memory",
+      });
+      yield* executor.secrets.set({
+        id: SecretId.make("row-org-query"),
+        scope: ScopeId.make(ORG_SCOPE),
+        name: "Org query",
+        value: "org-secret",
+        provider: "memory",
+      });
+
+      yield* executor.graphql.addSource({
+        endpoint: "https://example.com/graphql",
+        scope: ORG_SCOPE,
+        namespace: "row_scoped_credentials",
+        introspectionJson,
+        headers: {
+          Authorization: {
+            secretId: "row-user-token",
+            prefix: "Bearer ",
+            targetScope: USER_SCOPE,
+          },
+        },
+        queryParams: {
+          token: {
+            secretId: "row-org-query",
+            targetScope: ORG_SCOPE,
+          },
+        },
+      });
+
+      const bindings = yield* executor.graphql.listSourceBindings(
+        "row_scoped_credentials",
+        ORG_SCOPE,
+      );
+
+      expect(bindings.map((binding) => binding.slot).sort()).toEqual([
+        graphqlHeaderSlot("Authorization"),
+        graphqlQueryParamSlot("token"),
+      ]);
+      expect(
+        bindings.find((binding) => binding.slot === graphqlHeaderSlot("Authorization"))?.scopeId,
+      ).toBe(ScopeId.make(USER_SCOPE));
+      expect(
+        bindings.find((binding) => binding.slot === graphqlQueryParamSlot("token"))?.scopeId,
+      ).toBe(ScopeId.make(ORG_SCOPE));
+    }),
+  );
+
   it.effect("org header binding resolves the org secret when a user has the same secret id", () =>
     Effect.gen(function* () {
       const server = yield* serveGreetingServer;

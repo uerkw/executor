@@ -222,7 +222,8 @@ function EditForm(props: {
         targetScope={credentialTargetScope}
       />
 
-      <section className="space-y-2.5">
+      {/* Temporarily hidden while we revisit GraphQL OAuth discovery and UX. */}
+      <section className="hidden space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm font-medium text-foreground">Authentication</span>
           <FilterTabs<AuthMode>

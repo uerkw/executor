@@ -148,6 +148,7 @@ export const credential_binding = pgTable(
     kind: text("kind").notNull(),
     text_value: text("text_value"),
     secret_id: text("secret_id"),
+    secret_scope_id: text("secret_scope_id"),
     connection_id: text("connection_id"),
     created_at: timestamp("created_at").notNull(),
     updated_at: timestamp("updated_at").notNull(),
@@ -161,6 +162,7 @@ export const credential_binding = pgTable(
     index("credential_binding_slot_key_idx").on(table.slot_key),
     index("credential_binding_kind_idx").on(table.kind),
     index("credential_binding_secret_id_idx").on(table.secret_id),
+    index("credential_binding_secret_scope_id_idx").on(table.secret_scope_id),
     index("credential_binding_connection_id_idx").on(table.connection_id),
   ],
 );

@@ -304,6 +304,9 @@ const slugifySlotPart = (value: string): string =>
 export const headerBindingSlot = (headerName: string): string =>
   `header:${slugifySlotPart(headerName)}`;
 
+export const queryParamBindingSlot = (name: string): string =>
+  `query_param:${slugifySlotPart(name)}`;
+
 export const oauth2ClientIdSlot = (securitySchemeName: string): string =>
   `oauth2:${slugifySlotPart(securitySchemeName)}:client-id`;
 

@@ -182,6 +182,7 @@ export const coreSchema = {
       kind: { type: credentialBindingKinds, required: true, index: true },
       text_value: { type: "string", required: false },
       secret_id: { type: "string", required: false, index: true },
+      secret_scope_id: { type: "string", required: false, index: true },
       connection_id: { type: "string", required: false, index: true },
       created_at: { type: "date", required: true },
       updated_at: { type: "date", required: true },
@@ -244,7 +245,7 @@ export type ConnectionRow = InferDBFieldsOutput<CoreSchema["connection"]["fields
 type CredentialBindingRowFields = InferDBFieldsOutput<CoreSchema["credential_binding"]["fields"]>;
 type CredentialBindingRowBase = Omit<
   CredentialBindingRowFields,
-  "kind" | "text_value" | "secret_id" | "connection_id"
+  "kind" | "text_value" | "secret_id" | "secret_scope_id" | "connection_id"
 >;
 
 export type CredentialBindingRow = CredentialBindingRowBase &
@@ -256,6 +257,7 @@ export type CredentialBindingRow = CredentialBindingRowBase &
     | {
         kind: "secret";
         secret_id: string;
+        secret_scope_id?: string;
       }
     | {
         kind: "connection";
