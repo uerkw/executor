@@ -497,7 +497,7 @@ export const makeOAuth2Service = (
         issuerUrl: strategy.issuerUrl ?? new URL(strategy.authorizationEndpoint).origin,
         clientIdSecretId: strategy.clientIdSecretId,
         clientIdSecretScopeId: clientIdRef.scopeId,
-        clientSecretSecretId: strategy.clientSecretSecretId,
+        clientSecretSecretId: strategy.clientSecretSecretId ?? null,
         clientSecretSecretScopeId: strategy.clientSecretSecretId
           ? ((yield* secretsGetResolved(strategy.clientSecretSecretId))?.scopeId ?? null)
           : null,
@@ -667,6 +667,9 @@ export const makeOAuth2Service = (
         where: [{ field: "id", value: input.state }],
       });
       if (!row) {
+        return yield* new OAuthSessionNotFoundError({ sessionId: input.state });
+      }
+      if (input.tokenScope !== undefined && row.token_scope !== input.tokenScope) {
         return yield* new OAuthSessionNotFoundError({ sessionId: input.state });
       }
 
