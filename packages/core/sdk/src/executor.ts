@@ -3287,7 +3287,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     const sourceDetectionMaxUrlLength = config.sourceDetection?.maxUrlLength ?? 2_048;
     const sourceDetectionMaxDetectors = config.sourceDetection?.maxDetectors ?? 6;
     const sourceDetectionMaxResults = config.sourceDetection?.maxResults ?? 4;
-    const sourceDetectionTimeout = config.sourceDetection?.timeout ?? "5 seconds";
+    const sourceDetectionTimeout = config.sourceDetection?.timeout ?? "60 seconds";
     const sourceDetectionHostedOutboundPolicy =
       config.sourceDetection?.hostedOutboundPolicy ?? config.httpClientLayer !== undefined;
 

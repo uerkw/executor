@@ -1,7 +1,5 @@
 import { Data, Effect, Schema } from "effect";
 
-export const MAX_SENTRY_ENVELOPE_BODY_BYTES = 200_000;
-
 class SentryTunnelError extends Data.TaggedError("SentryTunnelError")<{
   readonly cause?: unknown;
 }> {}
@@ -16,39 +14,12 @@ const decodeSentryEnvelopeHeader = Schema.decodeUnknownEffect(
 
 const badSentryEnvelopeResponse = () => new Response("bad envelope", { status: 400 });
 
-const requestContentLength = (request: Request): number | null => {
-  const value = request.headers.get("content-length");
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-};
-
-const readLimitedRequestText = (request: Request, maxBytes: number) =>
+export const handleSentryTunnelRequest = (request: Request, configuredDsn: string) =>
   Effect.gen(function* () {
-    const length = requestContentLength(request);
-    if (length !== null && length > maxBytes) {
-      return yield* new SentryTunnelError({ cause: "payload_too_large" });
-    }
-    const text = yield* Effect.tryPromise({
+    const envelope = yield* Effect.tryPromise({
       try: () => request.text(),
       catch: (cause) => new SentryTunnelError({ cause }),
     });
-    if (text.length > maxBytes) {
-      return yield* new SentryTunnelError({ cause: "payload_too_large" });
-    }
-    return text;
-  });
-
-export const handleSentryTunnelRequest = (request: Request, configuredDsn: string) =>
-  Effect.gen(function* () {
-    const envelope = yield* readLimitedRequestText(request, MAX_SENTRY_ENVELOPE_BODY_BYTES).pipe(
-      Effect.catchTag("SentryTunnelError", (error) =>
-        error.cause === "payload_too_large"
-          ? Effect.succeed(new Response("payload too large", { status: 413 }))
-          : Effect.fail(error),
-      ),
-    );
-    if (envelope instanceof Response) return envelope;
     const firstLine = envelope.slice(0, envelope.indexOf("\n"));
     const header = yield* decodeSentryEnvelopeHeader(firstLine).pipe(
       Effect.mapError((cause) => new SentryTunnelError({ cause })),
