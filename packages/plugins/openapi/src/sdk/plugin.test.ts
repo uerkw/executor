@@ -944,7 +944,7 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
     }),
   );
 
-  it.effect("updateSource on user shadow does not mutate the org row", () =>
+  it.effect("updateSource on user shadow cannot override the inherited base URL", () =>
     Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       const clientLayer = Layer.succeed(HttpClient.HttpClient, httpClient);
@@ -970,22 +970,81 @@ layer(TestLayer)("OpenAPI Plugin", (it) => {
         spec: specJson,
         scope: String(USER_SCOPE),
         namespace: "shared",
-        baseUrl: "https://user.example.com",
         name: "User Source",
       });
 
-      yield* executor.openapi.updateSource("shared", String(USER_SCOPE), {
-        name: "User Renamed",
-        baseUrl: "https://user-new.example.com",
-      });
+      const updateResult = yield* executor.openapi
+        .updateSource("shared", String(USER_SCOPE), {
+          name: "User Renamed",
+          baseUrl: "https://user-new.example.com",
+        })
+        .pipe(
+          Effect.match({
+            onFailure: (error) => error,
+            onSuccess: () => null,
+          }),
+        );
 
       const userView = yield* executor.openapi.getSource("shared", String(USER_SCOPE));
       const orgView = yield* executor.openapi.getSource("shared", String(ORG_SCOPE));
 
-      expect(userView?.name).toBe("User Renamed");
-      expect(userView?.config.baseUrl).toBe("https://user-new.example.com");
+      expect(updateResult).toMatchObject({ _tag: "OpenApiOAuthError" });
+      expect(userView?.name).toBe("User Source");
+      expect(userView?.config.baseUrl).toBe("https://org.example.com");
       expect(orgView?.name).toBe("Org Source");
       expect(orgView?.config.baseUrl).toBe("https://org.example.com");
+    }),
+  );
+
+  it.effect("addSpec on user shadow cannot override the inherited base URL", () =>
+    Effect.gen(function* () {
+      const server = yield* makeOpenApiTestServer({ spec });
+      const executor = yield* createExecutor(
+        makeTestConfig({
+          scopes: stackedScopes,
+          plugins: [
+            openApiPlugin({ httpClientLayer: server.httpClientLayer }),
+            memorySecretsPlugin(),
+          ] as const,
+        }),
+      );
+
+      yield* executor.secrets.set(
+        new SetSecretInput({
+          id: SecretId.make("org-api-token"),
+          scope: ORG_SCOPE,
+          name: "Org API token",
+          value: "org-secret",
+        }),
+      );
+
+      yield* executor.openapi.addSpec({
+        spec: server.specJson,
+        scope: String(ORG_SCOPE),
+        namespace: "shadow_auth",
+        baseUrl: "https://org.example.com",
+        credentialTargetScope: String(ORG_SCOPE),
+        headers: {
+          Authorization: { secretId: "org-api-token", prefix: "Bearer " },
+        },
+      });
+
+      const addResult = yield* executor.openapi
+        .addSpec({
+          spec: server.specJson,
+          scope: String(USER_SCOPE),
+          namespace: "shadow_auth",
+          baseUrl: server.baseUrl,
+          name: "User Shadow",
+        })
+        .pipe(
+          Effect.match({
+            onFailure: (error) => error,
+            onSuccess: () => null,
+          }),
+        );
+
+      expect(addResult).toMatchObject({ _tag: "OpenApiOAuthError" });
     }),
   );
 
