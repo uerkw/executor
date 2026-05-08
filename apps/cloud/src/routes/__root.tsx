@@ -167,6 +167,40 @@ function ShellSkeleton() {
   );
 }
 
+function ShellErrorFallback() {
+  const supportLinks = [
+    { label: "Discord", href: "https://discord.gg/eF29HBHwM6" },
+    { label: "GitHub Issues", href: "https://github.com/RhysSullivan/executor/issues" },
+    { label: "Slack", href: "mailto:rhys@executor.sh?subject=Executor%20Slack%20invite" },
+    { label: "Email", href: "mailto:rhys@executor.sh?subject=Executor%20support" },
+  ] as const;
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10">
+      <section className="w-full max-w-md text-center">
+        <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-full border border-border bg-muted">
+          <span className="text-lg font-semibold text-muted-foreground">!</span>
+        </div>
+        <h1 className="text-xl font-semibold text-foreground">Something went wrong</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          We&apos;ve tracked it. Give refreshing a try, and get in touch if support is needed.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
+          {supportLinks.map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AuthGate() {
   const auth = useAuth();
 
@@ -184,7 +218,7 @@ function AuthGate() {
 
   return (
     <AutumnProvider pathPrefix="/api/autumn">
-      <Sentry.ErrorBoundary fallback={<ShellSkeleton />} showDialog={false}>
+      <Sentry.ErrorBoundary fallback={<ShellErrorFallback />} showDialog={false}>
         <ExecutorProvider fallback={<ShellSkeleton />} onHandledError={captureFrontendError}>
           <ExecutorPluginsProvider plugins={clientPlugins}>
             <Shell />
