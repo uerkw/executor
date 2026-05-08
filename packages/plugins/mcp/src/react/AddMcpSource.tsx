@@ -10,7 +10,6 @@ import {
   CardStack,
   CardStackContent,
   CardStackEntry,
-  CardStackEntryContent,
   CardStackEntryField,
 } from "@executor-js/react/components/card-stack";
 import { FieldLabel } from "@executor-js/react/components/field";
@@ -30,7 +29,6 @@ import {
 import {
   sourceDisplayNameFromUrl,
   slugifyNamespace,
-  SourceIdentityFieldRows,
   SourceIdentityFields,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";

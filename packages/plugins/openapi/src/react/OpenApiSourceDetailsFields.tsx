@@ -7,7 +7,10 @@ import {
   CardStackEntryField,
   CardStackEntryTitle,
 } from "@executor-js/react/components/card-stack";
-import { FreeformCombobox } from "@executor-js/react/components/combobox";
+import {
+  FreeformCombobox,
+  type FreeformComboboxOption,
+} from "@executor-js/react/components/combobox";
 import { Input } from "@executor-js/react/components/input";
 import { SourceFavicon } from "@executor-js/react/components/source-favicon";
 import {
@@ -21,7 +24,7 @@ export function OpenApiSourceDetailsFields(props: {
   readonly identity: SourceIdentity;
   readonly baseUrl: string;
   readonly onBaseUrlChange: (value: string) => void;
-  readonly baseUrlOptions?: readonly string[];
+  readonly baseUrlOptions?: readonly FreeformComboboxOption[];
   readonly specUrl?: string;
   readonly onSpecUrlChange?: (value: string) => void;
   readonly faviconUrl?: string;

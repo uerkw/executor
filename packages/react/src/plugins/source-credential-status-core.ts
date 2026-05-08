@@ -37,8 +37,7 @@ export const effectiveSourceCredentialBinding = (
 
 const liveConnectionSet = (
   values?: ReadonlySet<string> | readonly ConnectionId[],
-): ReadonlySet<string> | undefined =>
-  !values ? undefined : Array.isArray(values) ? new Set(values.map(String)) : values;
+): ReadonlySet<string> | undefined => (values ? new Set(Array.from(values, String)) : undefined);
 
 export const missingSourceCredentialLabels = (input: {
   readonly slots: readonly SourceCredentialSlot[];
