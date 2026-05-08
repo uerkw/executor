@@ -39,6 +39,14 @@ export function McpRemoteSourceFields(props: {
   readonly namespaceReadOnly?: boolean;
   readonly urlDisabled?: boolean;
 }) {
+  const previewDescription = props.preview
+    ? props.preview.connected
+      ? props.preview.toolCount === null
+        ? null
+        : `${props.preview.toolCount} tool${props.preview.toolCount !== 1 ? "s" : ""} available`
+      : "OAuth required to discover tools"
+    : null;
+
   if (props.preview) {
     return (
       <CardStack>
@@ -51,11 +59,9 @@ export function McpRemoteSourceFields(props: {
               <CardStackEntryTitle>
                 {props.preview.serverName ?? props.preview.name}
               </CardStackEntryTitle>
-              <CardStackEntryDescription>
-                {props.preview.connected
-                  ? `${props.preview.toolCount} tool${props.preview.toolCount !== 1 ? "s" : ""} available`
-                  : "OAuth required to discover tools"}
-              </CardStackEntryDescription>
+              {previewDescription ? (
+                <CardStackEntryDescription>{previewDescription}</CardStackEntryDescription>
+              ) : null}
             </CardStackEntryContent>
             <CardStackEntryActions>
               {props.preview.connected ? (
