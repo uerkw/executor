@@ -34,11 +34,7 @@ import {
   type HeaderState,
 } from "@executor-js/react/plugins/secret-header-auth";
 import { CredentialScopeDropdown } from "@executor-js/react/plugins/credential-target-scope";
-import {
-  slugifyNamespace,
-  SourceIdentityFieldRows,
-  useSourceIdentity,
-} from "@executor-js/react/plugins/source-identity";
+import { slugifyNamespace, useSourceIdentity } from "@executor-js/react/plugins/source-identity";
 import { useSecretPickerSecrets } from "@executor-js/react/plugins/use-secret-picker-secrets";
 import { Button } from "@executor-js/react/components/button";
 import { CopyButton } from "@executor-js/react/components/copy-button";
@@ -47,27 +43,21 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@executor-js/react/components/collapsible";
-import { FreeformCombobox } from "@executor-js/react/components/combobox";
 import {
   CardStack,
   CardStackContent,
-  CardStackEntry,
-  CardStackEntryContent,
-  CardStackEntryDescription,
   CardStackEntryField,
-  CardStackEntryTitle,
 } from "@executor-js/react/components/card-stack";
 import { FieldLabel } from "@executor-js/react/components/field";
 import { FloatActions } from "@executor-js/react/components/float-actions";
 import { HelpTooltip } from "@executor-js/react/components/help-tooltip";
-import { Input } from "@executor-js/react/components/input";
 import { Label } from "@executor-js/react/components/label";
 import { Textarea } from "@executor-js/react/components/textarea";
 import { Checkbox } from "@executor-js/react/components/checkbox";
-import { SourceFavicon } from "@executor-js/react/components/source-favicon";
 import { RadioGroup, RadioGroupItem } from "@executor-js/react/components/radio-group";
 import { IOSSpinner, Spinner } from "@executor-js/react/components/spinner";
 import { addOpenApiSpecOptimistic, previewOpenApiSpec, setOpenApiSourceBinding } from "./atoms";
+import { OpenApiSourceDetailsFields } from "./OpenApiSourceDetailsFields";
 import type { SpecPreview, HeaderPreset, OAuth2Preset } from "../sdk/preview";
 import {
   headerBindingSlot,
@@ -936,61 +926,32 @@ export default function AddOpenApiSource(props: {
 
       {/* ── Source information card (shown after analysis) ── */}
       {preview ? (
-        <CardStack>
-          <CardStackContent className="border-t-0">
-            <CardStackEntry>
-              {resolvedBaseUrl && <SourceFavicon url={resolvedBaseUrl} size={16} />}
-              <CardStackEntryContent>
-                <CardStackEntryTitle>
-                  {Option.getOrElse(preview.title, () => "API")}
-                </CardStackEntryTitle>
-                <CardStackEntryDescription>
-                  {Option.getOrElse(preview.version, () => "")}
-                  {Option.isSome(preview.version) && " · "}
-                  {preview.operationCount} operation
-                  {preview.operationCount !== 1 ? "s" : ""}
-                  {preview.tags.length > 0 &&
-                    ` · ${preview.tags.length} tag${preview.tags.length !== 1 ? "s" : ""}`}
-                </CardStackEntryDescription>
-              </CardStackEntryContent>
-            </CardStackEntry>
-            <SourceIdentityFieldRows identity={identity} />
-            <div className="grid grid-cols-1 md:grid-cols-2">
-              <CardStackEntryField label="Base URL">
-                <FreeformCombobox
-                  value={resolvedBaseUrl}
-                  onValueChange={setBaseUrl}
-                  options={baseUrlOptions}
-                  placeholder="https://api.example.com"
-                  className="w-full"
-                  inputClassName="font-mono text-sm"
-                />
-
-                {!resolvedBaseUrl && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    A base URL is required to make requests.
-                  </p>
-                )}
-              </CardStackEntryField>
-              <CardStackEntryField label="Spec URL">
-                <Input
-                  value={specUrl}
-                  onChange={(e) => {
-                    setSpecUrl((e.target as HTMLInputElement).value);
-                    setPreview(null);
-                    setBaseUrl("");
-                    setCustomHeaders([]);
-                    setStrategy({ kind: "none" });
-                    setOauth2AuthState(null);
-                    setOauth2Error(null);
-                  }}
-                  placeholder="https://api.example.com/openapi.json"
-                  className="font-mono text-sm"
-                />
-              </CardStackEntryField>
-            </div>
-          </CardStackContent>
-        </CardStack>
+        <OpenApiSourceDetailsFields
+          title={Option.getOrElse(preview.title, () => "API")}
+          description={`${Option.getOrElse(preview.version, () => "")}${
+            Option.isSome(preview.version) ? " · " : ""
+          }${preview.operationCount} operation${preview.operationCount !== 1 ? "s" : ""}${
+            preview.tags.length > 0
+              ? ` · ${preview.tags.length} tag${preview.tags.length !== 1 ? "s" : ""}`
+              : ""
+          }`}
+          identity={identity}
+          baseUrl={resolvedBaseUrl}
+          onBaseUrlChange={setBaseUrl}
+          baseUrlOptions={baseUrlOptions}
+          specUrl={specUrl}
+          onSpecUrlChange={(value) => {
+            setSpecUrl(value);
+            setPreview(null);
+            setBaseUrl("");
+            setCustomHeaders([]);
+            setStrategy({ kind: "none" });
+            setOauth2AuthState(null);
+            setOauth2Error(null);
+          }}
+          faviconUrl={resolvedBaseUrl}
+          baseUrlMissingMessage="A base URL is required to make requests."
+        />
       ) : null}
 
       {analyzeError && (

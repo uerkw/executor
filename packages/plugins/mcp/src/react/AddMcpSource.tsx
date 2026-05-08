@@ -10,22 +10,14 @@ import {
   CardStack,
   CardStackContent,
   CardStackEntry,
-  CardStackEntryActions,
-  CardStackEntryContent,
-  CardStackEntryDescription,
   CardStackEntryField,
-  CardStackEntryMedia,
-  CardStackEntryTitle,
 } from "@executor-js/react/components/card-stack";
-import { FieldError, FieldLabel } from "@executor-js/react/components/field";
+import { FieldLabel } from "@executor-js/react/components/field";
 import { FilterTabs } from "@executor-js/react/components/filter-tabs";
 import { FloatActions } from "@executor-js/react/components/float-actions";
 import { Input } from "@executor-js/react/components/input";
 import { Label } from "@executor-js/react/components/label";
-import { Badge } from "@executor-js/react/components/badge";
-import { Skeleton } from "@executor-js/react/components/skeleton";
-import { SourceFavicon } from "@executor-js/react/components/source-favicon";
-import { IOSSpinner, Spinner } from "@executor-js/react/components/spinner";
+import { Spinner } from "@executor-js/react/components/spinner";
 import { Textarea } from "@executor-js/react/components/textarea";
 import {
   emptyHttpCredentials,
@@ -37,7 +29,6 @@ import {
 import {
   sourceDisplayNameFromUrl,
   slugifyNamespace,
-  SourceIdentityFieldRows,
   SourceIdentityFields,
   useSourceIdentity,
 } from "@executor-js/react/plugins/source-identity";
@@ -57,6 +48,7 @@ import {
 type RemoteAuthMode = "none" | "oauth2";
 import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import { probeMcpEndpoint, addMcpSourceOptimistic } from "./atoms";
+import { McpRemoteSourceFields } from "./McpRemoteSourceFields";
 import { mcpPresets, type McpPreset } from "../sdk/presets";
 import { MCP_OAUTH_CONNECTION_SLOT, type McpCredentialInput } from "../sdk/types";
 
@@ -599,116 +591,15 @@ export default function AddMcpSource(props: {
 
       {transport === "remote" ? (
         <>
-          {/* Server info card (shown above URL input after probing) */}
-          {probe ? (
-            <CardStack>
-              <CardStackContent className="border-t-0">
-                <CardStackEntry>
-                  <CardStackEntryMedia>
-                    <SourceFavicon url={state.url} size={32} />
-                  </CardStackEntryMedia>
-                  <CardStackEntryContent>
-                    <CardStackEntryTitle>{probe.serverName ?? probe.name}</CardStackEntryTitle>
-                    <CardStackEntryDescription>
-                      {probe.connected
-                        ? `${probe.toolCount} tool${probe.toolCount !== 1 ? "s" : ""} available`
-                        : "OAuth required to discover tools"}
-                    </CardStackEntryDescription>
-                  </CardStackEntryContent>
-                  <CardStackEntryActions>
-                    {probe.connected ? (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-500/20 bg-emerald-500/10 text-[10px] text-emerald-600 dark:text-emerald-400"
-                      >
-                        Connected
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/20 bg-amber-500/10 text-[10px] text-amber-600 dark:text-amber-400"
-                      >
-                        OAuth required
-                      </Badge>
-                    )}
-                  </CardStackEntryActions>
-                </CardStackEntry>
-                <SourceIdentityFieldRows identity={remoteIdentity} namePlaceholder="e.g. Linear" />
-                <CardStackEntryField label="Server URL">
-                  <Input
-                    value={state.url}
-                    onChange={(e) =>
-                      dispatch({
-                        type: "set-url",
-                        url: (e.target as HTMLInputElement).value,
-                      })
-                    }
-                    placeholder="https://mcp.example.com"
-                    className="w-full font-mono text-sm"
-                  />
-                </CardStackEntryField>
-              </CardStackContent>
-            </CardStack>
-          ) : isProbing ? (
-            <CardStack>
-              <CardStackContent className="border-t-0">
-                <CardStackEntry>
-                  <CardStackEntryMedia>
-                    <Skeleton className="size-4 rounded" />
-                  </CardStackEntryMedia>
-                  <CardStackEntryContent>
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="mt-1 h-3 w-32" />
-                  </CardStackEntryContent>
-                  <CardStackEntryActions>
-                    <Skeleton className="h-4 w-20 rounded-full" />
-                  </CardStackEntryActions>
-                </CardStackEntry>
-              </CardStackContent>
-            </CardStack>
-          ) : null}
-
-          {!probe && (
-            <CardStack>
-              <CardStackContent className="border-t-0">
-                <CardStackEntryField label="Server URL">
-                  <div className="relative">
-                    <Input
-                      value={state.url}
-                      onChange={(e) =>
-                        dispatch({
-                          type: "set-url",
-                          url: (e.target as HTMLInputElement).value,
-                        })
-                      }
-                      placeholder="https://mcp.example.com"
-                      className="w-full pr-9 font-mono text-sm"
-                      aria-invalid={probeError ? true : undefined}
-                    />
-                    {isProbing && (
-                      <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
-                        <IOSSpinner className="size-4" />
-                      </div>
-                    )}
-                  </div>
-                  {probeError && (
-                    <div className="mt-2 space-y-2">
-                      <FieldError>{probeError}</FieldError>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleProbe}
-                        className="h-7 px-2 text-xs"
-                      >
-                        Try again
-                      </Button>
-                    </div>
-                  )}
-                </CardStackEntryField>
-              </CardStackContent>
-            </CardStack>
-          )}
+          <McpRemoteSourceFields
+            url={state.url}
+            onUrlChange={(url) => dispatch({ type: "set-url", url })}
+            identity={remoteIdentity}
+            preview={probe}
+            probing={isProbing}
+            error={probeError}
+            onRetry={handleProbe}
+          />
 
           <HttpCredentialsEditor
             credentials={remoteCredentials}

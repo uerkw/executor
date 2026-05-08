@@ -11,46 +11,63 @@ import {
 } from "@executor-js/react/plugins/source-credential-status";
 import { ScopeId } from "@executor-js/sdk/core";
 
-import { graphqlSourceAtom, graphqlSourceBindingsAtom } from "./atoms";
-import type { StoredGraphqlSource } from "../sdk/store";
+import { mcpSourceAtom, mcpSourceBindingsAtom } from "./atoms";
+import type { McpStoredSourceSchemaType } from "../sdk/stored-source";
 
-const sourceCredentialSlots = (source: StoredGraphqlSource): readonly SourceCredentialSlot[] => {
+const sourceCredentialSlots = (
+  source: McpStoredSourceSchemaType,
+): readonly SourceCredentialSlot[] => {
+  if (source.config.transport !== "remote") return [];
   const slots: SourceCredentialSlot[] = [];
-  for (const [name, value] of Object.entries(source.headers)) {
+  for (const [name, value] of Object.entries(source.config.headers ?? {})) {
     if (typeof value !== "string") slots.push({ kind: "secret", slot: value.slot, label: name });
   }
-  for (const [name, value] of Object.entries(source.queryParams)) {
+  for (const [name, value] of Object.entries(source.config.queryParams ?? {})) {
     if (typeof value !== "string") slots.push({ kind: "secret", slot: value.slot, label: name });
   }
-  if (source.auth.kind === "oauth2") {
+  const auth = source.config.auth;
+  if (auth.kind === "header") {
+    slots.push({
+      kind: "secret",
+      slot: auth.secretSlot,
+      label: auth.headerName,
+    });
+  }
+  if (auth.kind === "oauth2") {
+    if (auth.clientIdSlot) {
+      slots.push({ kind: "secret", slot: auth.clientIdSlot, label: "Client ID" });
+    }
+    if (auth.clientSecretSlot) {
+      slots.push({ kind: "secret", slot: auth.clientSecretSlot, label: "Client Secret" });
+    }
     slots.push({
       kind: "connection",
-      slot: source.auth.connectionSlot,
+      slot: auth.connectionSlot,
       label: "OAuth sign-in",
     });
   }
   return slots;
 };
 
-export default function GraphqlSourceSummary(props: {
-  sourceId: string;
-  variant?: "badge" | "panel";
-  onAction?: () => void;
+export default function McpSourceSummary(props: {
+  readonly sourceId: string;
+  readonly variant?: "badge" | "panel";
+  readonly onAction?: () => void;
 }) {
   const displayScope = useScope();
   const userScope = useUserScope();
   const scopeStack = useScopeStack();
-  const sourceResult = useAtomValue(graphqlSourceAtom(displayScope, props.sourceId));
+  const sourceResult = useAtomValue(mcpSourceAtom(displayScope, props.sourceId));
   const source =
     AsyncResult.isSuccess(sourceResult) && sourceResult.value ? sourceResult.value : null;
   const sourceScope = source ? ScopeId.make(source.scope) : displayScope;
   const bindingsResult = useAtomValue(
-    graphqlSourceBindingsAtom(displayScope, props.sourceId, sourceScope),
+    mcpSourceBindingsAtom(displayScope, props.sourceId, sourceScope),
   );
   const connectionsResult = useAtomValue(connectionsAtom(displayScope));
 
   if (!source) return null;
-  const slots = sourceCredentialSlots(source as StoredGraphqlSource);
+  const slots = sourceCredentialSlots(source as McpStoredSourceSchemaType);
   if (slots.length === 0) return null;
   if (!AsyncResult.isSuccess(bindingsResult) || !AsyncResult.isSuccess(connectionsResult)) {
     return props.variant === "panel" ? null : (
