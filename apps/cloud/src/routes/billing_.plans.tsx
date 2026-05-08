@@ -326,11 +326,11 @@ function SlackContactCta() {
             <DialogHeader>
               <DialogTitle>Get in touch on Slack</DialogTitle>
               <DialogDescription>
-                Email{" "}
+                Add{" "}
                 <a className="font-medium text-foreground underline" href="mailto:rhys@executor.sh">
                   rhys@executor.sh
                 </a>{" "}
-                and ask for an invite to the shared Executor Slack.
+                on Slack Connect to get in touch.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
