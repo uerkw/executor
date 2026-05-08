@@ -48,7 +48,7 @@ export const parseDaemonBaseUrl = (baseUrl: string, defaultPort: number): Parsed
 // Local-host checks
 // ---------------------------------------------------------------------------
 
-const LOCAL_DAEMON_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+const LOCAL_DAEMON_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 export const canAutoStartLocalDaemonForHost = (hostname: string): boolean =>
   LOCAL_DAEMON_HOSTNAMES.has(hostname.toLowerCase());
