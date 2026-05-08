@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { cancelOAuth, startOAuth } from "../api/atoms";
 import { openOAuthPopup, reserveOAuthPopup, type OAuthPopupResult } from "../api/oauth-popup";
@@ -71,6 +73,16 @@ const oauthRouteParamsForTokenScope = (
   scopeId: ScopeId.make(String(tokenScope)),
 });
 
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
+
+const oauthPersistenceErrorMessage = (cause: unknown): string =>
+  Option.match(decodeErrorMessage(cause), {
+    onNone: () =>
+      typeof cause === "string" && cause.length > 0 ? cause : "Failed to save connection",
+    onSome: ({ message }) => message,
+  });
+
 export function useOAuthPopupFlow<
   TPayload extends OAuthCompletionPayload = OAuthCompletionPayload,
 >(options: {
@@ -94,9 +106,10 @@ export function useOAuthPopupFlow<
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const sessionRef = useRef<{ readonly sessionId: string; readonly tokenScope: string } | null>(
-    null,
-  );
+  const sessionRef = useRef<{
+    readonly sessionId: string;
+    readonly tokenScope: string;
+  } | null>(null);
 
   const cancelSession = useCallback(
     (sessionId: string, tokenScope: string) => {
@@ -166,7 +179,10 @@ export function useOAuthPopupFlow<
         return;
       }
 
-      sessionRef.current = { sessionId: response.sessionId, tokenScope: input.tokenScope };
+      sessionRef.current = {
+        sessionId: response.sessionId,
+        tokenScope: input.tokenScope,
+      };
       input.onAuthorizationStarted?.(response);
       cleanupRef.current = openOAuthPopup<TPayload>({
         url: response.authorizationUrl,
@@ -185,12 +201,12 @@ export function useOAuthPopupFlow<
             return;
           }
 
-          const persisted = await Promise.resolve(input.onSuccess(result)).then(
-            () => true,
-            () => false,
+          const persistenceError = await Promise.resolve(input.onSuccess(result)).then(
+            () => null,
+            (cause: unknown) => cause,
           );
-          if (!persisted) {
-            const message = "Failed to persist new connection";
+          if (persistenceError !== null) {
+            const message = oauthPersistenceErrorMessage(persistenceError);
             setBusy(false);
             setError(message);
             input.onError?.(message);
