@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import { useAtomSet } from "@effect/atom-react";
 import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
-import { useErrorMessageFromExit } from "@executor-js/react/api/error-reporting";
 import { useScope } from "@executor-js/react/api/scope-context";
 import { sourceWriteKeys } from "@executor-js/react/api/reactivity-keys";
 import {
@@ -44,6 +45,15 @@ import { addGraphqlSourceOptimistic } from "./atoms";
 import { initialGraphqlCredentials } from "./defaults";
 import type { GraphqlCredentialInput } from "../sdk/types";
 
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
+
+const errorMessageFromExit = (exit: Exit.Exit<unknown, unknown>, fallback: string): string =>
+  Option.match(Option.flatMap(Exit.findErrorOption(exit), decodeErrorMessage), {
+    onNone: () => fallback,
+    onSome: ({ message }) => message,
+  });
+
 type AuthMode = "none" | "oauth2";
 
 export default function AddGraphqlSource(props: {
@@ -60,7 +70,6 @@ export default function AddGraphqlSource(props: {
   const [addError, setAddError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("none");
   const [tokens, setTokens] = useState<OAuthCompletionPayload | null>(null);
-  const errorMessageFromExit = useErrorMessageFromExit();
 
   const scopeId = useScope();
   const { credentialTargetScope: requestCredentialTargetScope } = useCredentialTargetScope();
@@ -161,12 +170,7 @@ export default function AddGraphqlSource(props: {
       reactivityKeys: sourceWriteKeys,
     });
     if (Exit.isFailure(exit)) {
-      setAddError(
-        errorMessageFromExit(exit, "Failed to add source", {
-          surface: "graphql_source",
-          action: "add_source",
-        }),
-      );
+      setAddError(errorMessageFromExit(exit, "Failed to add source"));
       setAdding(false);
       return;
     }
