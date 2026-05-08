@@ -200,7 +200,10 @@ function ShellErrorFallback() {
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           We&apos;ve tracked it. Give refreshing a try, and get in touch if support is needed.
         </p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-sm">
+        <p className="mt-6 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Get support
+        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-sm">
           <Dialog open={slackOpen} onOpenChange={setSlackOpen}>
             <DialogTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="gap-2">
