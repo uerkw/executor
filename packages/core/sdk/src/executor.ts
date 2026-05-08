@@ -1,5 +1,6 @@
 import { Context, Deferred, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http";
+import type { OAuthEndpointUrlPolicy } from "./oauth-helpers";
 import { generateKeyBetween } from "fractional-indexing";
 import {
   StorageError,
@@ -343,6 +344,7 @@ export interface ExecutorConfig<TPlugins extends readonly AnyPlugin[] = []> {
    */
   readonly onElicitation: OnElicitation;
   readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
+  readonly oauthEndpointUrlPolicy?: OAuthEndpointUrlPolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -2517,6 +2519,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
       secretsSet: (input) => secretsSet(input),
       connectionsCreate: (input) => connectionsCreate(input),
       httpClientLayer: config.httpClientLayer,
+      endpointUrlPolicy: config.oauthEndpointUrlPolicy,
     });
     connectionProviders.set(oauthBundle.connectionProvider.key, oauthBundle.connectionProvider);
 

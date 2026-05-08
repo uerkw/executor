@@ -85,6 +85,7 @@ import {
   exchangeAuthorizationCode,
   exchangeClientCredentials,
   type OAuth2Error,
+  type OAuthEndpointUrlPolicy,
   refreshAccessToken,
 } from "./oauth-helpers";
 import type { ScopedDBAdapter } from "./scoped-adapter";
@@ -201,6 +202,7 @@ export interface OAuthServiceDeps {
   readonly now?: () => number;
   /** Outbound HTTP client used for OAuth metadata/DCR probes. */
   readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
+  readonly endpointUrlPolicy?: OAuthEndpointUrlPolicy;
 }
 
 const defaultSessionId = (): string => {
@@ -244,6 +246,7 @@ export const makeOAuth2Service = (
   const now = deps.now ?? (() => Date.now());
   const newSessionId = deps.newSessionId ?? defaultSessionId;
   const httpClientLayer = deps.httpClientLayer;
+  const endpointUrlPolicy = deps.endpointUrlPolicy;
   const secretsGetResolved =
     deps.secretsGetResolved ??
     ((id: string) =>
@@ -380,6 +383,7 @@ export const makeOAuth2Service = (
           httpClientLayer,
           resourceHeaders: input.headers,
           resourceQueryParams: input.queryParams,
+          endpointUrlPolicy,
         },
       ).pipe(
         Effect.catchTag("OAuthDiscoveryError", ({ message, error, errorDescription }) =>
@@ -411,6 +415,7 @@ export const makeOAuth2Service = (
         state: sessionId,
         codeChallenge,
         resource: started.state.resource,
+        endpointUrlPolicy,
       });
 
       const payload: OAuthSessionPayload = {
@@ -480,6 +485,7 @@ export const makeOAuth2Service = (
         codeChallenge,
         scopeSeparator: strategy.scopeSeparator,
         extraParams: strategy.extraAuthorizationParams,
+        endpointUrlPolicy,
       });
 
       const payload: OAuthSessionPayload = {
@@ -534,6 +540,7 @@ export const makeOAuth2Service = (
         scopes: strategy.scopes,
         scopeSeparator: strategy.scopeSeparator,
         clientAuth: strategy.clientAuth ?? "body",
+        endpointUrlPolicy,
       }).pipe(
         Effect.mapError(
           ({ message }: OAuth2Error) =>
@@ -890,6 +897,7 @@ export const makeOAuth2Service = (
         idTokenSigningAlgValuesSupported: md.id_token_signing_alg_values_supported,
         clientAuth: ci.token_endpoint_auth_method === "client_secret_basic" ? "basic" : "body",
         resource: payload.resource ?? undefined,
+        endpointUrlPolicy,
       }).pipe(
         Effect.mapError(
           ({ message, error }: OAuth2Error) =>
@@ -943,6 +951,7 @@ export const makeOAuth2Service = (
         codeVerifier: payload.codeVerifier,
         code,
         clientAuth: payload.clientAuth,
+        endpointUrlPolicy,
       }).pipe(
         Effect.mapError(
           ({ message, error }: OAuth2Error) =>
@@ -1132,6 +1141,7 @@ export const makeOAuth2Service = (
                 scopes: state.scopes,
                 scopeSeparator: state.scopeSeparator,
                 clientAuth: state.clientAuth,
+                endpointUrlPolicy,
               })
             : refreshAccessToken({
                 tokenUrl: tokenEndpoint,
@@ -1153,6 +1163,7 @@ export const makeOAuth2Service = (
                 clientAuth: state.clientAuth,
                 idTokenSigningAlgValuesSupported:
                   state.kind === "dynamic-dcr" ? state.idTokenSigningAlgValuesSupported : undefined,
+                endpointUrlPolicy,
                 resource:
                   state.kind === "dynamic-dcr" || state.kind === "authorization-code"
                     ? (state.resource ?? undefined)
