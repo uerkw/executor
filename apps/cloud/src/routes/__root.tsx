@@ -215,8 +215,8 @@ function ShellErrorFallback() {
               <DialogHeader>
                 <DialogTitle>Slack Connect</DialogTitle>
                 <DialogDescription>
-                  Add <span className="font-medium text-foreground">rhys@executor.sh</span> to your
-                  Slack Connect channel and mention that you need Executor support.
+                  Invite <span className="font-medium text-foreground">rhys@executor.sh</span> to
+                  Slack Connect.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
