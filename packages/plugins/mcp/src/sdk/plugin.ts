@@ -1581,6 +1581,8 @@ export const mcpPlugin = definePlugin((options?: McpPluginOptions) => {
           toolName: entry.binding.toolName,
           args,
           sourceData: sd,
+          sourceId: entry.namespace,
+          sourceScope: toolScope,
           invokerScope: ctx.scopes[0]!.id,
           resolveConnector: () =>
             resolveConnectorInput(entry.namespace, toolScope, sd, ctx, allowStdio).pipe(
