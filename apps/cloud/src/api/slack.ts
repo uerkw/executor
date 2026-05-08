@@ -7,8 +7,17 @@ import { HttpResponseError, isServerError, toErrorServerResponse } from "./error
 
 const isValidEmail = (s: string): boolean => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 
+const rateLimitKey = (request: Request, email: string): string => {
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() ??
+    "unknown";
+  return `${ip}:${email.toLowerCase()}`;
+};
+
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
+  const webRequest = yield* HttpServerRequest.toWeb(request);
 
   if (request.method !== "POST") {
     return yield* new HttpResponseError({
@@ -45,10 +54,8 @@ const handler = Effect.gen(function* () {
     });
   }
 
-  // Global rate limit — single shared bucket keyed at "global". Per-IP gating
-  // belongs at the edge (Cloudflare Rules).
   const limit = yield* Effect.tryPromise({
-    try: () => env.SLACK_INVITE_LIMITER.limit({ key: "global" }),
+    try: () => env.SLACK_INVITE_LIMITER.limit({ key: rateLimitKey(webRequest, email) }),
     catch: (cause) => ({ success: false as const, fetchError: cause }),
   });
   if (!limit.success) {

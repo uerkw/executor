@@ -1,5 +1,5 @@
 import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { ExecutorApi } from "@executor-js/api";
 
 import { getBaseUrl } from "./base-url";
@@ -11,7 +11,9 @@ import { getBaseUrl } from "./base-url";
 const ExecutorApiClient = AtomHttpApi.Service<"ExecutorApiClient">()("ExecutorApiClient", {
   api: ExecutorApi,
   httpClient: FetchHttpClient.layer,
-  baseUrl: getBaseUrl(),
+  transformClient: HttpClient.mapRequest((request) =>
+    HttpClientRequest.prependUrl(request, getBaseUrl()),
+  ),
 });
 
 export { ExecutorApiClient };

@@ -20,7 +20,7 @@ import {
 } from "react";
 import { HttpApi } from "effect/unstable/httpapi";
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi";
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ export interface CreatePluginAtomClientOptions {
   /** Override the base URL. Defaults to `/api` (host strips this prefix
    *  when forwarding to the Effect handler) — same convention as the
    *  core `ExecutorApiClient`. */
-  readonly baseUrl?: string;
+  readonly baseUrl?: string | (() => string);
 }
 
 /**
@@ -217,7 +217,13 @@ export const createPluginAtomClient = <
   return AtomHttpApi.Service<`Plugin_${G["identifier"]}Client`>()(`Plugin_${pluginId}Client`, {
     api: bundle,
     httpClient: FetchHttpClient.layer,
-    baseUrl,
+    ...(typeof baseUrl === "function"
+      ? {
+          transformClient: HttpClient.mapRequest((request) =>
+            HttpClientRequest.prependUrl(request, baseUrl()),
+          ),
+        }
+      : { baseUrl }),
   });
 };
 

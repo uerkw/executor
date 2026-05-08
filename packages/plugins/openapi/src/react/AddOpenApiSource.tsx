@@ -76,12 +76,8 @@ import {
   oauth2ConnectionSlot,
   queryParamBindingSlot,
 } from "../sdk/store";
-import {
-  ConfiguredHeaderBinding,
-  OAuth2SourceConfig,
-  type ServerInfo,
-  type ServerVariable,
-} from "../sdk/types";
+import { ConfiguredHeaderBinding, OAuth2SourceConfig, type ServerInfo } from "../sdk/types";
+import { expandServerUrlOptions } from "../sdk/openapi-utils";
 
 export const OPENAPI_OAUTH_POPUP_NAME = "openapi-oauth";
 export const OPENAPI_OAUTH_CALLBACK_PATH = "/api/oauth/callback";
@@ -336,24 +332,7 @@ export default function AddOpenApiSource(props: {
   // ---- Derived state ----
 
   const expandServerOptions = (server: ServerInfo) => {
-    const vars: Record<string, ServerVariable> = Option.getOrElse(
-      server.variables,
-      () => ({}) as Record<string, ServerVariable>,
-    );
-    const variableEntries = Object.entries(vars);
-    const expanded = variableEntries.reduce(
-      (urls, [name, variable]) => {
-        const enumValues: readonly string[] = Option.getOrElse(
-          variable.enum,
-          () => [] as readonly string[],
-        );
-        const values = enumValues.length > 0 ? enumValues : [variable.default];
-        return urls.flatMap((url) => values.map((value) => url.replaceAll(`{${name}}`, value)));
-      },
-      [server.url],
-    );
-
-    return expanded.map((value) => ({
+    return expandServerUrlOptions(server).map((value) => ({
       value,
       label: value,
     }));

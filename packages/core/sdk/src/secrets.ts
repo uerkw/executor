@@ -48,8 +48,9 @@ export interface SecretProvider {
     readonly { readonly id: string; readonly name: string }[],
     StorageFailure
   >;
-  /** If false, `get` only runs for routed secret rows owned by this
-   *  provider and is skipped by provider-enumeration fallback lookup. */
+  /** Whether the provider may be asked during id-only fallback resolution.
+   *  Providers whose own auth depends on `ctx.secrets.get` should opt out to
+   *  avoid recursive fallback through themselves. */
   readonly allowFallback?: boolean;
 }
 

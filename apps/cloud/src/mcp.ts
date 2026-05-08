@@ -72,6 +72,7 @@ const MCP_PATH = "/mcp";
 const PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource/mcp";
 const PROTECTED_RESOURCE_METADATA_URL = `${RESOURCE_ORIGIN}${PROTECTED_RESOURCE_METADATA_PATH}`;
 const RESOURCE_URL = `${RESOURCE_ORIGIN}${MCP_PATH}`;
+export const MAX_MCP_JSON_RPC_BODY_BYTES = 1_000_000;
 
 type McpUnauthorizedReason = "missing_bearer" | "invalid_token";
 
@@ -106,6 +107,18 @@ const corsPreflight = HttpServerResponse.empty({
   status: 204,
   headers: CORS_PREFLIGHT_HEADERS,
 });
+
+const contentLength = (request: Request): number | null => {
+  const value = request.headers.get("content-length");
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const isBodyTooLarge = (request: Request, maxBytes: number): boolean => {
+  const length = contentLength(request);
+  return length !== null && length > maxBytes;
+};
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -302,7 +315,11 @@ const readJsonRpcEnvelope = (request: Request): Effect.Effect<Option.Option<Json
     try: () => request.clone().text(),
     catch: () => undefined,
   }).pipe(
-    Effect.map((text) => (text ? decodeJsonRpcEnvelopeString(text) : Option.none())),
+    Effect.map((text) =>
+      text && text.length <= MAX_MCP_JSON_RPC_BODY_BYTES
+        ? decodeJsonRpcEnvelopeString(text)
+        : Option.none(),
+    ),
     Effect.catchCause(() => Effect.succeed(Option.none())),
     Effect.withSpan("mcp.request.read_json_rpc"),
   );
@@ -669,22 +686,27 @@ export const mcpApp: Effect.Effect<
   if (Result.isFailure(authResult)) {
     yield* annotateMcpRequest(request, {
       token: null,
-      parseBody: request.method === "POST",
+      parseBody: false,
     });
     return yield* authTemporarilyUnavailable(authResult.failure);
   }
   const authValue = authResult.success;
+  const bodyTooLarge =
+    request.method === "POST" && isBodyTooLarge(request, MAX_MCP_JSON_RPC_BODY_BYTES);
 
   // Annotate before dispatch so even 401s show up with what we know. Only
   // POST bodies are JSON-RPC payloads worth parsing; GET (SSE) and DELETE
   // don't carry one.
   yield* annotateMcpRequest(request, {
     token: isMcpAuthorized(authValue) ? authValue.token : null,
-    parseBody: request.method === "POST",
+    parseBody: request.method === "POST" && isMcpAuthorized(authValue) && !bodyTooLarge,
   });
 
   if (isMcpUnauthorized(authValue)) {
     return unauthorized(authValue, PROTECTED_RESOURCE_METADATA_URL);
+  }
+  if (bodyTooLarge) {
+    return jsonRpcError(413, -32000, "Request body too large");
   }
   const token = authValue.token;
   switch (request.method) {
