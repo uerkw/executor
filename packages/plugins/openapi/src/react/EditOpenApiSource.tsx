@@ -742,8 +742,8 @@ export default function EditOpenApiSource(props: {
                     <CardStackEntryContent>
                       <CardStackEntryTitle>OAuth Endpoints</CardStackEntryTitle>
                       <CardStackEntryDescription>
-                        Override the URLs from the OpenAPI spec when a provider publishes the
-                        wrong values.
+                        Override the URLs from the OpenAPI spec when a provider publishes the wrong
+                        values.
                       </CardStackEntryDescription>
                     </CardStackEntryContent>
                     <div className="flex items-center gap-2">
@@ -782,9 +782,7 @@ export default function EditOpenApiSource(props: {
                   <CardStackEntryField label="Redirect URL">
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-1 rounded-md border border-border bg-background/50 px-2.5 py-1.5 font-mono text-[11px]">
-                        <span className="truncate flex-1 text-foreground">
-                          {oauth2RedirectUrl}
-                        </span>
+                        <span className="truncate flex-1 text-foreground">{oauth2RedirectUrl}</span>
                         <CopyButton value={oauth2RedirectUrl} />
                       </div>
                       <p className="text-xs text-muted-foreground">
