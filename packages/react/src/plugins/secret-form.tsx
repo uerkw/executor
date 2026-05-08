@@ -226,7 +226,7 @@ function ValueField(props: { revealable?: boolean; placeholder?: string; autoFoc
   return (
     <Field>
       <FieldLabel htmlFor={inputId}>Value</FieldLabel>
-      <div className="relative">
+      <div className="relative" data-ph-block>
         <Input
           id={inputId}
           type={secretValueInputType({ revealable, revealed })}
@@ -239,6 +239,7 @@ function ValueField(props: { revealable?: boolean; placeholder?: string; autoFoc
           style={
             revealable && !revealed ? ({ WebkitTextSecurity: "disc" } as CSSProperties) : undefined
           }
+          data-ph-block
         />
         {revealable && (
           <Button

@@ -49,6 +49,12 @@ if (typeof window !== "undefined" && import.meta.env.VITE_PUBLIC_POSTHOG_KEY) {
     ui_host: "https://us.posthog.com",
     defaults: "2025-05-24",
     person_profiles: "identified_only",
+    disable_session_recording: false,
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: "[data-ph-mask]",
+      blockSelector: "[data-ph-block]",
+    },
   });
 }
 
