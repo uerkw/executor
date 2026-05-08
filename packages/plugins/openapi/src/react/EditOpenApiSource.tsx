@@ -44,6 +44,7 @@ import {
   setOpenApiSourceBinding,
   updateOpenApiSource,
 } from "./atoms";
+import { OpenApiSourceDetailsFields } from "./OpenApiSourceDetailsFields";
 import {
   OPENAPI_OAUTH_CALLBACK_PATH,
   OPENAPI_OAUTH_POPUP_NAME,
@@ -178,6 +179,16 @@ export default function EditOpenApiSource(props: {
   const [oauth2EndpointsSaveState, setOAuth2EndpointsSaveState] = useState<
     "idle" | "saving" | "saved"
   >("idle");
+  const editIdentity = useMemo(
+    () => ({
+      name,
+      namespace: props.sourceId,
+      setName,
+      setNamespace: () => {},
+      reset: () => {},
+    }),
+    [name, props.sourceId],
+  );
   const sourceSaveSeq = useRef(0);
   const oauth2EndpointsSaveSeq = useRef(0);
 
@@ -580,47 +591,27 @@ export default function EditOpenApiSource(props: {
         <h1 className="text-xl font-semibold text-foreground">OpenAPI Source</h1>
       </div>
 
-      <CardStack>
-        <CardStackContent className="border-t-0">
-          <CardStackEntry>
-            <CardStackEntryContent>
-              <CardStackEntryTitle>Source Details</CardStackEntryTitle>
-              <CardStackEntryDescription>
-                Name and base URL save automatically.
-              </CardStackEntryDescription>
-            </CardStackEntryContent>
-            {sourceSaveState !== "idle" && (
-              <span className="text-xs text-muted-foreground">
-                {sourceSaveState === "saving" ? "Saving…" : "Saved"}
-              </span>
-            )}
-          </CardStackEntry>
-          <CardStackEntryField label="Name">
-            <Input value={name} onChange={(e) => setName((e.target as HTMLInputElement).value)} />
-          </CardStackEntryField>
-          <CardStackEntryField label="Base URL">
-            <Input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-              className="font-mono text-sm"
-            />
-          </CardStackEntryField>
-          <CardStackEntry>
-            <CardStackEntryContent>
-              <CardStackEntryTitle>Authentication Template</CardStackEntryTitle>
-              <CardStackEntryDescription>
-                {source.config.oauth2
-                  ? `OAuth2 ${source.config.oauth2.flow}`
-                  : Object.keys(source.config.headers ?? {}).length > 0
-                    ? `${Object.keys(source.config.headers ?? {}).length} header binding${
-                        Object.keys(source.config.headers ?? {}).length === 1 ? "" : "s"
-                      }`
-                    : "None"}
-              </CardStackEntryDescription>
-            </CardStackEntryContent>
-          </CardStackEntry>
-        </CardStackContent>
-      </CardStack>
+      <OpenApiSourceDetailsFields
+        title="Source Details"
+        description="Name and base URL save automatically."
+        identity={editIdentity}
+        baseUrl={baseUrl}
+        onBaseUrlChange={setBaseUrl}
+        specUrl={source.config.sourceUrl ?? ""}
+        onSpecUrlChange={() => {}}
+        specUrlDisabled
+        namespaceReadOnly
+        saveState={sourceSaveState}
+        footer={
+          source.config.oauth2
+            ? `Authentication Template: OAuth2 ${source.config.oauth2.flow}`
+            : Object.keys(source.config.headers ?? {}).length > 0
+              ? `Authentication Template: ${Object.keys(source.config.headers ?? {}).length} header binding${
+                  Object.keys(source.config.headers ?? {}).length === 1 ? "" : "s"
+                }`
+              : "Authentication Template: None"
+        }
+      />
 
       <CardStack>
         <CardStackContent className="border-t-0">

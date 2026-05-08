@@ -122,9 +122,6 @@ export interface SourcePlugin {
     readonly variant?: "badge" | "panel";
     readonly onAction?: () => void;
   }>;
-  readonly signIn?: ComponentType<{
-    readonly sourceId: string;
-  }>;
   readonly presets?: readonly SourcePreset[];
   /** Trigger early download of the plugin's lazy component chunks (add/edit/etc.).
    *  Call from the host on intent (hover/focus) so the chunks land before the
