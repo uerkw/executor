@@ -122,7 +122,13 @@ const AuthorizationCodeSessionPayload = Schema.Struct({
     Schema.withDecodingDefaultType(Effect.succeed(null)),
   ),
   clientIdSecretId: Schema.String,
+  clientIdSecretScopeId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(null)),
+  ),
   clientSecretSecretId: Schema.NullOr(Schema.String),
+  clientSecretSecretScopeId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(null)),
+  ),
   scopes: Schema.Array(Schema.String),
   scopeSeparator: Schema.optional(Schema.String),
   clientAuth: Schema.Literals(["body", "basic"]),
@@ -172,6 +178,16 @@ export interface OAuthServiceDeps {
   /** Resolves client-id / client-secret refs at start + refresh time.
    *  A `null` return means "secret row is gone" and aborts the flow. */
   readonly secretsGet: (id: string) => Effect.Effect<string | null, StorageFailure>;
+  readonly secretsGetResolved?: (
+    id: string,
+  ) => Effect.Effect<
+    { readonly value: string; readonly scopeId: string | null } | null,
+    StorageFailure
+  >;
+  readonly secretsGetAtScope?: (
+    id: string,
+    scope: string,
+  ) => Effect.Effect<string | null, StorageFailure>;
   readonly secretsSet: (input: SetSecretInput) => Effect.Effect<SecretRef, StorageFailure>;
   /** Mints the Connection row + backing secret rows. Called from
    *  `complete` (and from `start` for `client-credentials`). */
@@ -228,6 +244,19 @@ export const makeOAuth2Service = (
   const now = deps.now ?? (() => Date.now());
   const newSessionId = deps.newSessionId ?? defaultSessionId;
   const httpClientLayer = deps.httpClientLayer;
+  const secretsGetResolved =
+    deps.secretsGetResolved ??
+    ((id: string) =>
+      deps
+        .secretsGet(id)
+        .pipe(Effect.map((value) => (value === null ? null : { value, scopeId: null }))));
+  const getSecretFromRecordedScope = (params: {
+    readonly secretId: string;
+    readonly scopeId: string | null;
+  }) =>
+    params.scopeId && deps.secretsGetAtScope
+      ? deps.secretsGetAtScope(params.secretId, params.scopeId)
+      : deps.secretsGet(params.secretId);
 
   // -------------------------------------------------------------------
   // probe
@@ -424,7 +453,7 @@ export const makeOAuth2Service = (
     strategy: OAuthAuthorizationCodeStrategy,
   ): Effect.Effect<OAuthStartResult, OAuthStartError | StorageFailure> =>
     Effect.gen(function* () {
-      const clientId = yield* deps.secretsGet(strategy.clientIdSecretId).pipe(
+      const clientIdRef = yield* secretsGetResolved(strategy.clientIdSecretId).pipe(
         Effect.mapError(
           (err) =>
             // Storage failure propagates; null returns aren't errors — the
@@ -432,7 +461,7 @@ export const makeOAuth2Service = (
             err,
         ),
       );
-      if (clientId === null) {
+      if (clientIdRef === null) {
         return yield* new OAuthStartError({
           message: `client_id secret "${strategy.clientIdSecretId}" not found`,
         });
@@ -444,7 +473,7 @@ export const makeOAuth2Service = (
 
       const authorizationUrl = buildAuthorizationUrl({
         authorizationUrl: strategy.authorizationEndpoint,
-        clientId,
+        clientId: clientIdRef.value,
         redirectUrl: input.redirectUrl,
         scopes: strategy.scopes,
         state: sessionId,
@@ -461,7 +490,11 @@ export const makeOAuth2Service = (
         tokenEndpoint: strategy.tokenEndpoint,
         issuerUrl: strategy.issuerUrl ?? new URL(strategy.authorizationEndpoint).origin,
         clientIdSecretId: strategy.clientIdSecretId,
+        clientIdSecretScopeId: clientIdRef.scopeId,
         clientSecretSecretId: strategy.clientSecretSecretId,
+        clientSecretSecretScopeId: strategy.clientSecretSecretId
+          ? ((yield* secretsGetResolved(strategy.clientSecretSecretId))?.scopeId ?? null)
+          : null,
         scopes: [...strategy.scopes],
         scopeSeparator: strategy.scopeSeparator,
         clientAuth: strategy.clientAuth ?? "body",
@@ -486,9 +519,9 @@ export const makeOAuth2Service = (
     strategy: OAuthClientCredentialsStrategy,
   ): Effect.Effect<OAuthStartResult, OAuthStartError | StorageFailure> =>
     Effect.gen(function* () {
-      const clientId = yield* deps.secretsGet(strategy.clientIdSecretId);
-      const clientSecret = yield* deps.secretsGet(strategy.clientSecretSecretId);
-      if (clientId === null || clientSecret === null) {
+      const clientIdRef = yield* secretsGetResolved(strategy.clientIdSecretId);
+      const clientSecretRef = yield* secretsGetResolved(strategy.clientSecretSecretId);
+      if (clientIdRef === null || clientSecretRef === null) {
         return yield* new OAuthStartError({
           message: "client_id / client_secret secret not found",
         });
@@ -496,8 +529,8 @@ export const makeOAuth2Service = (
 
       const tokens = yield* exchangeClientCredentials({
         tokenUrl: strategy.tokenEndpoint,
-        clientId,
-        clientSecret,
+        clientId: clientIdRef.value,
+        clientSecret: clientSecretRef.value,
         scopes: strategy.scopes,
         scopeSeparator: strategy.scopeSeparator,
         clientAuth: strategy.clientAuth ?? "body",
@@ -517,7 +550,9 @@ export const makeOAuth2Service = (
         kind: "client-credentials",
         tokenEndpoint: strategy.tokenEndpoint,
         clientIdSecretId: strategy.clientIdSecretId,
+        clientIdSecretScopeId: clientIdRef.scopeId,
         clientSecretSecretId: strategy.clientSecretSecretId,
+        clientSecretSecretScopeId: clientSecretRef.scopeId,
         scopes: [...(strategy.scopes ?? [])],
         scopeSeparator: strategy.scopeSeparator,
         clientAuth: strategy.clientAuth ?? "body",
@@ -740,6 +775,7 @@ export const makeOAuth2Service = (
                   .token_endpoint_auth_method === "client_secret_basic"
                   ? "basic"
                   : "body",
+              clientSecretSecretScopeId: dynamicClientSecretSecretId ? tokenScope : null,
               scopes: [...payload.scopes],
               scope: exchangeResult.tokens.scope ?? null,
               resource: payload.resource,
@@ -749,7 +785,9 @@ export const makeOAuth2Service = (
               tokenEndpoint: payload.tokenEndpoint,
               issuerUrl: payload.issuerUrl,
               clientIdSecretId: payload.clientIdSecretId,
+              clientIdSecretScopeId: payload.clientIdSecretScopeId,
               clientSecretSecretId: payload.clientSecretSecretId,
+              clientSecretSecretScopeId: payload.clientSecretSecretScopeId,
               clientAuth: payload.clientAuth,
               scopes: [...payload.scopes],
               scopeSeparator: payload.scopeSeparator,
@@ -873,14 +911,22 @@ export const makeOAuth2Service = (
     redirectUrl: string,
   ): Effect.Effect<ExchangeResult, OAuthCompleteError | StorageFailure> =>
     Effect.gen(function* () {
-      const clientId = yield* deps.secretsGet(payload.clientIdSecretId);
+      const clientId = payload.clientIdSecretScopeId
+        ? yield* getSecretFromRecordedScope({
+            secretId: payload.clientIdSecretId,
+            scopeId: payload.clientIdSecretScopeId,
+          })
+        : yield* deps.secretsGet(payload.clientIdSecretId);
       if (clientId === null) {
         return yield* new OAuthCompleteError({
           message: `client_id secret "${payload.clientIdSecretId}" not found`,
         });
       }
       const clientSecret = payload.clientSecretSecretId
-        ? yield* deps.secretsGet(payload.clientSecretSecretId)
+        ? yield* getSecretFromRecordedScope({
+            secretId: payload.clientSecretSecretId,
+            scopeId: payload.clientSecretSecretScopeId,
+          })
         : null;
       if (payload.clientSecretSecretId && clientSecret === null) {
         return yield* new OAuthCompleteError({
@@ -963,7 +1009,10 @@ export const makeOAuth2Service = (
             case "dynamic-dcr":
               return Effect.gen(function* () {
                 const csec = state.clientSecretSecretId
-                  ? yield* deps.secretsGet(state.clientSecretSecretId).pipe(
+                  ? yield* getSecretFromRecordedScope({
+                      secretId: state.clientSecretSecretId,
+                      scopeId: state.clientSecretSecretScopeId ?? null,
+                    }).pipe(
                       Effect.catchTags({
                         StorageError: ({ message, cause }) =>
                           Effect.fail(
@@ -996,7 +1045,10 @@ export const makeOAuth2Service = (
             case "authorization-code":
             case "client-credentials":
               return Effect.gen(function* () {
-                const cid = yield* deps.secretsGet(state.clientIdSecretId).pipe(
+                const cid = yield* getSecretFromRecordedScope({
+                  secretId: state.clientIdSecretId,
+                  scopeId: state.clientIdSecretScopeId ?? null,
+                }).pipe(
                   Effect.catchTags({
                     StorageError: ({ message, cause }) =>
                       Effect.fail(
@@ -1024,7 +1076,10 @@ export const makeOAuth2Service = (
                   });
                 }
                 const csec = state.clientSecretSecretId
-                  ? yield* deps.secretsGet(state.clientSecretSecretId).pipe(
+                  ? yield* getSecretFromRecordedScope({
+                      secretId: state.clientSecretSecretId,
+                      scopeId: state.clientSecretSecretScopeId ?? null,
+                    }).pipe(
                       Effect.catchTags({
                         StorageError: ({ message, cause }) =>
                           Effect.fail(

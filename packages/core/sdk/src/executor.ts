@@ -883,6 +883,24 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         return yield* resolveSecretValueFromRows(id, rows);
       });
 
+    const secretsGetResolved = (
+      id: string,
+    ): Effect.Effect<
+      { readonly value: string; readonly scopeId: string | null } | null,
+      StorageFailure
+    > =>
+      Effect.gen(function* () {
+        const rows = yield* secretRowsForId(id);
+        const ordered = [...rows].sort((a, b) => scopeRank(a) - scopeRank(b));
+        for (const row of ordered) {
+          if (row.owned_by_connection_id) continue;
+          const value = yield* resolveSecretValueAtScope(row, id);
+          if (value !== null) return { value, scopeId: row.scope_id };
+        }
+        const value = yield* resolveSecretValueFromRows(id, []);
+        return value === null ? null : { value, scopeId: null };
+      });
+
     const resolveSecretValueAtScope = (
       row: SecretRow | null,
       id: string,
@@ -911,12 +929,6 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           });
         }
         return yield* resolveSecretValueAtScope(row, id);
-      });
-
-    const connectionSecretGet = (id: string): Effect.Effect<string | null, StorageFailure> =>
-      Effect.gen(function* () {
-        const rows = yield* secretRowsForId(id);
-        return yield* resolveSecretValueFromRows(id, rows);
       });
 
     const connectionSecretGetAtScope = (
@@ -1827,7 +1839,7 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
         }
 
         const refreshTokenValue = ref.refreshTokenSecretId
-          ? yield* connectionSecretGet(ref.refreshTokenSecretId)
+          ? yield* connectionSecretGetAtScope(ref.refreshTokenSecretId, ref.scopeId)
           : null;
 
         // RFC 6749 §5.2 `invalid_grant` (and anything else the
@@ -2495,6 +2507,11 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
       rawAdapter: adapter,
       secretsGet: (id) =>
         secretsGet(id).pipe(
+          Effect.catchTag("SecretOwnedByConnectionError", () => Effect.succeed(null)),
+        ),
+      secretsGetResolved: (id) => secretsGetResolved(id),
+      secretsGetAtScope: (id, scope) =>
+        secretsGetAtScope(id, scope).pipe(
           Effect.catchTag("SecretOwnedByConnectionError", () => Effect.succeed(null)),
         ),
       secretsSet: (input) => secretsSet(input),
