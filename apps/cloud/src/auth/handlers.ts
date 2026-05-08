@@ -47,6 +47,8 @@ const DELETE_COOKIE_OPTIONS = {
   secure: true,
 };
 
+const MAX_ORGANIZATIONS_PER_USER = 3;
+
 const randomState = (): string => {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -245,6 +247,11 @@ export const CloudSessionAuthHandlers = HttpApiBuilder.group(
           const session = yield* SessionContext;
 
           const name = payload.name.trim();
+          const memberships = yield* workos.listUserMemberships(session.accountId);
+          if (memberships.data.length >= MAX_ORGANIZATIONS_PER_USER) {
+            return yield* new WorkOSError();
+          }
+
           const org = yield* workos.createOrganization(name);
           yield* workos.createMembership(org.id, session.accountId, "admin");
           yield* users.use((s) => s.upsertOrganization({ id: org.id, name: org.name }));
