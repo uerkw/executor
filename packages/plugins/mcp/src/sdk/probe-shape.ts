@@ -72,22 +72,40 @@ class ProbeTransportError extends Data.TaggedError("ProbeTransportError")<{
   readonly cause: unknown;
 }> {}
 
+const decodeJsonString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+const asObject = (body: string): Record<string, unknown> | null => {
+  if (!body) return null;
+  const parsed = decodeJsonString(body);
+  if (Option.isNone(parsed)) return null;
+  const value = parsed.value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
 /** Quick check that a body parses as a JSON-RPC 2.0 envelope. The MCP wire
  *  protocol is JSON-RPC 2.0, so a real MCP server's response to `initialize`
  *  (whether 2xx with the result, or a 401 error envelope) carries this
  *  shape. Non-MCP services don't — GraphQL APIs return `{errors:[...]}`,
  *  REST APIs return their own envelope, marketing pages return HTML. */
-const decodeJsonString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
-
 const isJsonRpcEnvelope = (body: string): boolean => {
-  if (!body) return false;
-  const parsed = decodeJsonString(body);
-  if (Option.isNone(parsed)) return false;
-  const value = parsed.value;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const obj = value as Record<string, unknown>;
+  const obj = asObject(body);
+  if (!obj) return false;
   if (obj.jsonrpc !== "2.0") return false;
   return "result" in obj || "error" in obj || "method" in obj;
+};
+
+/** Quick check that a body parses as an RFC 6750 OAuth Bearer error
+ *  envelope (`{error: "invalid_token", error_description?: ..., ...}`).
+ *  Real MCP servers like Atlassian return this shape on unauth requests
+ *  even when their WWW-Authenticate omits `resource_metadata=`. The
+ *  GraphQL `{errors: [...]}` envelope, which a non-MCP OAuth-protected
+ *  GraphQL API would return, is explicitly excluded. */
+const isOAuthErrorBody = (body: string): boolean => {
+  const obj = asObject(body);
+  if (!obj) return false;
+  if (Array.isArray(obj.errors)) return false;
+  return typeof obj.error === "string";
 };
 
 const ErrorMessageShape = Schema.Struct({ message: Schema.String });
@@ -191,15 +209,47 @@ export const probeMcpEndpointShape = (
                 reason: "401 without Bearer WWW-Authenticate — not an MCP auth challenge",
               } as const;
             }
+            // Spec-compliant MCP signal: the auth spec mandates a
+            // `resource_metadata=` attribute pointing at the server's
+            // RFC 9728 document. Real OAuth-protected MCP servers
+            // (sentry.dev, etc.) include it. This attribute is rare on
+            // unrelated OAuth services and is the cleanest accept signal
+            // we have when the 401 body is RFC 6750 OAuth-shape rather
+            // than JSON-RPC.
+            if (/(?:^|[\s,])resource_metadata\s*=/i.test(wwwAuth)) {
+              return { kind: "mcp", requiresAuth: true } as const;
+            }
+            // Looser RFC 6750 §3.1 signal: the Bearer challenge carries
+            // `error=` / `error_description=` auth-params. Real MCP
+            // servers (Supabase, GitHub Copilot, Vercel, Neon, Tavily,
+            // Replicate, ...) include this even when they omit
+            // `resource_metadata=`. The body alone isn't enough for
+            // those — Supabase, e.g., returns `{"message":"Unauthorized"}`
+            // which is neither JSON-RPC nor RFC 6750. The `error=`
+            // auth-param is the tiebreaker.
+            if (/(?:^|[\s,])error\s*=/i.test(wwwAuth)) {
+              return { kind: "mcp", requiresAuth: true } as const;
+            }
             // SSE responses can't carry a JSON-RPC error envelope; accept the
             // Bearer challenge alone in that case (rare but spec-permissible).
             if (isSse) return { kind: "mcp", requiresAuth: true } as const;
+            // Fallback for MCP servers whose 401 omits
+            // `resource_metadata=`. Two body shapes count:
+            //   - JSON-RPC error (cubic.dev: API-key auth, JSON-RPC
+            //     errors end-to-end).
+            //   - RFC 6750 OAuth Bearer error envelope `{error:
+            //     "invalid_token", ...}` without GraphQL `{errors:[...]}`
+            //     (Atlassian).
+            // Non-MCP OAuth-protected services that issue bare Bearer
+            // challenges (Railway-style GraphQL, etc.) return `errors`
+            // arrays or other shapes that fail both checks.
             const body = yield* readBody(response);
-            if (!isJsonRpcEnvelope(body)) {
+            if (!isJsonRpcEnvelope(body) && !isOAuthErrorBody(body)) {
               return {
                 kind: "not-mcp",
                 category: "auth-required",
-                reason: "401 + Bearer but body is not a JSON-RPC envelope",
+                reason:
+                  "401 + Bearer without resource_metadata, JSON-RPC body, or OAuth error body",
               } as const;
             }
             return { kind: "mcp", requiresAuth: true } as const;

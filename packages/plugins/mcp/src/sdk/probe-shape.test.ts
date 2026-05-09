@@ -95,6 +95,60 @@ describe("probeMcpEndpointShape", () => {
     ),
   );
 
+  // mcp.sentry.dev/mcp/ shape: spec-compliant `resource_metadata=`
+  // attribute, body is RFC 6750 OAuth-shape (`{error: "invalid_token",
+  // ...}`), not JSON-RPC. The `resource_metadata=` attribute alone is
+  // enough to classify as MCP — the body-shape gate is for the bare-Bearer
+  // case where we have no other signal.
+  it.effect("classifies 401 with resource_metadata + OAuth error body as MCP+auth", () =>
+    withServer(
+      () =>
+        HttpServerResponse.jsonUnsafe(
+          {
+            error: "invalid_token",
+            error_description: "Missing or invalid access token",
+          },
+          {
+            status: 401,
+            headers: {
+              "www-authenticate":
+                'Bearer realm="OAuth", resource_metadata="https://mcp.example/.well-known/oauth-protected-resource/mcp/", error="invalid_token"',
+            },
+          },
+        ),
+      (endpoint) =>
+        Effect.gen(function* () {
+          const result = yield* probeMcpEndpointShape(endpoint);
+          expect(result).toEqual({ kind: "mcp", requiresAuth: true });
+        }),
+    ),
+  );
+
+  // Supabase shape: Bearer challenge has `error=`/`error_description=`
+  // auth-params (RFC 6750 §3.1) but no `resource_metadata=`, and body is
+  // a non-RFC-6750 `{"message":"Unauthorized"}` envelope. The `error=`
+  // attribute alone is the accept signal.
+  it.effect("classifies 401 with Bearer error= auth-param as MCP+auth", () =>
+    withServer(
+      () =>
+        HttpServerResponse.jsonUnsafe(
+          { message: "Unauthorized" },
+          {
+            status: 401,
+            headers: {
+              "www-authenticate":
+                'Bearer error="invalid_request", error_description="No authorization header found"',
+            },
+          },
+        ),
+      (endpoint) =>
+        Effect.gen(function* () {
+          const result = yield* probeMcpEndpointShape(endpoint);
+          expect(result).toEqual({ kind: "mcp", requiresAuth: true });
+        }),
+    ),
+  );
+
   // cubic.dev/api/mcp shape: bare `Bearer` challenge, no resource_metadata.
   // The JSON-RPC error body is what tells us this is MCP rather than some
   // other OAuth/API-key protected service.
