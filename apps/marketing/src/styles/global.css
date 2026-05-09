@@ -2,6 +2,9 @@
 
 @source "../**/*.astro";
 @source "../**/*.tsx";
+@source "../../../../packages/react/src/components/dialog.tsx";
+@source "../../../../packages/react/src/components/copy-button.tsx";
+@source "../../../../packages/react/src/components/button.tsx";
 
 @theme {
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;

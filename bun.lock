@@ -183,6 +183,7 @@
         "@executor-js/plugin-google-discovery": "workspace:*",
         "@executor-js/plugin-graphql": "workspace:*",
         "@executor-js/plugin-openapi": "workspace:*",
+        "@executor-js/react": "workspace:*",
         "@executor-js/sdk": "workspace:*",
         "@tailwindcss/vite": "^4.2.2",
         "astro": "^6.1.3",
