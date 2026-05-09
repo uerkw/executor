@@ -1,7 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import { AnimatedBeamDemo } from "../components/animated-beam-demo";
-import { TweetEmbed } from "../components/tweet";
 ---
 
 <Layout>
@@ -106,10 +105,81 @@ import { TweetEmbed } from "../components/tweet";
         </div>
       </section>
 
-      {/* ─── TWEET ─── */}
+      {/* ─── FOUNDER NOTE ─── */}
       <section class="py-20 sm:py-28 border-t border-rule">
-        <div class="max-w-[600px] mx-auto px-6 sm:px-10">
-          <TweetEmbed client:load id="2052896456454119455" />
+        <div class="max-w-[680px] mx-auto px-6 sm:px-10">
+          <h2
+            class="text-[clamp(2rem,3.6vw,2.6rem)] font-semibold tracking-[-0.02em] leading-[1.08] text-ink mb-10 text-balance"
+          >
+            What is <span class="serif-italic">Executor</span>?
+          </h2>
+
+          <div
+            class="space-y-5 text-[16.5px] leading-[1.65] text-ink-2 text-pretty"
+          >
+            <p>
+              Executor is a tool/source discovery and execution layer for
+              agent-callable tools.
+            </p>
+            <p>
+              Executor doesn't care what you add. MCP, OpenAPI, GraphQL, custom
+              sources, under the hood they all become a tool name, an input
+              schema, and an output schema. Once they're in that shape, you can
+              call them however you want. Today that's implemented as a
+              code-mode MCP, but it could just as well be the Executor CLI, or a
+              native client you drop in.
+            </p>
+            <p>
+              Because every tool looks the same, your agent can call them from
+              gen-UI dashboards it writes on the fly, call them as one off
+              scripts in a chat, or use them in reusable workflows.
+            </p>
+
+            <h3
+              class="text-[17px] font-semibold tracking-[-0.01em] text-ink pt-5"
+            >
+              Teams
+            </h3>
+            <p>
+              Set your sources up once and your whole team has them. It supports
+              per-user credentials and shared ones. No more onboarding ritual,
+              no more toggling MCPs on and off mid-task. Your agents should be
+              able to reach your company's resources in a way that isn't scary.
+            </p>
+
+            <h3
+              class="text-[17px] font-semibold tracking-[-0.01em] text-ink pt-5"
+            >
+              Sandboxing
+            </h3>
+            <p>
+              Tool calls run in a JavaScript sandbox. The agent has access to
+              secrets.
+            </p>
+
+            <h3
+              class="text-[17px] font-semibold tracking-[-0.01em] text-ink pt-5"
+            >
+              Destructive actions
+            </h3>
+            <p>
+              Executor preserves the semantics of whatever it imported from: GET
+              vs DELETE for OpenAPI, <code
+                class="font-mono text-[14px] text-ink bg-surface-2 border border-rule px-1.5 py-0.5 rounded"
+                >destructiveHint</code
+              > for MCP, mutations for GraphQL. That tells the agent what it can auto-run
+              and what should pull you back into the loop, so it can work autonomously
+              without taking you out of it.
+            </p>
+
+            <p class="pt-5">
+              It's all open source, built on the same SDK we publish to npm.
+              There's two ways to try it, either the local version via the
+              `executor` cli, or the cloud version.
+            </p>
+
+            <p class="text-ink-3 text-[14.5px] pt-3">— Rhys</p>
+          </div>
         </div>
       </section>
 
