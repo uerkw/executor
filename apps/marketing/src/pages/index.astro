@@ -43,10 +43,14 @@ import { AnimatedBeamDemo } from '../components/animated-beam-demo'
           </p>
           <div class="rise-4 flex flex-wrap items-center justify-center gap-5">
             <a href="/cloud" class="btn-primary">Try Cloud →</a>
-            <a href="#install" class="btn-link">
+            <button type="button" class="btn-link copy-btn" data-copy="npx executor web" aria-label="Copy npx executor web to clipboard">
               <span class="font-mono text-[13px] text-ink-3">$</span>
               <span>npx executor web</span>
-            </a>
+              <span class="copy-icons text-ink-3" aria-hidden="true">
+                <svg class="copy-icon-copy" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <svg class="copy-icon-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+            </button>
           </div>
         </div>
       </div>
@@ -291,3 +295,23 @@ import { AnimatedBeamDemo } from '../components/animated-beam-demo'
     </div>
   </main>
 </Layout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('button[data-copy]').forEach((btn) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy ?? ''
+      try {
+        await navigator.clipboard.writeText(text)
+        btn.dataset.copied = 'true'
+      } catch {
+        btn.dataset.copied = 'false'
+      }
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        delete btn.dataset.copied
+      }, 1500)
+    })
+  })
+</script>
