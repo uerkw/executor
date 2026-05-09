@@ -233,7 +233,9 @@ export function useOAuthPopupFlow<
         onClosed: () => {
           cleanupRef.current = null;
           sessionRef.current = null;
-          cancelSession(response.sessionId, input.tokenScope);
+          // `popup.closed` is advisory: COOP redirects can make a live popup
+          // appear closed to the opener. Keep server OAuth state alive for a
+          // callback or TTL cleanup; only explicit cancel deletes the session.
           const message =
             popupClosedMessage ??
             "Sign-in cancelled - popup was closed before completing the flow.";
