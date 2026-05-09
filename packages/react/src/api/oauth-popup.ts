@@ -43,8 +43,8 @@ export type OpenOAuthPopupInput<TAuth> = {
   readonly onClosed?: () => void;
   readonly width?: number;
   readonly height?: number;
-  /** How often to poll `popup.closed`. Default 500ms. */
-  readonly closedPollMs?: number;
+  /** How often to poll `popup.closed`. Default 500ms. Set to null to disable. */
+  readonly closedPollMs?: number | null;
 };
 
 export type ReservedOAuthPopup = {
@@ -91,7 +91,8 @@ export const reserveOAuthPopup = (input: {
  *
  * Settles exactly once via one of three paths:
  *   1. `onResult`      — popup posted a message back (success or error)
- *   2. `onClosed`      — user closed the popup without completing the flow
+ *   2. `onClosed`      — user closed the popup without completing the flow,
+ *                        unless `closedPollMs` is null
  *   3. teardown called — caller cancelled programmatically
  *
  * If the popup is blocked (`window.open` returns null), invokes
@@ -175,23 +176,25 @@ export const openOAuthPopup = <TAuth>(input: OpenOAuthPopupInput<TAuth>): (() =>
     return () => {};
   }
 
-  // Poll for manual popup close. We only settle via onClosed if no
-  // message-based result has arrived; onResult settles first and
-  // stops the poll before we see the close.
-  const pollMs = input.closedPollMs ?? 500;
-  pollHandle = setInterval(() => {
-    let isClosed = false;
-    // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: browser popup.closed can throw while navigating cross-origin
-    try {
-      isClosed = popup.closed;
-    } catch {
-      // Cross-origin access can throw during navigation; treat as open.
-    }
-    if (isClosed && !settled) {
-      settle();
-      input.onClosed?.();
-    }
-  }, pollMs);
+  // Some providers use COOP headers that can make a live cross-origin
+  // popup look closed to the opener. Callers can disable polling and rely
+  // on the explicit cancel path plus BroadcastChannel completion.
+  const pollMs = input.closedPollMs === undefined ? 500 : input.closedPollMs;
+  if (pollMs !== null) {
+    pollHandle = setInterval(() => {
+      let isClosed = false;
+      // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: browser popup.closed can throw while navigating cross-origin
+      try {
+        isClosed = popup.closed;
+      } catch {
+        // Cross-origin access can throw during navigation; treat as open.
+      }
+      if (isClosed && !settled) {
+        settle();
+        input.onClosed?.();
+      }
+    }, pollMs);
+  }
 
   return () => {
     if (settled) return;

@@ -87,10 +87,12 @@ export function useOAuthPopupFlow<
   readonly noAuthorizationUrlMessage?: string;
   readonly popupBlockedMessage?: string;
   readonly popupClosedMessage?: string;
+  readonly detectPopupClosed?: boolean;
   readonly startErrorMessage?: string;
 }) {
   const {
     callbackPath,
+    detectPopupClosed = true,
     noAuthorizationUrlMessage,
     popupBlockedMessage,
     popupClosedMessage,
@@ -197,6 +199,7 @@ export function useOAuthPopupFlow<
         channelName: OAUTH_POPUP_MESSAGE_TYPE,
         expectedSessionId: response.sessionId,
         reservedPopup,
+        closedPollMs: detectPopupClosed ? undefined : null,
         onResult: async (result: OAuthPopupResult<TPayload>) => {
           cleanupRef.current = null;
           sessionRef.current = null;
@@ -252,6 +255,7 @@ export function useOAuthPopupFlow<
     [
       cancel,
       cancelSession,
+      detectPopupClosed,
       noAuthorizationUrlMessage,
       popupBlockedMessage,
       popupClosedMessage,
@@ -343,11 +347,13 @@ export function SourceOAuthSignInButton(props: {
   readonly queryParams?: Record<string, SecretBackedValue>;
   readonly isConnected: boolean;
   readonly onConnected: (connectionId: ConnectionId) => void | Promise<void>;
+  readonly detectPopupClosed?: boolean;
   readonly reconnectingLabel?: string;
   readonly signingInLabel?: string;
 }) {
   const {
     connectionId,
+    detectPopupClosed,
     endpoint,
     fallbackNamespace,
     headers,
@@ -364,6 +370,7 @@ export function SourceOAuthSignInButton(props: {
   } = props;
   const oauth = useOAuthPopupFlow({
     popupName,
+    detectPopupClosed,
   });
 
   const handleSignIn = useCallback(async () => {
