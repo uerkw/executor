@@ -1,5 +1,20 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`probeMcpEndpointShape against live MCP servers > asana (https://mcp.asana.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://mcp.asana.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
 exports[`probeMcpEndpointShape against live MCP servers > atlassian (https://mcp.atlassian.com/v1/sse) 1`] = `
 {
   "probe": {
@@ -11,6 +26,66 @@ exports[`probeMcpEndpointShape against live MCP servers > atlassian (https://mcp
     "contentType": "application/json",
     "status": 401,
     "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > canva (https://mcp.canva.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > cloudflare-bindings (https://bindings.mcp.cloudflare.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://bindings.mcp.cloudflare.com/.well-known/oauth-protected-resource/sse", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > cloudflare-observability (https://observability.mcp.cloudflare.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://observability.mcp.cloudflare.com/.well-known/oauth-protected-resource/sse", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > cloudflare-radar (https://radar.mcp.cloudflare.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://radar.mcp.cloudflare.com/.well-known/oauth-protected-resource/sse", error="invalid_token", error_description="Missing or invalid access token"",
   },
 }
 `;
@@ -62,6 +137,37 @@ data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabili
 }
 `;
 
+exports[`probeMcpEndpointShape against live MCP servers > figma (https://mcp.figma.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "Unauthorized",
+    "contentType": "text/plain",
+    "status": 401,
+    "wwwAuthenticate": "Bearer resource_metadata="https://mcp.figma.com/.well-known/oauth-protected-resource",scope="mcp:connect",authorization_uri="https://api.figma.com/.well-known/oauth-authorization-server"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > github-copilot (https://api.githubcopilot.com/mcp/) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "bad request: missing required Authorization header
+",
+    "contentType": "text/plain; charset=utf-8",
+    "status": 401,
+    "wwwAuthenticate": "Bearer error="invalid_request", error_description="No access token was provided in this request", resource_metadata="https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp/"",
+  },
+}
+`;
+
 exports[`probeMcpEndpointShape against live MCP servers > huggingface (https://huggingface.co/mcp) 1`] = `
 {
   "probe": {
@@ -73,6 +179,21 @@ exports[`probeMcpEndpointShape against live MCP servers > huggingface (https://h
     "contentType": "application/json",
     "status": 200,
     "wwwAuthenticate": null,
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > intercom (https://mcp.intercom.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
   },
 }
 `;
@@ -92,6 +213,39 @@ exports[`probeMcpEndpointShape against live MCP servers > linear (https://mcp.li
 }
 `;
 
+exports[`probeMcpEndpointShape against live MCP servers > neon (https://mcp.neon.tech/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"No authorization provided"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer error="invalid_token", error_description="No authorization provided", resource_metadata="https://mcp.neon.tech/.well-known/oauth-protected-resource/mcp"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > netlify (https://netlify-mcp.netlify.app/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{
+    "error": "unauthenticated",
+    "error_description": "You must authenticate to use this tool"
+    }",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="MCP Server", resource_metadata="https://netlify-mcp.netlify.app/.well-known/oauth-protected-resource"",
+  },
+}
+`;
+
 exports[`probeMcpEndpointShape against live MCP servers > notion (https://mcp.notion.com/mcp) 1`] = `
 {
   "probe": {
@@ -103,6 +257,21 @@ exports[`probeMcpEndpointShape against live MCP servers > notion (https://mcp.no
     "contentType": "application/json",
     "status": 401,
     "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://mcp.notion.com/.well-known/oauth-protected-resource/mcp", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > paypal (https://mcp.paypal.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", resource_metadata="https://mcp.paypal.com/.well-known/oauth-protected-resource", error="invalid_token", error_description="Missing or invalid access token"",
   },
 }
 `;
@@ -123,6 +292,21 @@ exports[`probeMcpEndpointShape against live MCP servers > reftools (https://api.
 }
 `;
 
+exports[`probeMcpEndpointShape against live MCP servers > replicate (https://mcp.replicate.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
 exports[`probeMcpEndpointShape against live MCP servers > sentry (https://mcp.sentry.dev/mcp/) 1`] = `
 {
   "probe": {
@@ -138,6 +322,21 @@ exports[`probeMcpEndpointShape against live MCP servers > sentry (https://mcp.se
 }
 `;
 
+exports[`probeMcpEndpointShape against live MCP servers > square (https://mcp.squareup.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
 exports[`probeMcpEndpointShape against live MCP servers > stripe (https://mcp.stripe.com) 1`] = `
 {
   "probe": {
@@ -149,6 +348,81 @@ exports[`probeMcpEndpointShape against live MCP servers > stripe (https://mcp.st
     "contentType": "application/json",
     "status": 401,
     "wwwAuthenticate": "Bearer resource_metadata=https://mcp.stripe.com/.well-known/oauth-protected-resource",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > supabase (https://mcp.supabase.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"message":"Unauthorized"}",
+    "contentType": "application/json; charset=utf-8",
+    "status": 401,
+    "wwwAuthenticate": "Bearer error="invalid_request", error_description="No access token was provided in this request", resource_metadata="https://mcp.supabase.com/.well-known/oauth-protected-resource/mcp"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > tavily (https://mcp.tavily.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error": "invalid_token", "error_description": "Authentication failed. The provided bearer token is invalid, expired, or no longer recognized by the server. To resolve: clear authentication tokens in your MCP client and reconnect. Your client should automatically re-register and obtain new tokens."}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer error="invalid_token", error_description="Authentication failed. The provided bearer token is invalid, expired, or no longer recognized by the server. To resolve: clear authentication tokens in your MCP client and reconnect. Your client should automatically re-register and obtain new tokens.", resource_metadata="https://mcp.tavily.com/.well-known/oauth-protected-resource/mcp"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > vercel (https://mcp.vercel.com/) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"No authorization provided"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer error="invalid_token", error_description="No authorization provided", resource_metadata="https://mcp.vercel.com/.well-known/oauth-protected-resource"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > webflow (https://mcp.webflow.com/sse) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
+  },
+}
+`;
+
+exports[`probeMcpEndpointShape against live MCP servers > wix (https://mcp.wix.com/mcp) 1`] = `
+{
+  "probe": {
+    "kind": "mcp",
+    "requiresAuth": true,
+  },
+  "raw": {
+    "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
+    "contentType": "application/json",
+    "status": 401,
+    "wwwAuthenticate": "Bearer realm="OAuth", error="invalid_token", error_description="Missing or invalid access token"",
   },
 }
 `;

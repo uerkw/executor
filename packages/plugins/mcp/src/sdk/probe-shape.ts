@@ -219,6 +219,17 @@ export const probeMcpEndpointShape = (
             if (/(?:^|[\s,])resource_metadata\s*=/i.test(wwwAuth)) {
               return { kind: "mcp", requiresAuth: true } as const;
             }
+            // Looser RFC 6750 §3.1 signal: the Bearer challenge carries
+            // `error=` / `error_description=` auth-params. Real MCP
+            // servers (Supabase, GitHub Copilot, Vercel, Neon, Tavily,
+            // Replicate, ...) include this even when they omit
+            // `resource_metadata=`. The body alone isn't enough for
+            // those — Supabase, e.g., returns `{"message":"Unauthorized"}`
+            // which is neither JSON-RPC nor RFC 6750. The `error=`
+            // auth-param is the tiebreaker.
+            if (/(?:^|[\s,])error\s*=/i.test(wwwAuth)) {
+              return { kind: "mcp", requiresAuth: true } as const;
+            }
             // SSE responses can't carry a JSON-RPC error envelope; accept the
             // Bearer challenge alone in that case (rare but spec-permissible).
             if (isSse) return { kind: "mcp", requiresAuth: true } as const;

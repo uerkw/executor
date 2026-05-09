@@ -124,6 +124,31 @@ describe("probeMcpEndpointShape", () => {
     ),
   );
 
+  // Supabase shape: Bearer challenge has `error=`/`error_description=`
+  // auth-params (RFC 6750 §3.1) but no `resource_metadata=`, and body is
+  // a non-RFC-6750 `{"message":"Unauthorized"}` envelope. The `error=`
+  // attribute alone is the accept signal.
+  it.effect("classifies 401 with Bearer error= auth-param as MCP+auth", () =>
+    withServer(
+      () =>
+        HttpServerResponse.jsonUnsafe(
+          { message: "Unauthorized" },
+          {
+            status: 401,
+            headers: {
+              "www-authenticate":
+                'Bearer error="invalid_request", error_description="No authorization header found"',
+            },
+          },
+        ),
+      (endpoint) =>
+        Effect.gen(function* () {
+          const result = yield* probeMcpEndpointShape(endpoint);
+          expect(result).toEqual({ kind: "mcp", requiresAuth: true });
+        }),
+    ),
+  );
+
   // cubic.dev/api/mcp shape: bare `Bearer` challenge, no resource_metadata.
   // The JSON-RPC error body is what tells us this is MCP rather than some
   // other OAuth/API-key protected service.

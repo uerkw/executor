@@ -38,17 +38,46 @@ const MCP_INITIALIZE_BODY = JSON.stringify({
 });
 
 const liveServers: ReadonlyArray<{ readonly name: string; readonly url: string }> = [
-  { name: "sentry", url: "https://mcp.sentry.dev/mcp/" },
-  { name: "stripe", url: "https://mcp.stripe.com" },
-  { name: "linear", url: "https://mcp.linear.app/sse" },
-  { name: "notion", url: "https://mcp.notion.com/mcp" },
+  // OAuth-protected SaaS MCP servers — most are spec-compliant with
+  // `resource_metadata=` in WWW-Authenticate; a few (Atlassian, Zapier,
+  // Vercel, Neon, Supabase) only carry RFC 6750 `error=` auth-params.
+  { name: "asana", url: "https://mcp.asana.com/sse" },
   { name: "atlassian", url: "https://mcp.atlassian.com/v1/sse" },
+  { name: "canva", url: "https://mcp.canva.com/mcp" },
+  { name: "cloudflare-bindings", url: "https://bindings.mcp.cloudflare.com/sse" },
+  { name: "cloudflare-observability", url: "https://observability.mcp.cloudflare.com/sse" },
+  { name: "cloudflare-radar", url: "https://radar.mcp.cloudflare.com/sse" },
+  { name: "figma", url: "https://mcp.figma.com/mcp" },
+  { name: "github-copilot", url: "https://api.githubcopilot.com/mcp/" },
+  { name: "intercom", url: "https://mcp.intercom.com/mcp" },
+  { name: "linear", url: "https://mcp.linear.app/sse" },
+  { name: "neon", url: "https://mcp.neon.tech/mcp" },
+  { name: "netlify", url: "https://netlify-mcp.netlify.app/mcp" },
+  { name: "notion", url: "https://mcp.notion.com/mcp" },
+  { name: "paypal", url: "https://mcp.paypal.com/mcp" },
+  { name: "replicate", url: "https://mcp.replicate.com/sse" },
+  { name: "sentry", url: "https://mcp.sentry.dev/mcp/" },
+  { name: "square", url: "https://mcp.squareup.com/sse" },
+  { name: "stripe", url: "https://mcp.stripe.com" },
+  { name: "supabase", url: "https://mcp.supabase.com/mcp" },
+  { name: "tavily", url: "https://mcp.tavily.com/mcp" },
+  { name: "vercel", url: "https://mcp.vercel.com/" },
+  { name: "webflow", url: "https://mcp.webflow.com/sse" },
+  { name: "wix", url: "https://mcp.wix.com/mcp" },
   { name: "zapier", url: "https://mcp.zapier.com/api/mcp/mcp" },
+
+  // API-key-authenticated MCP servers (no OAuth). Cubic returns
+  // JSON-RPC error envelopes; ref.tools omits WWW-Authenticate on the
+  // 401 entirely so wire-shape detection rejects it (the URL-token
+  // detect fallback still surfaces it as low-confidence).
   { name: "cubic", url: "https://www.cubic.dev/api/mcp" },
   { name: "reftools", url: "https://api.ref.tools/mcp" },
-  { name: "huggingface", url: "https://huggingface.co/mcp" },
-  { name: "deepwiki", url: "https://mcp.deepwiki.com/mcp" },
+
+  // Public, unauthenticated MCP servers — should classify as `mcp`
+  // with no required auth.
   { name: "context7", url: "https://mcp.context7.com/mcp" },
+  { name: "deepwiki", url: "https://mcp.deepwiki.com/mcp" },
+  { name: "huggingface", url: "https://huggingface.co/mcp" },
 ];
 
 interface RawCapture {
