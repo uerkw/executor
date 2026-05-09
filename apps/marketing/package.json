@@ -28,6 +28,7 @@
     "posthog-js": "^1.372.5",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-tweet": "^3.3.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2"
   },
