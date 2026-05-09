@@ -28,6 +28,32 @@ const {
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <script>
+      import posthog from "posthog-js";
+
+      const posthogKey =
+        import.meta.env.PUBLIC_POSTHOG_KEY ??
+        "phc_nNLrNMALpRsfrEkZovUkfMxYbcJvHnsJHeoSPavprgLL";
+      const analyticsPath = (import.meta.env.PUBLIC_ANALYTICS_PATH ?? "a").replace(
+        /^\/+|\/+$/g,
+        "",
+      );
+
+      posthog.init(posthogKey, {
+        api_host:
+          import.meta.env.PUBLIC_POSTHOG_HOST ??
+          `${window.location.origin}/api/${analyticsPath}`,
+        ui_host: "https://us.posthog.com",
+        defaults: "2025-05-24",
+        person_profiles: "identified_only",
+        disable_session_recording: false,
+        session_recording: {
+          maskAllInputs: true,
+          maskTextSelector: "[data-ph-mask]",
+          blockSelector: "[data-ph-block]",
+        },
+      });
+    </script>
   </head>
   <body class="antialiased">
     <slot />
