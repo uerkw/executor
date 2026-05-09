@@ -162,7 +162,9 @@ body {
 .copy-icons > svg {
   position: absolute;
   inset: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 .copy-icon-check {
   opacity: 0;
