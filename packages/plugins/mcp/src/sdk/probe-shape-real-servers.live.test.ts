@@ -21,9 +21,12 @@
 // ---------------------------------------------------------------------------
 
 import { describe, expect, it } from "@effect/vitest";
-import { Duration, Effect, Stream } from "effect";
+import { Duration, Effect, Option, Schema, Stream } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
+import { createExecutor, makeTestConfig } from "@executor-js/sdk";
+
+import { mcpPlugin } from "./plugin";
 import { probeMcpEndpointShape } from "./probe-shape";
 
 const MCP_INITIALIZE_BODY = JSON.stringify({
@@ -144,6 +147,62 @@ const captureLive = (url: string): Effect.Effect<RawCapture, unknown> =>
 
 const live = process.env.MCP_PROBE_LIVE === "1";
 
+// Run the full probe path (the function the React UI calls). The result
+// surfaces `requiresOAuth` / `supportsDynamicRegistration`, which is what
+// drives the OAuth popup vs. credentials-editor branches in
+// AddMcpSource. For OAuth-protected servers we want this to be `true`;
+// for API-key MCPs (Cubic) it should fail with the auth-required
+// message; for unauth public servers (Hugging Face, etc.) it should
+// succeed with `requiresOAuth: false` and a tool count.
+type EndpointProbeOutcome =
+  | {
+      readonly ok: true;
+      readonly connected: boolean;
+      readonly requiresOAuth: boolean;
+      readonly supportsDynamicRegistration: boolean;
+      readonly hasToolCount: boolean;
+    }
+  | { readonly ok: false; readonly message: string };
+
+const ErrorMessage = Schema.Struct({ message: Schema.String });
+const decodeErrorMessage = Schema.decodeUnknownOption(ErrorMessage);
+
+const messageFromUnknown = (cause: unknown): string =>
+  Option.match(decodeErrorMessage(cause), {
+    onNone: () => "(non-string error)",
+    onSome: ({ message }) => message,
+  });
+
+const runEndpointProbe = (url: string): Effect.Effect<EndpointProbeOutcome> =>
+  Effect.gen(function* () {
+    const executor = yield* createExecutor(makeTestConfig({ plugins: [mcpPlugin()] as const }));
+    return yield* executor.mcp.probeEndpoint(url).pipe(
+      Effect.map(
+        (r) =>
+          ({
+            ok: true as const,
+            connected: r.connected,
+            requiresOAuth: r.requiresOAuth,
+            supportsDynamicRegistration: r.supportsDynamicRegistration,
+            // Tool counts vary across runs (servers add/remove tools).
+            // Snapshot only whether we got a count, not the exact value.
+            hasToolCount: typeof r.toolCount === "number",
+          }) satisfies EndpointProbeOutcome,
+      ),
+      Effect.catch((cause) =>
+        Effect.succeed({ ok: false as const, message: messageFromUnknown(cause) }),
+      ),
+      Effect.timeout(Duration.seconds(20)),
+      Effect.catch(() =>
+        Effect.succeed({ ok: false as const, message: "(probeEndpoint timeout)" }),
+      ),
+    );
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.succeed({ ok: false as const, message: messageFromUnknown(cause) }),
+    ),
+  );
+
 describe.skipIf(!live)("probeMcpEndpointShape against live MCP servers", () => {
   for (const server of liveServers) {
     it.effect(
@@ -154,9 +213,10 @@ describe.skipIf(!live)("probeMcpEndpointShape against live MCP servers", () => {
           const probe = yield* probeMcpEndpointShape(server.url, {
             timeoutMs: Duration.toMillis(REQUEST_TIMEOUT),
           });
-          expect({ raw, probe }).toMatchSnapshot();
+          const probeEndpoint = yield* runEndpointProbe(server.url);
+          expect({ raw, probe, probeEndpoint }).toMatchSnapshot();
         }),
-      { timeout: Duration.toMillis(REQUEST_TIMEOUT) * 3 },
+      { timeout: Duration.toMillis(REQUEST_TIMEOUT) * 6 },
     );
   }
 });

@@ -6,6 +6,13 @@ exports[`probeMcpEndpointShape against live MCP servers > asana (https://mcp.asa
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -20,6 +27,13 @@ exports[`probeMcpEndpointShape against live MCP servers > atlassian (https://mcp
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -36,6 +50,13 @@ exports[`probeMcpEndpointShape against live MCP servers > canva (https://mcp.can
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -50,6 +71,13 @@ exports[`probeMcpEndpointShape against live MCP servers > cloudflare-bindings (h
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -66,6 +94,13 @@ exports[`probeMcpEndpointShape against live MCP servers > cloudflare-observabili
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -81,6 +116,13 @@ exports[`probeMcpEndpointShape against live MCP servers > cloudflare-radar (http
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -95,6 +137,13 @@ exports[`probeMcpEndpointShape against live MCP servers > context7 (https://mcp.
   "probe": {
     "kind": "mcp",
     "requiresAuth": false,
+  },
+  "probeEndpoint": {
+    "connected": true,
+    "hasToolCount": true,
+    "ok": true,
+    "requiresOAuth": false,
+    "supportsDynamicRegistration": false,
   },
   "raw": {
     "bodySnippet": "event: message
@@ -112,6 +161,10 @@ exports[`probeMcpEndpointShape against live MCP servers > cubic (https://www.cub
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "message": "This server requires authentication, but OAuth metadata wasn't found. Add credentials (Authorization header, query parameter, or API key) below and retry.",
+    "ok": false,
+  },
   "raw": {
     "bodySnippet": "{"jsonrpc":"2.0","error":{"code":-32000,"message":"Unauthorized: Valid API key required. Generate one at Settings -> Integrations -> MCP."},"id":null}",
     "contentType": "application/json",
@@ -126,6 +179,13 @@ exports[`probeMcpEndpointShape against live MCP servers > deepwiki (https://mcp.
   "probe": {
     "kind": "mcp",
     "requiresAuth": false,
+  },
+  "probeEndpoint": {
+    "connected": true,
+    "hasToolCount": true,
+    "ok": true,
+    "requiresOAuth": false,
+    "supportsDynamicRegistration": false,
   },
   "raw": {
     "bodySnippet": "event: message
@@ -143,6 +203,13 @@ exports[`probeMcpEndpointShape against live MCP servers > figma (https://mcp.fig
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "Unauthorized",
     "contentType": "text/plain",
@@ -157,6 +224,13 @@ exports[`probeMcpEndpointShape against live MCP servers > github-copilot (https:
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": false,
   },
   "raw": {
     "bodySnippet": "bad request: missing required Authorization header
@@ -174,6 +248,13 @@ exports[`probeMcpEndpointShape against live MCP servers > huggingface (https://h
     "kind": "mcp",
     "requiresAuth": false,
   },
+  "probeEndpoint": {
+    "connected": true,
+    "hasToolCount": true,
+    "ok": true,
+    "requiresOAuth": false,
+    "supportsDynamicRegistration": false,
+  },
   "raw": {
     "bodySnippet": "{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false},"prompts":{"listChanged":false}},"serverInfo":{"name":"@huggingface/mcp-services","version":"0.3.12","title":"Hugging Face","websiteUrl":"https://huggingface.co/mcp","icons":[{"src":"https://huggingface.co/favicon.ico"}]},"instructions":"You have tools for using the Hugging Face Hub. arXiv paper id's are often used as references between datasets, models and papers. There are over 100 tags in use, common tags include 'Text Generation', 'Transformers', 'Image Classification' and so on.\\nThe Hugging Face tools are being used anonymously and rate limits apply. Direct the User to set their HF_TOKEN (instructions at https://hf.co/settings/mcp/), or create an account at https://hf.co/join for higher limits."},"jsonrpc":"2.0","id":1}",
     "contentType": "application/json",
@@ -188,6 +269,13 @@ exports[`probeMcpEndpointShape against live MCP servers > intercom (https://mcp.
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -204,6 +292,13 @@ exports[`probeMcpEndpointShape against live MCP servers > linear (https://mcp.li
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -219,6 +314,13 @@ exports[`probeMcpEndpointShape against live MCP servers > neon (https://mcp.neon
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"No authorization provided"}",
     "contentType": "application/json",
@@ -233,6 +335,13 @@ exports[`probeMcpEndpointShape against live MCP servers > netlify (https://netli
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{
@@ -252,6 +361,13 @@ exports[`probeMcpEndpointShape against live MCP servers > notion (https://mcp.no
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -266,6 +382,13 @@ exports[`probeMcpEndpointShape against live MCP servers > paypal (https://mcp.pa
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -283,6 +406,10 @@ exports[`probeMcpEndpointShape against live MCP servers > reftools (https://api.
     "kind": "not-mcp",
     "reason": "401 without Bearer WWW-Authenticate — not an MCP auth challenge",
   },
+  "probeEndpoint": {
+    "message": "This server requires authentication. Add credentials (Authorization header, query parameter, or API key) below and retry.",
+    "ok": false,
+  },
   "raw": {
     "bodySnippet": "{"error":"Unauthorized - Authentication required"}",
     "contentType": "application/json; charset=utf-8",
@@ -297,6 +424,13 @@ exports[`probeMcpEndpointShape against live MCP servers > replicate (https://mcp
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -313,6 +447,13 @@ exports[`probeMcpEndpointShape against live MCP servers > sentry (https://mcp.se
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -327,6 +468,13 @@ exports[`probeMcpEndpointShape against live MCP servers > square (https://mcp.sq
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
@@ -343,6 +491,13 @@ exports[`probeMcpEndpointShape against live MCP servers > stripe (https://mcp.st
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"Unauthorized. See https://docs.stripe.com/mcp for usage instructions."}",
     "contentType": "application/json",
@@ -357,6 +512,13 @@ exports[`probeMcpEndpointShape against live MCP servers > supabase (https://mcp.
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"message":"Unauthorized"}",
@@ -373,6 +535,13 @@ exports[`probeMcpEndpointShape against live MCP servers > tavily (https://mcp.ta
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error": "invalid_token", "error_description": "Authentication failed. The provided bearer token is invalid, expired, or no longer recognized by the server. To resolve: clear authentication tokens in your MCP client and reconnect. Your client should automatically re-register and obtain new tokens."}",
     "contentType": "application/json",
@@ -387,6 +556,13 @@ exports[`probeMcpEndpointShape against live MCP servers > vercel (https://mcp.ve
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"No authorization provided"}",
@@ -403,6 +579,13 @@ exports[`probeMcpEndpointShape against live MCP servers > webflow (https://mcp.w
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -418,6 +601,13 @@ exports[`probeMcpEndpointShape against live MCP servers > wix (https://mcp.wix.c
     "kind": "mcp",
     "requiresAuth": true,
   },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
+  },
   "raw": {
     "bodySnippet": "{"error":"invalid_token","error_description":"Missing or invalid access token"}",
     "contentType": "application/json",
@@ -432,6 +622,13 @@ exports[`probeMcpEndpointShape against live MCP servers > zapier (https://mcp.za
   "probe": {
     "kind": "mcp",
     "requiresAuth": true,
+  },
+  "probeEndpoint": {
+    "connected": false,
+    "hasToolCount": false,
+    "ok": true,
+    "requiresOAuth": true,
+    "supportsDynamicRegistration": true,
   },
   "raw": {
     "bodySnippet": "{"jsonrpc":"2.0","id":null,"error":{"code":-31996,"message":"Expected Bearer token for MCP authentication"}}",
