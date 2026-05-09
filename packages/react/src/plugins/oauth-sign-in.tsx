@@ -87,10 +87,12 @@ export function useOAuthPopupFlow<
   readonly noAuthorizationUrlMessage?: string;
   readonly popupBlockedMessage?: string;
   readonly popupClosedMessage?: string;
+  readonly detectPopupClosed?: boolean;
   readonly startErrorMessage?: string;
 }) {
   const {
     callbackPath,
+    detectPopupClosed = true,
     noAuthorizationUrlMessage,
     popupBlockedMessage,
     popupClosedMessage,
@@ -197,6 +199,7 @@ export function useOAuthPopupFlow<
         channelName: OAUTH_POPUP_MESSAGE_TYPE,
         expectedSessionId: response.sessionId,
         reservedPopup,
+        closedPollMs: detectPopupClosed ? undefined : null,
         onResult: async (result: OAuthPopupResult<TPayload>) => {
           cleanupRef.current = null;
           sessionRef.current = null;
@@ -230,7 +233,9 @@ export function useOAuthPopupFlow<
         onClosed: () => {
           cleanupRef.current = null;
           sessionRef.current = null;
-          cancelSession(response.sessionId, input.tokenScope);
+          // `popup.closed` is advisory: COOP redirects can make a live popup
+          // appear closed to the opener. Keep server OAuth state alive for a
+          // callback or TTL cleanup; only explicit cancel deletes the session.
           const message =
             popupClosedMessage ??
             "Sign-in cancelled - popup was closed before completing the flow.";
@@ -252,6 +257,7 @@ export function useOAuthPopupFlow<
     [
       cancel,
       cancelSession,
+      detectPopupClosed,
       noAuthorizationUrlMessage,
       popupBlockedMessage,
       popupClosedMessage,
@@ -343,11 +349,13 @@ export function SourceOAuthSignInButton(props: {
   readonly queryParams?: Record<string, SecretBackedValue>;
   readonly isConnected: boolean;
   readonly onConnected: (connectionId: ConnectionId) => void | Promise<void>;
+  readonly detectPopupClosed?: boolean;
   readonly reconnectingLabel?: string;
   readonly signingInLabel?: string;
 }) {
   const {
     connectionId,
+    detectPopupClosed,
     endpoint,
     fallbackNamespace,
     headers,
@@ -364,6 +372,7 @@ export function SourceOAuthSignInButton(props: {
   } = props;
   const oauth = useOAuthPopupFlow({
     popupName,
+    detectPopupClosed,
   });
 
   const handleSignIn = useCallback(async () => {

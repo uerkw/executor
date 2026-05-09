@@ -171,4 +171,60 @@ describe("openOAuthPopup", () => {
     expect(opened).toBe("about:blank");
     expect(popup.location.href).toBe("http://example.com/authorize");
   });
+
+  it("can disable popup.closed polling for providers with strict opener policies", () => {
+    let closedCalled = false;
+    let intervalStarted = false;
+    const popup: FakePopup = { closed: true, close: () => {}, location: { href: "" } };
+    const previousWindow = globalThis.window;
+    const previousSetInterval = globalThis.setInterval;
+    const fakeWindow: OAuthPopupTestWindow = {
+      screenX: 0,
+      screenY: 0,
+      outerWidth: 1200,
+      outerHeight: 900,
+      location: { origin: "https://app.example" },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      open: () => popup,
+    };
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: fakeWindow,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, "setInterval", {
+      configurable: true,
+      value: () => {
+        intervalStarted = true;
+        return 1;
+      },
+      writable: true,
+    });
+
+    const teardown = openOAuthPopup({
+      url: "https://auth.example/authorize",
+      popupName: "oauth",
+      channelName: "oauth-channel",
+      closedPollMs: null,
+      onResult: () => {},
+      onClosed: () => {
+        closedCalled = true;
+      },
+    });
+
+    teardown();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: previousWindow,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, "setInterval", {
+      configurable: true,
+      value: previousSetInterval,
+      writable: true,
+    });
+    expect(intervalStarted).toBe(false);
+    expect(closedCalled).toBe(false);
+  });
 });

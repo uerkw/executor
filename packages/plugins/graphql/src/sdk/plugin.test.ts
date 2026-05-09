@@ -1084,3 +1084,51 @@ describe("graphqlPlugin", () => {
     }),
   );
 });
+
+describe("graphqlPlugin detect URL-token fallback", () => {
+  // Port 1 connection-refuses immediately, so introspection always
+  // fails and the URL-token fallback is the only thing that can
+  // produce a candidate.
+  it.effect("returns low-confidence candidate when path has /graphql segment", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [graphqlPlugin()] as const }),
+      );
+      const results = yield* executor.sources.detect("http://127.0.0.1:1/api/graphql");
+      const gql = results.find((r) => r.kind === "graphql");
+      expect(gql).toBeDefined();
+      expect(gql?.confidence).toBe("low");
+    }),
+  );
+
+  it.effect("matches graphql on hostname label", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [graphqlPlugin()] as const }),
+      );
+      const results = yield* executor.sources.detect("http://graphql.127.0.0.1.nip.io:1/");
+      const gql = results.find((r) => r.kind === "graphql");
+      expect(gql?.confidence).toBe("low");
+    }),
+  );
+
+  it.effect("does not match graphql as a substring", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [graphqlPlugin()] as const }),
+      );
+      const results = yield* executor.sources.detect("http://127.0.0.1:1/graphqlite");
+      expect(results.find((r) => r.kind === "graphql")).toBeUndefined();
+    }),
+  );
+
+  it.effect("returns null when no token match and introspection fails", () =>
+    Effect.gen(function* () {
+      const executor = yield* createExecutor(
+        makeTestConfig({ plugins: [graphqlPlugin()] as const }),
+      );
+      const results = yield* executor.sources.detect("http://127.0.0.1:1/api/v1");
+      expect(results.find((r) => r.kind === "graphql")).toBeUndefined();
+    }),
+  );
+});
