@@ -16,7 +16,7 @@
     "db:migrate:dev": "op run --env-file=.env.op -- bun --bun ../../node_modules/.bun/node_modules/drizzle-kit/bin.cjs migrate",
     "build": "node scripts/build.mjs",
     "preview": "vite preview",
-    "deploy": "op run --env-file=.env.production -- bun run build && op run --env-file=.env.production -- wrangler deploy",
+    "deploy": "op run --env-file=.env.production -- bash -lc 'bun run build && wrangler deploy -c dist/server/wrangler.json'",
     "cf-typegen": "wrangler types",
     "typecheck": "tsgo --noEmit",
     "test": "node ../../node_modules/vitest/vitest.mjs run && node ../../node_modules/vitest/vitest.mjs run --config vitest.node.config.ts",
