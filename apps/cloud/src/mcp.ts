@@ -187,8 +187,7 @@ export const McpAuthLive = Layer.succeed(McpAuth)({
 // ---------------------------------------------------------------------------
 // Client fingerprint capture
 // ---------------------------------------------------------------------------
-// Annotates the Effect span (which nests under the otel-cf-workers fetch
-// span) with everything we can learn about a connecting MCP client: the
+// Annotates the Effect span with everything we can learn about a connecting MCP client: the
 // parsed JSON-RPC body, whitelisted request headers, CF request metadata,
 // and verified-JWT claims. Lets us compare how each client (Claude Code,
 // Claude.ai web, ChatGPT, custom scripts, ...) actually reports over the
