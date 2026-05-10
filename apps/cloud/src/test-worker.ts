@@ -105,10 +105,8 @@ const handleSeedOrg = async (
 };
 
 // Provide a WebSdk-backed tracer on the worker side so the `mcp.request` span
-// gets reported to the OTLP receiver. Prod uses the global TracerProvider
-// installed by `otel-cf-workers.instrument()`; the test worker has no such
-// instrumentation, so we reuse DoTelemetryLive (it's a plain WebSdk +
-// OTLPTraceExporter — not Durable-Object-specific) to stand in.
+// gets reported to the OTLP receiver. This is the same Worker-safe telemetry
+// layer used in prod.
 const testMcpFetch = HttpEffect.toWebHandler(
   mcpApp.pipe(
     Effect.provide(Layer.mergeAll(TestMcpAuthLive, TestMcpOrganizationAuthLive, DoTelemetryLive)),
