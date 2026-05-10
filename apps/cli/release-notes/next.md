@@ -1,124 +1,95 @@
 ## Highlights
 
-### Install paths fixed
+### Unified credential bindings
 
-`npm i -g executor` and `bun i -g executor` both work cleanly on a fresh machine. For machines without node, `curl … install.sh | bash` does the same thing.
+Source credentials (OAuth tokens, header secrets, client-credential pairs) are now stored as **scoped credential bindings** instead of plugin-specific shapes. Two consequences for users:
 
-> 1.4.13 and 1.4.14 were partial releases that didn't make it to npm cleanly. If you tried `npm i -g executor@latest` and got an older version, that's why. 1.4.15 is the first complete release of the new packaging.
+- One consistent UI for editing credentials across OpenAPI, MCP, and GraphQL sources. The old per-plugin credential forms are gone, replaced with a shared slot UI in `@executor-js/react` (`credential-bindings`, `credential-slot-bindings`, `oauth-sign-in`).
+- Existing OpenAPI / MCP / GraphQL / google-discovery credentials are migrated into the new binding rows automatically on first launch (drizzle migrations `0007`, `0008`, `0010` for `apps/local`). No user action required.
 
-### MCP sources honor upstream `destructiveHint`
+### See where a secret or connection is used
 
-MCP sources now read `destructiveHint` from upstream tool annotations. Tools marked destructive will require approval before running, surfaced via MCP elicitation. Refresh existing sources (or remove + re-add) to pick up annotations on tools added before this change.
+A new `executor.usages` surface lets plugins declare every place they reference a secret or connection. The local UI uses it to:
 
-### Set tool policies from the Tools page
+- Show a "used in N sources / M bindings" summary on the secret detail page.
+- Surface a clear "this secret is in use, remove the references first" toast (backed by the new `SecretInUseError` / `ConnectionInUseError`) instead of letting the delete fail silently.
 
-The local UI gains a **Policies** tab for managing approval rules, plus a per-row action menu on the Tools tree. Hover any tool or category and pick **Always run / Require approval / Block / Clear** — leaf rows save a rule for the exact tool id, group rows save a `prefix.*` wildcard. New rules are auto-placed by specificity so a freshly-added group rule never silently shadows an existing leaf rule. The same menu is available from the tool detail header and from any source-detail page.
+Plugin authors implement `usagesForSecret` / `usagesForConnection`; the executor fans out and concatenates.
 
-### Per-user OAuth for OpenAPI and MCP sources
+### MCP source detection works on more servers
 
-OpenAPI and MCP sources now carry first-class **Connections** — a per-user sign-in state decoupled from the source definition itself.
+Adding an MCP source now succeeds against servers that previously failed to probe.
 
-- Save an OAuth2 OpenAPI or MCP source **before** signing in; users sign in later from the source page.
-- Each connection refreshes independently, with concurrent refreshes deduped across the SDK. When a refresh can't recover, the SDK surfaces an explicit `reauth-required` signal instead of silently failing.
-- The Edit OpenAPI Source page has a new **Connections** pane showing every user who has signed in and their status. Each source in the sidebar now shows a live connection badge.
-- Existing OpenAPI + MCP + google-discovery OAuth rows migrate into Connections automatically on first launch — no user action required.
+- Bearer-auth MCP servers are detected on the initial probe instead of being misclassified as plain HTTP. Probe error messages also tell you what shape of auth challenge came back.
+- 401 challenges that advertise `resource_metadata=` are recognized as MCP-spec OAuth signals.
+- Probes accept RFC 6750-compliant body forms for the access-token check, so servers that don't honor the `Authorization` header on the probe path still discover correctly.
+- A live-snapshot regression suite covers 29 real public MCP servers; new probes are checked against those snapshots before shipping.
+- The MCP connection pool now keys by source identity, so two MCP sources pointing at the same upstream URL with different credentials no longer collide on one shared connection.
 
-### OpenAPI: client-credentials, non-JSON bodies, source refresh
+### TypeScript code runs in dynamic-worker and QuickJS runtimes
 
-- Full **OAuth2 client-credentials** flow end-to-end.
-- **Non-JSON request bodies** dispatch correctly by content type; Executor honors OAS3 `encoding` and multi-content operations, and lets the caller pick which content type to send.
-- Relative OAuth2 URLs resolve against the source's `baseUrl`.
-- Refresh a source by re-fetching its origin URL from the edit page.
+Both runtimes strip TypeScript syntax before evaluation, so tools that pass TS source (annotations, `as` casts, type aliases, etc.) execute without a separate compile step. Previously you had to hand-strip types or precompile.
 
-### Layered scope isolation
+### OpenAPI source UX
 
-Multi-tenant deployments get a proper security primitive. Every read and write now passes through a layered `ScopeStack`, with the write scope declared explicitly. Plugins have adopted the API; the UI exposes it via `CreatableSecretPicker`; and WorkOS sources enforce tenant-ownership on every access. Per-scope blob and secret lookups are batched into single `IN` queries, so the extra check doesn't cost a round-trip.
+- Source-add screens reworked: cleaner flow, the freeform combobox lists the URL you typed first, scoped credential UI clarified.
+- OpenAPI import size limit removed — large specs (Stripe, GitHub, etc.) import without truncation.
+- The OpenAPI source edit page lets you change the OAuth2 token / authorization endpoint URLs without removing and re-adding the source.
+- Source favicons render again on the sources list (regression from the source-credential cutover).
+- `listSourceBindings` no longer 500s when called after a source has been removed.
 
-### Natural CLI for tool discovery and invocation
+### OAuth reliability
 
-Call tools by path instead of writing TypeScript:
+A pile of small fixes to the OAuth flow, individually unspectacular, collectively meaning fewer mysterious "Sign in" failures:
 
-```bash
-executor call github issues create '{"owner":"octocat","repo":"Hello-World","title":"Hi"}'
-executor tools search "send email"
-executor tools sources
-executor tools describe github.issues.create
-```
+- DCR registration declares the requested scopes in the body so providers that key on body-scope (rather than `scope=` on the auth URL) issue refresh tokens with the right grants.
+- Refresh requests use the exact scopes from the original token grant; servers that reject scope upgrades on refresh stop returning `invalid_scope`.
+- `id_token` values returned alongside an access token are stripped before validation (some providers send malformed JWTs in this slot, which used to fail the whole exchange).
+- The `scope` parameter is omitted entirely when empty, instead of being sent as `scope=`.
+- OAuth endpoint URLs from discovery / DCR are validated; obviously-broken metadata fails fast with a clear message rather than later in the popup. Exposed as `assertSupportedOAuthEndpointUrl` / `isSupportedOAuthEndpointUrl` for plugin use.
+- Token-endpoint failures now include the upstream HTTP status + body summary in the surfaced error.
+- Popup handling: the popup is reserved before the start request fires, and close events are detected reliably, so cancelling sign-in no longer leaves the UI stuck waiting.
 
-`executor call <path> --help` browses namespaces → resources → methods, with `--match <text> --limit <n>` to narrow huge namespaces. Errors are normalized for agent consumption, and the resume / help UX is cleaner for non-interactive flows.
+### Source-registration tools require approval
 
-### Daemon lifecycle
+Tools that register new sources (e.g. `addSource` on the OpenAPI plugin) now go through the standard approval gate by default, the same way destructive tools do. Safer to point an agent at a workspace that has source-mutating tools available.
 
-```bash
-executor daemon run
-executor daemon status
-executor daemon stop
-executor daemon restart
-```
+### Migration safety for older CLI builds
 
-`executor call`, `executor resume`, and `executor tools …` auto-start a local daemon if one isn't running. The daemon pointer is scope-aware, and if the default port is busy the CLI transparently picks an open one — so two projects can run side-by-side without collisions.
+If an older `executor` build opens a data directory that has been migrated by a newer build, you now get an explicit "this data directory was created by a newer version" error instead of a low-level SQLite schema mismatch crash. Drizzle migration preflight checks were also tightened so partially-applied migrations are caught earlier.
 
-`executor daemon run` now backgrounds by default. Pass `--foreground` to keep it attached for log inspection.
+### SDK additions
 
-### OpenTelemetry everywhere
+For plugin authors and embedders:
 
-Tool dispatch, plugins, storage, schema, and transport are now fully instrumented with OTEL spans, and the runtime is threaded through dispatch so spans actually export in all runtimes.
-
-## New presets
-
-- **Notion** is now a featured MCP preset.
-
-## Performance
-
-- `buildExecuteDescription` no longer calls `executor.tools.list`, making tool-description generation measurably faster on large workspaces.
-- Per-scope blob and secret lookups now use a single `IN` query instead of N per-scope round-trips.
+- `Usage`, `UsagesForSecretInput`, `UsagesForConnectionInput` — the usages contract.
+- `CredentialBindingKind`, `CredentialBindingValue`, `ConfiguredCredentialBinding`, `ConfiguredCredentialValue`, `ScopedSecretCredentialInput`, `CredentialBindingRef`, `SetCredentialBindingInput`, `RemoveCredentialBindingInput`, `ReplaceCredentialBindingsInput`, `ResolvedCredentialSlot`, `CredentialBindingId` — the new credential bindings surface.
+- `SecretInUseError`, `ConnectionInUseError` — typed errors for blocked deletes.
+- `RefreshSourceInput`, `RemoveSourceInput`, `RemoveSecretInput`, `RemoveToolPolicyInput`, `CredentialBindingRow` — new typed inputs / row types.
+- `ScopedDBAdapter`, `ScopedTypedAdapter` — type exports for scope-aware storage adapters.
+- Plugin `clientConfig` is threaded through `vite-plugin` into the client bundle, so plugins can hand SDK-side config to their React surface without a separate config endpoint.
+- Schema compile perf: a new lint rule + hoisted `Schema` compilers keep parse-paths fast.
 
 ## Fixes
 
-- Upgrade: preserve legacy OAuth connection backfills after the `connection.kind` column is removed.
-- OpenAPI: refreshing or editing sources with legacy inline secret/OAuth config now materializes the new source binding rows instead of dropping credentials.
-- Keychain: skip provider registration when the OS backend is unreachable (no more startup failure when running headless on Linux without a keyring).
-- Local database: fail early with guidance when an older Executor build opens a data directory migrated by a newer build, instead of surfacing a low-level SQLite schema error.
-- Local server: return 404 for missing static assets instead of serving HTML.
-- Tests: Windows compatibility across the suite.
+- `executeWithPause` now settles correctly when the running fiber fails — previously a fiber failure could leave the execution hanging instead of surfacing the error. (#523)
+- `isDevMode` correctly identifies the compiled bun binary, so installed CLI builds no longer misdetect themselves as running from source. Thanks @grfwings (#699)
+- Drizzle migration handling parses migration metadata with a typed schema and reports outdated-client failures cleanly. Thanks @grfwings (#741)
+- Frontend errors and API-client decode failures are now reported through the existing error-reporting path instead of being swallowed silently.
+- Source forms keep local error messages on screen instead of clearing them on the next render.
+- "Remove in-use source" surfaces a toast instead of a silent failure. (#530)
 
 ## Breaking changes
 
-### `executor call` no longer accepts inline code
+### SDK: `makeTestConfig` import path moved
 
-The old TypeScript-as-argument forms are gone:
+The deep import path moved from `@executor-js/core/sdk/testing` to `@executor-js/core/sdk/test-config`. The package-root re-export is unchanged:
 
-```bash
-executor call '<code>'
-executor call --file script.ts
-executor call --stdin
+```ts
+// still works
+import { makeTestConfig } from "@executor-js/core/sdk";
 ```
 
-Migrate to explicit tool paths:
+### SDK: per-plugin credential shapes replaced by credential bindings
 
-```bash
-# before
-executor call 'return await tools.github.issues.list({ owner, repo })'
-# after
-executor call github issues list '{"owner":"octocat","repo":"Hello-World"}'
-```
-
-`tools.discover(...)` becomes `executor tools search "<query>"`.
-
-### `sources.add` CLI form simplified
-
-Use the dedicated tool:
-
-```bash
-executor call openapi addSource '{
-  "spec": "https://petstore3.swagger.io/api/v3/openapi.json",
-  "namespace": "petstore",
-  "baseUrl": "https://petstore3.swagger.io/api/v3"
-}'
-```
-
-Pass `baseUrl` when the OpenAPI document has relative `servers` entries.
-
-### SDK: layered scope
-
-Every SDK write now takes an explicit scope. If you have plugins or host code calling the SDK directly, they'll need to adopt the new layered-scope API (see the in-tree plugins for reference — they've all been migrated). This does not affect users of the CLI or web UI.
+If you authored a plugin that stored OAuth tokens or other credentials directly under a plugin-specific column, migrate to the unified `CredentialBinding*` surface. The in-tree plugins (OpenAPI, MCP, GraphQL, google-discovery) have all been ported — see them for reference. End users of the CLI / web UI are unaffected; existing rows migrate automatically.
