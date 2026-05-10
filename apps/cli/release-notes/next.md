@@ -78,6 +78,7 @@ Tool dispatch, plugins, storage, schema, and transport are now fully instrumente
 - Upgrade: preserve legacy OAuth connection backfills after the `connection.kind` column is removed.
 - OpenAPI: refreshing or editing sources with legacy inline secret/OAuth config now materializes the new source binding rows instead of dropping credentials.
 - Keychain: skip provider registration when the OS backend is unreachable (no more startup failure when running headless on Linux without a keyring).
+- Local database: fail early with guidance when an older Executor build opens a data directory migrated by a newer build, instead of surfacing a low-level SQLite schema error.
 - Local server: return 404 for missing static assets instead of serving HTML.
 - Tests: Windows compatibility across the suite.
 
