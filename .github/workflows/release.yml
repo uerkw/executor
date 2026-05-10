@@ -57,7 +57,13 @@ jobs:
           title: Version Packages
           createGithubReleases: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT (RELEASE_PAT) so the auto-opened Version Packages PR
+          # triggers downstream workflows (pkg-pr-new, CI). PRs authored
+          # by the default GITHUB_TOKEN do not trigger other workflows by
+          # GitHub design. Falls back to GITHUB_TOKEN when the secret is
+          # not set, so the workflow keeps working in forks / before the
+          # secret is configured.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Publish @executor-js library packages
         if: steps.changesets.outputs.hasChangesets == 'false'
