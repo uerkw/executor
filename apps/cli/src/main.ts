@@ -64,6 +64,7 @@ import {
   buildDaemonSpawnSpec,
   chooseDaemonPort,
   canAutoStartLocalDaemonForHost,
+  isDevCliEntrypoint,
   parseDaemonBaseUrl,
   spawnDetached,
   waitForReachable,
@@ -159,7 +160,7 @@ const isServerReachable = (baseUrl: string): Effect.Effect<boolean> =>
   );
 
 const script = process.argv[1];
-const isDevMode = script?.endsWith(".ts") || script?.endsWith(".js");
+const isDevMode = isDevCliEntrypoint(script);
 const cliPrefix = isDevMode ? `bun run ${script}` : "executor";
 
 const toError = (cause: unknown): Error =>
