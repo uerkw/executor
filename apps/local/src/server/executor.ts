@@ -45,6 +45,7 @@ const MIGRATIONS_FOLDER = resolveMigrationsFolder();
 
 interface ResolvedDb {
   readonly path: string;
+  readonly dataDir: string;
   readonly legacySecrets: readonly LegacySecret[];
 }
 
@@ -67,7 +68,7 @@ const resolveDbPath = (): ResolvedDb => {
           : "."),
     );
   }
-  return { path: dbPath, legacySecrets };
+  return { path: dbPath, dataDir, legacySecrets };
 };
 
 // Hash suffix disambiguates same-basename folders so two projects with
@@ -151,7 +152,7 @@ export const drizzleMigrationsTableExists = (sqlite: Database): boolean => {
     )
     .get("__drizzle_migrations");
 
-  return row !== null;
+  return row != null;
 };
 
 export const readAppliedDrizzleMigrationHashes = (sqlite: Database): ReadonlyArray<string> => {
@@ -193,16 +194,16 @@ export const readBundledDrizzleMigrationHashes = (
     });
 };
 
-const schemaTooNewMessage = (dbPath: string): string =>
+const schemaTooNewMessage = (dataDir: string): string =>
   [
-    `This Executor binary is older than the schema in ${process.env.EXECUTOR_DATA_DIR ?? dirname(dbPath)}.`,
+    `This Executor binary is older than the schema in ${dataDir}.`,
     "The database was likely opened by a newer Executor build.",
     "Use a newer Executor binary or set EXECUTOR_DATA_DIR to a different data directory.",
   ].join("\n");
 
-const migrationHistoryMismatchMessage = (dbPath: string): string =>
+const migrationHistoryMismatchMessage = (dataDir: string): string =>
   [
-    `The migration history in ${process.env.EXECUTOR_DATA_DIR ?? dirname(dbPath)} does not match this Executor build.`,
+    `The migration history in ${dataDir} does not match this Executor build.`,
     "The database may have been created by a different development branch, manually modified, or corrupted.",
     "Use the matching Executor build, set EXECUTOR_DATA_DIR to a different data directory, or restore a backup.",
   ].join("\n");
@@ -210,6 +211,7 @@ const migrationHistoryMismatchMessage = (dbPath: string): string =>
 export const checkDrizzleMigrationCompatibility = (input: {
   readonly sqlite: Database;
   readonly dbPath: string;
+  readonly dataDir: string;
   readonly migrationsFolder: string;
 }): Effect.Effect<void, LocalDatabaseSchemaTooNew | LocalDatabaseMigrationHistoryMismatch> =>
   Effect.gen(function* () {
@@ -223,7 +225,7 @@ export const checkDrizzleMigrationCompatibility = (input: {
 
     if (applied.length > bundled.length) {
       return yield* new LocalDatabaseSchemaTooNew({
-        message: schemaTooNewMessage(input.dbPath),
+        message: schemaTooNewMessage(input.dataDir),
         dbPath: input.dbPath,
         appliedMigrationCount: applied.length,
         knownMigrationCount: bundled.length,
@@ -233,7 +235,7 @@ export const checkDrizzleMigrationCompatibility = (input: {
     for (let index = 0; index < applied.length; index += 1) {
       if (applied[index] !== bundled[index]) {
         return yield* new LocalDatabaseMigrationHistoryMismatch({
-          message: migrationHistoryMismatchMessage(input.dbPath),
+          message: migrationHistoryMismatchMessage(input.dataDir),
           dbPath: input.dbPath,
           migrationIndex: index,
           appliedHash: applied[index],
@@ -244,7 +246,7 @@ export const checkDrizzleMigrationCompatibility = (input: {
   });
 
 const createLocalExecutorLayer = () => {
-  const { path: dbPath, legacySecrets } = resolveDbPath();
+  const { path: dbPath, dataDir, legacySecrets } = resolveDbPath();
 
   return Layer.effect(LocalExecutorTag)(
     Effect.gen(function* () {
@@ -255,6 +257,7 @@ const createLocalExecutorLayer = () => {
       yield* checkDrizzleMigrationCompatibility({
         sqlite,
         dbPath,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       });
       sqlite.exec("PRAGMA journal_mode = WAL");

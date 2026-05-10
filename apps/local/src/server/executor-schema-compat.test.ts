@@ -20,13 +20,13 @@ const MIGRATIONS_FOLDER = join(import.meta.dirname, "../../drizzle");
 const workDirs: string[] = [];
 const openDbs: Database[] = [];
 
-const tempDb = (): { db: Database; path: string } => {
+const tempDb = (): { db: Database; path: string; dataDir: string } => {
   const dir = mkdtempSync(join(tmpdir(), "executor-schema-compat-"));
   workDirs.push(dir);
   const path = join(dir, "data.db");
   const db = new Database(path);
   openDbs.push(db);
-  return { db, path };
+  return { db, path, dataDir: dir };
 };
 
 const createMigrationTable = (db: Database): void => {
@@ -58,11 +58,12 @@ afterEach(() => {
 describe("Drizzle migration compatibility preflight", () => {
   it.effect("allows a fresh DB without __drizzle_migrations", () =>
     Effect.gen(function* () {
-      const { db, path } = tempDb();
+      const { db, path, dataDir } = tempDb();
 
       yield* checkDrizzleMigrationCompatibility({
         sqlite: db,
         dbPath: path,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       });
     }),
@@ -70,12 +71,13 @@ describe("Drizzle migration compatibility preflight", () => {
 
   it.effect("allows an existing but empty __drizzle_migrations table", () =>
     Effect.gen(function* () {
-      const { db, path } = tempDb();
+      const { db, path, dataDir } = tempDb();
       createMigrationTable(db);
 
       yield* checkDrizzleMigrationCompatibility({
         sqlite: db,
         dbPath: path,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       });
     }),
@@ -92,7 +94,7 @@ describe("Drizzle migration compatibility preflight", () => {
 
   it.effect("fails with LocalDatabaseSchemaTooNew when the DB has more migrations", () =>
     Effect.gen(function* () {
-      const { db, path } = tempDb();
+      const { db, path, dataDir } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, [...bundled, "future-migration-hash"]);
@@ -100,6 +102,7 @@ describe("Drizzle migration compatibility preflight", () => {
       const error = yield* checkDrizzleMigrationCompatibility({
         sqlite: db,
         dbPath: path,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       }).pipe(Effect.flip);
 
@@ -115,7 +118,7 @@ describe("Drizzle migration compatibility preflight", () => {
 
   it.effect("fails with LocalDatabaseMigrationHistoryMismatch when hashes diverge", () =>
     Effect.gen(function* () {
-      const { db, path } = tempDb();
+      const { db, path, dataDir } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, ["different-migration-hash", ...bundled.slice(1)]);
@@ -123,6 +126,7 @@ describe("Drizzle migration compatibility preflight", () => {
       const error = yield* checkDrizzleMigrationCompatibility({
         sqlite: db,
         dbPath: path,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       }).pipe(Effect.flip);
 
@@ -136,7 +140,7 @@ describe("Drizzle migration compatibility preflight", () => {
 
   it.effect("allows an older DB whose migration history is a bundled prefix", () =>
     Effect.gen(function* () {
-      const { db, path } = tempDb();
+      const { db, path, dataDir } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, bundled.slice(0, 1));
@@ -144,6 +148,7 @@ describe("Drizzle migration compatibility preflight", () => {
       yield* checkDrizzleMigrationCompatibility({
         sqlite: db,
         dbPath: path,
+        dataDir,
         migrationsFolder: MIGRATIONS_FOLDER,
       });
     }),
