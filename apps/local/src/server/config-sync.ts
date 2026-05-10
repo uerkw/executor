@@ -12,6 +12,7 @@ import * as jsonc from "jsonc-parser";
 
 import type { SourceConfig, ExecutorFileConfig, ConfigHeaderValue } from "@executor-js/config";
 import { SECRET_REF_PREFIX } from "@executor-js/config";
+import type { ScopeId } from "@executor-js/sdk";
 
 import type { LocalExecutor } from "./executor";
 
@@ -77,19 +78,15 @@ const loadConfigSync = (path: string): ExecutorFileConfig | null => {
 
 const addSourceFromConfig = (
   executor: LocalExecutor,
+  targetScope: ScopeId,
   source: SourceConfig,
 ): Effect.Effect<void, unknown> => {
-  // `executor.jsonc` is a single-scope artifact today — the file isn't
-  // aware of per-user tenancy. Pin replayed sources to the outermost
-  // scope so a future `[user, org]` stack still sees them via org
-  // fall-through.
-  const scope = executor.scopes.at(-1)!.id;
   switch (source.kind) {
     case "openapi":
       return executor.openapi
         .addSpec({
           spec: source.spec,
-          scope,
+          scope: targetScope,
           baseUrl: source.baseUrl,
           namespace: source.namespace,
           headers: translateHeaders(source.headers),
@@ -100,7 +97,7 @@ const addSourceFromConfig = (
       return executor.graphql
         .addSource({
           endpoint: source.endpoint,
-          scope,
+          scope: targetScope,
           namespace: source.namespace,
           headers: translateHeaders(source.headers) as Record<string, string> | undefined,
         })
@@ -111,7 +108,7 @@ const addSourceFromConfig = (
         return executor.mcp
           .addSource({
             transport: "stdio",
-            scope,
+            scope: targetScope,
             name: source.name,
             command: source.command,
             args: source.args ? [...source.args] : undefined,
@@ -124,7 +121,7 @@ const addSourceFromConfig = (
       return executor.mcp
         .addSource({
           transport: "remote",
-          scope,
+          scope: targetScope,
           name: source.name,
           endpoint: source.endpoint,
           remoteTransport: source.remoteTransport,
@@ -140,8 +137,13 @@ const addSourceFromConfig = (
  * Read executor.jsonc and replay all sources into the executor.
  * Each source is added independently — if one fails, the rest still load.
  */
-export const syncFromConfig = (executor: LocalExecutor, configPath: string): Effect.Effect<void> =>
+export const syncFromConfig = (input: {
+  readonly executor: LocalExecutor;
+  readonly configPath: string;
+  readonly targetScope: ScopeId;
+}): Effect.Effect<void> =>
   Effect.gen(function* () {
+    const { executor, configPath, targetScope } = input;
     const config = loadConfigSync(configPath);
     if (!config?.sources?.length) {
       console.log(`[config-sync] ${configPath} missing or empty, skipping`);
@@ -153,7 +155,7 @@ export const syncFromConfig = (executor: LocalExecutor, configPath: string): Eff
     const results = yield* Effect.forEach(
       config.sources,
       (source) =>
-        addSourceFromConfig(executor, source).pipe(
+        addSourceFromConfig(executor, targetScope, source).pipe(
           Effect.map(() => true as const),
           Effect.catchCause((cause) => {
             const ns =

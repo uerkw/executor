@@ -12,7 +12,6 @@ import {
   makeOrgApiLive,
 } from "./layers";
 import { makeProtectedApiLive } from "./protected";
-import { SlackContactRoutesLive } from "./slack";
 
 // One router. Each sub-API contributes its routes via `HttpApiBuilder.layer`,
 // which calls `HttpRouter.use(...)` under the hood. Autumn's catch-all proxy
@@ -31,7 +30,6 @@ export const makeApiLive = (requestScopedLive: Layer.Layer<DbService | UserStore
     makeOrgApiLive(requestScopedLive),
     makeProtectedApiLive(requestScopedLive),
     AutumnRoutesLive,
-    SlackContactRoutesLive,
   ).pipe(Layer.provideMerge(RouterConfig), Layer.provideMerge(BootSharedServices));
 
 export const ApiLive = makeApiLive(RequestScopedServicesLive);

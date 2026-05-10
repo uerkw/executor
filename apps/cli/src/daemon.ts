@@ -48,7 +48,7 @@ export const parseDaemonBaseUrl = (baseUrl: string, defaultPort: number): Parsed
 // Local-host checks
 // ---------------------------------------------------------------------------
 
-const LOCAL_DAEMON_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+const LOCAL_DAEMON_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const BUN_EMBEDDED_ENTRYPOINT_PREFIX = "/$bunfs/";
 
 export const canAutoStartLocalDaemonForHost = (hostname: string): boolean =>

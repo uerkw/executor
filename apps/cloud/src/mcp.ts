@@ -669,7 +669,7 @@ export const mcpApp: Effect.Effect<
   if (Result.isFailure(authResult)) {
     yield* annotateMcpRequest(request, {
       token: null,
-      parseBody: request.method === "POST",
+      parseBody: false,
     });
     return yield* authTemporarilyUnavailable(authResult.failure);
   }
@@ -680,7 +680,7 @@ export const mcpApp: Effect.Effect<
   // don't carry one.
   yield* annotateMcpRequest(request, {
     token: isMcpAuthorized(authValue) ? authValue.token : null,
-    parseBody: request.method === "POST",
+    parseBody: request.method === "POST" && isMcpAuthorized(authValue),
   });
 
   if (isMcpUnauthorized(authValue)) {
