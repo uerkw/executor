@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
+import { Effect } from "effect";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 
@@ -17,12 +18,15 @@ import {
 const MIGRATIONS_FOLDER = join(import.meta.dirname, "../../drizzle");
 
 const workDirs: string[] = [];
+const openDbs: Database[] = [];
 
 const tempDb = (): { db: Database; path: string } => {
   const dir = mkdtempSync(join(tmpdir(), "executor-schema-compat-"));
   workDirs.push(dir);
   const path = join(dir, "data.db");
-  return { db: new Database(path), path };
+  const db = new Database(path);
+  openDbs.push(db);
+  return { db, path };
 };
 
 const createMigrationTable = (db: Database): void => {
@@ -43,139 +47,105 @@ const insertMigrationHashes = (db: Database, hashes: ReadonlyArray<string>): voi
 };
 
 afterEach(() => {
+  for (const db of openDbs.splice(0)) {
+    db.close();
+  }
   for (const dir of workDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 describe("Drizzle migration compatibility preflight", () => {
-  it("allows a fresh DB without __drizzle_migrations", () => {
-    const { db, path } = tempDb();
-    try {
-      expect(() =>
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        }),
-      ).not.toThrow();
-    } finally {
-      db.close();
-    }
-  });
+  it.effect("allows a fresh DB without __drizzle_migrations", () =>
+    Effect.gen(function* () {
+      const { db, path } = tempDb();
 
-  it("allows an existing but empty __drizzle_migrations table", () => {
-    const { db, path } = tempDb();
-    try {
+      yield* checkDrizzleMigrationCompatibility({
+        sqlite: db,
+        dbPath: path,
+        migrationsFolder: MIGRATIONS_FOLDER,
+      });
+    }),
+  );
+
+  it.effect("allows an existing but empty __drizzle_migrations table", () =>
+    Effect.gen(function* () {
+      const { db, path } = tempDb();
       createMigrationTable(db);
 
-      expect(() =>
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        }),
-      ).not.toThrow();
-    } finally {
-      db.close();
-    }
-  });
+      yield* checkDrizzleMigrationCompatibility({
+        sqlite: db,
+        dbPath: path,
+        migrationsFolder: MIGRATIONS_FOLDER,
+      });
+    }),
+  );
 
   it("computes bundled hashes that exactly match hashes written by Drizzle", () => {
     const { db } = tempDb();
-    try {
-      migrate(drizzle(db), { migrationsFolder: MIGRATIONS_FOLDER });
+    migrate(drizzle(db), { migrationsFolder: MIGRATIONS_FOLDER });
 
-      expect(readAppliedDrizzleMigrationHashes(db)).toEqual(
-        readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER),
-      );
-    } finally {
-      db.close();
-    }
+    expect(readAppliedDrizzleMigrationHashes(db)).toEqual(
+      readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER),
+    );
   });
 
-  it("throws LocalDatabaseSchemaTooNew when the DB has more migrations than the binary", () => {
-    const { db, path } = tempDb();
-    try {
+  it.effect("fails with LocalDatabaseSchemaTooNew when the DB has more migrations", () =>
+    Effect.gen(function* () {
+      const { db, path } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, [...bundled, "future-migration-hash"]);
 
-      expect(() =>
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        }),
-      ).toThrow(LocalDatabaseSchemaTooNew);
+      const error = yield* checkDrizzleMigrationCompatibility({
+        sqlite: db,
+        dbPath: path,
+        migrationsFolder: MIGRATIONS_FOLDER,
+      }).pipe(Effect.flip);
 
-      try {
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        });
-      } catch (error) {
-        expect(error).toBeInstanceOf(LocalDatabaseSchemaTooNew);
-        expect((error as Error).message).toContain(
-          "This Executor binary is older than the schema",
-        );
-        expect((error as Error).message).toContain("Use a newer Executor binary");
-      }
-    } finally {
-      db.close();
-    }
-  });
+      expect(error).toBeInstanceOf(LocalDatabaseSchemaTooNew);
+      expect(error).toMatchObject({
+        message: expect.stringContaining("This Executor binary is older than the schema"),
+      });
+      expect(error).toMatchObject({
+        message: expect.stringContaining("Use a newer Executor binary"),
+      });
+    }),
+  );
 
-  it("throws LocalDatabaseMigrationHistoryMismatch when hashes diverge", () => {
-    const { db, path } = tempDb();
-    try {
+  it.effect("fails with LocalDatabaseMigrationHistoryMismatch when hashes diverge", () =>
+    Effect.gen(function* () {
+      const { db, path } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, ["different-migration-hash", ...bundled.slice(1)]);
 
-      expect(() =>
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        }),
-      ).toThrow(LocalDatabaseMigrationHistoryMismatch);
+      const error = yield* checkDrizzleMigrationCompatibility({
+        sqlite: db,
+        dbPath: path,
+        migrationsFolder: MIGRATIONS_FOLDER,
+      }).pipe(Effect.flip);
 
-      try {
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        });
-      } catch (error) {
-        expect(error).toBeInstanceOf(LocalDatabaseMigrationHistoryMismatch);
-        expect((error as Error).message).toContain(
-          "does not match this Executor build",
-        );
-        expect((error as Error).message).toContain("restore a backup");
-      }
-    } finally {
-      db.close();
-    }
-  });
+      expect(error).toBeInstanceOf(LocalDatabaseMigrationHistoryMismatch);
+      expect(error).toMatchObject({
+        message: expect.stringContaining("does not match this Executor build"),
+      });
+      expect(error).toMatchObject({ message: expect.stringContaining("restore a backup") });
+    }),
+  );
 
-  it("allows an older DB whose migration history is a bundled prefix", () => {
-    const { db, path } = tempDb();
-    try {
+  it.effect("allows an older DB whose migration history is a bundled prefix", () =>
+    Effect.gen(function* () {
+      const { db, path } = tempDb();
       const bundled = readBundledDrizzleMigrationHashes(MIGRATIONS_FOLDER);
       createMigrationTable(db);
       insertMigrationHashes(db, bundled.slice(0, 1));
 
-      expect(() =>
-        checkDrizzleMigrationCompatibility({
-          sqlite: db,
-          dbPath: path,
-          migrationsFolder: MIGRATIONS_FOLDER,
-        }),
-      ).not.toThrow();
-    } finally {
-      db.close();
-    }
-  });
+      yield* checkDrizzleMigrationCompatibility({
+        sqlite: db,
+        dbPath: path,
+        migrationsFolder: MIGRATIONS_FOLDER,
+      });
+    }),
+  );
 });
