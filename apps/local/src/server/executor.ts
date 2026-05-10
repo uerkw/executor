@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { Context, Data, Effect, Layer, ManagedRuntime } from "effect";
+import { Context, Data, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -165,21 +165,25 @@ export const readAppliedDrizzleMigrationHashes = (sqlite: Database): ReadonlyArr
     .map((row) => row.hash);
 };
 
-interface DrizzleJournal {
-  readonly entries: ReadonlyArray<{
-    readonly idx: number;
-    readonly tag: string;
-  }>;
-}
+const DrizzleJournal = Schema.Struct({
+  entries: Schema.Array(
+    Schema.Struct({
+      idx: Schema.Number,
+      tag: Schema.String,
+    }),
+  ),
+});
+
+const decodeDrizzleJournal = Schema.decodeUnknownSync(Schema.fromJsonString(DrizzleJournal));
 
 export const readBundledDrizzleMigrationHashes = (
   migrationsFolder: string,
 ): ReadonlyArray<string> => {
   // Keep this in sync with drizzle-orm/src/migrator.ts: Drizzle hashes the raw
   // migration file contents before splitting on statement breakpoints.
-  const journal = JSON.parse(
+  const journal = decodeDrizzleJournal(
     fs.readFileSync(join(migrationsFolder, "meta", "_journal.json")).toString(),
-  ) as DrizzleJournal;
+  );
 
   return [...journal.entries]
     .sort((left, right) => left.idx - right.idx)
@@ -207,36 +211,37 @@ export const checkDrizzleMigrationCompatibility = (input: {
   readonly sqlite: Database;
   readonly dbPath: string;
   readonly migrationsFolder: string;
-}): void => {
-  // Before running migrations, ensure the DB history is a prefix of the
-  // migrations bundled with this binary. This catches newer or divergent schemas
-  // before startup reaches arbitrary schema-dependent queries.
-  if (!drizzleMigrationsTableExists(input.sqlite)) return;
+}): Effect.Effect<void, LocalDatabaseSchemaTooNew | LocalDatabaseMigrationHistoryMismatch> =>
+  Effect.gen(function* () {
+    // Before running migrations, ensure the DB history is a prefix of the
+    // migrations bundled with this binary. This catches newer or divergent schemas
+    // before startup reaches arbitrary schema-dependent queries.
+    if (!drizzleMigrationsTableExists(input.sqlite)) return;
 
-  const applied = readAppliedDrizzleMigrationHashes(input.sqlite);
-  const bundled = readBundledDrizzleMigrationHashes(input.migrationsFolder);
+    const applied = readAppliedDrizzleMigrationHashes(input.sqlite);
+    const bundled = readBundledDrizzleMigrationHashes(input.migrationsFolder);
 
-  if (applied.length > bundled.length) {
-    throw new LocalDatabaseSchemaTooNew({
-      message: schemaTooNewMessage(input.dbPath),
-      dbPath: input.dbPath,
-      appliedMigrationCount: applied.length,
-      knownMigrationCount: bundled.length,
-    });
-  }
-
-  for (let index = 0; index < applied.length; index += 1) {
-    if (applied[index] !== bundled[index]) {
-      throw new LocalDatabaseMigrationHistoryMismatch({
-        message: migrationHistoryMismatchMessage(input.dbPath),
+    if (applied.length > bundled.length) {
+      return yield* new LocalDatabaseSchemaTooNew({
+        message: schemaTooNewMessage(input.dbPath),
         dbPath: input.dbPath,
-        migrationIndex: index,
-        appliedHash: applied[index],
-        knownHash: bundled[index],
+        appliedMigrationCount: applied.length,
+        knownMigrationCount: bundled.length,
       });
     }
-  }
-};
+
+    for (let index = 0; index < applied.length; index += 1) {
+      if (applied[index] !== bundled[index]) {
+        return yield* new LocalDatabaseMigrationHistoryMismatch({
+          message: migrationHistoryMismatchMessage(input.dbPath),
+          dbPath: input.dbPath,
+          migrationIndex: index,
+          appliedHash: applied[index],
+          knownHash: bundled[index],
+        });
+      }
+    }
+  });
 
 const createLocalExecutorLayer = () => {
   const { path: dbPath, legacySecrets } = resolveDbPath();
@@ -247,7 +252,7 @@ const createLocalExecutorLayer = () => {
         Effect.sync(() => new Database(dbPath)),
         (conn) => Effect.sync(() => conn.close()),
       );
-      checkDrizzleMigrationCompatibility({
+      yield* checkDrizzleMigrationCompatibility({
         sqlite,
         dbPath,
         migrationsFolder: MIGRATIONS_FOLDER,
