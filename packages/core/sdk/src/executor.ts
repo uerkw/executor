@@ -2149,12 +2149,59 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
             scopeId: secretScope,
           });
           if (!secret) {
-            return yield* new StorageError({
-              message:
-                `Cannot bind secret "${input.value.secretId}" from scope "${secretScope}": ` +
-                `the secret must be visible and owned by that scope.`,
-              cause: undefined,
-            });
+            // No core routing row at this scope yet. Read-only providers
+            // (1password, env, …) own items that never get a row via
+            // `secrets.set()`, so a config-sync referencing one of those
+            // ids by value otherwise fails here. Walk providers that can
+            // enumerate, and if any owns the id, materialize a routing row
+            // pointing at that provider so resolution finds it.
+            let materialized = false;
+            for (const [key, provider] of secretProviders) {
+              let name: string | undefined;
+              if (provider.list) {
+                const entries = yield* provider
+                  .list()
+                  .pipe(Effect.catch(() => Effect.succeed([] as const)));
+                const found = entries.find((e) => e.id === input.value.secretId);
+                if (found) name = found.name;
+              }
+              if (name === undefined) {
+                // Provider didn't enumerate the id (slow list(), failed list,
+                // or no list() at all). Probe with get() — cheap for most
+                // backends — and use the id as the display name.
+                const value = yield* provider
+                  .get(input.value.secretId, secretScope)
+                  .pipe(Effect.catch(() => Effect.succeed(null as string | null)));
+                if (value !== null) name = input.value.secretId;
+              }
+              if (name === undefined) continue;
+              const now = new Date();
+              yield* core.create({
+                model: "secret",
+                data: {
+                  id: input.value.secretId,
+                  scope_id: secretScope,
+                  name,
+                  provider: key,
+                  created_at: now,
+                },
+                forceAllowId: true,
+              });
+              materialized = true;
+              break;
+            }
+            if (!materialized) {
+              const providerKeys = [...secretProviders.keys()];
+              return yield* new StorageError({
+                message:
+                  `Cannot bind secret "${input.value.secretId}" at scope "${secretScope}": ` +
+                  `no registered secret provider has an item with this id ` +
+                  `(checked: ${providerKeys.join(", ") || "none"}). ` +
+                  `If this id points to a 1Password item, the item may have been deleted, ` +
+                  `renamed, or live in a different vault than the one configured for this scope.`,
+                cause: undefined,
+              });
+            }
           }
         }
 
