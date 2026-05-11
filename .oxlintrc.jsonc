@@ -116,6 +116,7 @@
     ".turbo/",
     ".worktrees/",
     "dist/",
+    "integrationsdotsh/",
     "node_modules/",
     "bun.lock",
     "*.tsbuildinfo",

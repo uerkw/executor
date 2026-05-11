@@ -5,6 +5,7 @@
     ".reference",
     ".turbo",
     "dist",
+    "integrationsdotsh",
     "node_modules",
     "bun.lock",
     "*.tsbuildinfo",
