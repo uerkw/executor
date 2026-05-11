@@ -61,9 +61,10 @@ jobs:
 
       - name: Checkout release tag
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
         run: |
-          git -c http.extraheader="AUTHORIZATION: bearer $GH_TOKEN" fetch --force --tags origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          auth_remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --force --tags "$auth_remote" "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           git checkout --detach "$RELEASE_TAG"
 
       - name: Setup Node
