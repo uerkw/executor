@@ -78,7 +78,7 @@ jobs:
 
       - name: Build web app
         run: bun run build
-        working-directory: apps/web
+        working-directory: apps/local
 
       - name: Download and extract CLI sidecar (unix)
         if: matrix.platform != 'win'
