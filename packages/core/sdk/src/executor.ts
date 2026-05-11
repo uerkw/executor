@@ -4,6 +4,7 @@ import {
   Duration,
   Effect,
   Layer,
+  Match,
   Option,
   Result,
   Schema,
@@ -3376,16 +3377,13 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
     // configured cap. Plugin-level detect implementations should
     // swallow fetch errors and return null, so one flaky plugin doesn't
     // block the whole dispatch.
-    const detectionConfidenceScore = (confidence: SourceDetectionResult["confidence"]) => {
-      switch (confidence) {
-        case "high":
-          return 3;
-        case "medium":
-          return 2;
-        case "low":
-          return 1;
-      }
-    };
+    const detectionConfidenceScore = (confidence: SourceDetectionResult["confidence"]) =>
+      Match.value(confidence).pipe(
+        Match.when("high", () => 3),
+        Match.when("medium", () => 2),
+        Match.when("low", () => 1),
+        Match.exhaustive,
+      );
 
     const detectSource = (url: string) =>
       Effect.gen(function* () {

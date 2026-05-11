@@ -35,7 +35,7 @@
 // every strategy because refresh semantics are strategy-independent.
 // ---------------------------------------------------------------------------
 
-import { Duration, Effect, Layer, Option, Schema } from "effect";
+import { Duration, Effect, Layer, Match, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import type { StorageFailure, TypedAdapter } from "@executor-js/storage-core";
@@ -616,16 +616,17 @@ export const makeOAuth2Service = (
 
   const start = (
     input: OAuthStartInput,
-  ): Effect.Effect<OAuthStartResult, OAuthStartError | StorageFailure> => {
-    switch (input.strategy.kind) {
-      case "dynamic-dcr":
-        return startDynamicDcr(input, input.strategy);
-      case "authorization-code":
-        return startAuthorizationCode(input, input.strategy);
-      case "client-credentials":
-        return startClientCredentials(input, input.strategy);
-    }
-  };
+  ): Effect.Effect<OAuthStartResult, OAuthStartError | StorageFailure> =>
+    Match.value(input.strategy).pipe(
+      Match.when({ kind: "dynamic-dcr" }, (strategy) => startDynamicDcr(input, strategy)),
+      Match.when({ kind: "authorization-code" }, (strategy) =>
+        startAuthorizationCode(input, strategy),
+      ),
+      Match.when({ kind: "client-credentials" }, (strategy) =>
+        startClientCredentials(input, strategy),
+      ),
+      Match.exhaustive,
+    );
 
   const writeSession = (args: {
     sessionId: string;
@@ -711,14 +712,16 @@ export const makeOAuth2Service = (
       const redirectUrl = row.redirect_url;
 
       // Dispatch to the strategy-specific exchange.
-      const exchangeResult = yield* (() => {
-        switch (payload.kind) {
-          case "dynamic-dcr":
-            return exchangeDynamicDcr(payload, input.code, redirectUrl);
-          case "authorization-code":
-            return exchangeAuthorizationCodeStrategy(payload, input.code, redirectUrl);
-        }
-      })().pipe(Effect.tapError(() => deleteSession));
+      const inputCode = input.code;
+      const exchangeResult = yield* Match.value(payload)
+        .pipe(
+          Match.when({ kind: "dynamic-dcr" }, (p) => exchangeDynamicDcr(p, inputCode, redirectUrl)),
+          Match.when({ kind: "authorization-code" }, (p) =>
+            exchangeAuthorizationCodeStrategy(p, inputCode, redirectUrl),
+          ),
+          Match.exhaustive,
+        )
+        .pipe(Effect.tapError(() => deleteSession));
 
       const connectionExpiresAt =
         typeof exchangeResult.tokens.expires_in === "number"
@@ -1016,113 +1019,113 @@ export const makeOAuth2Service = (
         // embeds `client_id` inline (DCR-minted public client);
         // authorization-code reads it off a secret; client-credentials
         // reads both id + secret.
-        const { clientId, clientSecret } = yield* (() => {
-          switch (state.kind) {
-            case "dynamic-dcr":
-              return Effect.gen(function* () {
-                const csec = state.clientSecretSecretId
-                  ? yield* getSecretFromRecordedScope({
-                      secretId: state.clientSecretSecretId,
-                      scopeId: state.clientSecretSecretScopeId ?? null,
-                    }).pipe(
-                      Effect.catchTags({
-                        StorageError: ({ message, cause }) =>
-                          Effect.fail(
-                            new ConnectionRefreshError({
-                              connectionId: input.connectionId,
-                              message: `Failed to resolve DCR client_secret: ${message}`,
-                              cause,
-                            }),
-                          ),
-                        UniqueViolationError: (cause) =>
-                          Effect.fail(
-                            new ConnectionRefreshError({
-                              connectionId: input.connectionId,
-                              message: "Failed to resolve DCR client_secret: UniqueViolationError",
-                              cause,
-                            }),
-                          ),
+        const { clientId, clientSecret } = yield* Match.value(state).pipe(
+          Match.when({ kind: "dynamic-dcr" }, (s) =>
+            Effect.gen(function* () {
+              const csec = s.clientSecretSecretId
+                ? yield* getSecretFromRecordedScope({
+                    secretId: s.clientSecretSecretId,
+                    scopeId: s.clientSecretSecretScopeId ?? null,
+                  }).pipe(
+                    Effect.catchTags({
+                      StorageError: ({ message, cause }) =>
+                        Effect.fail(
+                          new ConnectionRefreshError({
+                            connectionId: input.connectionId,
+                            message: `Failed to resolve DCR client_secret: ${message}`,
+                            cause,
+                          }),
+                        ),
+                      UniqueViolationError: (cause) =>
+                        Effect.fail(
+                          new ConnectionRefreshError({
+                            connectionId: input.connectionId,
+                            message: "Failed to resolve DCR client_secret: UniqueViolationError",
+                            cause,
+                          }),
+                        ),
+                    }),
+                  )
+                : null;
+              if (s.clientSecretSecretId && csec === null) {
+                return yield* new ConnectionRefreshError({
+                  connectionId: input.connectionId,
+                  message: `client_secret secret "${s.clientSecretSecretId}" not found`,
+                  reauthRequired: true,
+                });
+              }
+              return { clientId: s.clientId, clientSecret: csec };
+            }),
+          ),
+          Match.whenOr({ kind: "authorization-code" }, { kind: "client-credentials" }, (s) =>
+            Effect.gen(function* () {
+              const cid = yield* getSecretFromRecordedScope({
+                secretId: s.clientIdSecretId,
+                scopeId: s.clientIdSecretScopeId ?? null,
+              }).pipe(
+                Effect.catchTags({
+                  StorageError: ({ message, cause }) =>
+                    Effect.fail(
+                      new ConnectionRefreshError({
+                        connectionId: input.connectionId,
+                        message: `Failed to resolve client_id secret: ${message}`,
+                        cause,
                       }),
-                    )
-                  : null;
-                if (state.clientSecretSecretId && csec === null) {
-                  return yield* new ConnectionRefreshError({
-                    connectionId: input.connectionId,
-                    message: `client_secret secret "${state.clientSecretSecretId}" not found`,
-                    reauthRequired: true,
-                  });
-                }
-                return { clientId: state.clientId, clientSecret: csec };
-              });
-            case "authorization-code":
-            case "client-credentials":
-              return Effect.gen(function* () {
-                const cid = yield* getSecretFromRecordedScope({
-                  secretId: state.clientIdSecretId,
-                  scopeId: state.clientIdSecretScopeId ?? null,
-                }).pipe(
-                  Effect.catchTags({
-                    StorageError: ({ message, cause }) =>
-                      Effect.fail(
-                        new ConnectionRefreshError({
-                          connectionId: input.connectionId,
-                          message: `Failed to resolve client_id secret: ${message}`,
-                          cause,
-                        }),
-                      ),
-                    UniqueViolationError: (cause) =>
-                      Effect.fail(
-                        new ConnectionRefreshError({
-                          connectionId: input.connectionId,
-                          message: "Failed to resolve client_id secret: UniqueViolationError",
-                          cause,
-                        }),
-                      ),
-                  }),
-                );
-                if (cid === null) {
-                  return yield* new ConnectionRefreshError({
-                    connectionId: input.connectionId,
-                    message: `client_id secret "${state.clientIdSecretId}" not found`,
-                    reauthRequired: true,
-                  });
-                }
-                const csec = state.clientSecretSecretId
-                  ? yield* getSecretFromRecordedScope({
-                      secretId: state.clientSecretSecretId,
-                      scopeId: state.clientSecretSecretScopeId ?? null,
-                    }).pipe(
-                      Effect.catchTags({
-                        StorageError: ({ message, cause }) =>
-                          Effect.fail(
-                            new ConnectionRefreshError({
-                              connectionId: input.connectionId,
-                              message: `Failed to resolve client_secret: ${message}`,
-                              cause,
-                            }),
-                          ),
-                        UniqueViolationError: (cause) =>
-                          Effect.fail(
-                            new ConnectionRefreshError({
-                              connectionId: input.connectionId,
-                              message: "Failed to resolve client_secret: UniqueViolationError",
-                              cause,
-                            }),
-                          ),
+                    ),
+                  UniqueViolationError: (cause) =>
+                    Effect.fail(
+                      new ConnectionRefreshError({
+                        connectionId: input.connectionId,
+                        message: "Failed to resolve client_id secret: UniqueViolationError",
+                        cause,
                       }),
-                    )
-                  : null;
-                if (state.clientSecretSecretId && csec === null) {
-                  return yield* new ConnectionRefreshError({
-                    connectionId: input.connectionId,
-                    message: `client_secret secret "${state.clientSecretSecretId}" not found`,
-                    reauthRequired: true,
-                  });
-                }
-                return { clientId: cid, clientSecret: csec };
-              });
-          }
-        })();
+                    ),
+                }),
+              );
+              if (cid === null) {
+                return yield* new ConnectionRefreshError({
+                  connectionId: input.connectionId,
+                  message: `client_id secret "${s.clientIdSecretId}" not found`,
+                  reauthRequired: true,
+                });
+              }
+              const csec = s.clientSecretSecretId
+                ? yield* getSecretFromRecordedScope({
+                    secretId: s.clientSecretSecretId,
+                    scopeId: s.clientSecretSecretScopeId ?? null,
+                  }).pipe(
+                    Effect.catchTags({
+                      StorageError: ({ message, cause }) =>
+                        Effect.fail(
+                          new ConnectionRefreshError({
+                            connectionId: input.connectionId,
+                            message: `Failed to resolve client_secret: ${message}`,
+                            cause,
+                          }),
+                        ),
+                      UniqueViolationError: (cause) =>
+                        Effect.fail(
+                          new ConnectionRefreshError({
+                            connectionId: input.connectionId,
+                            message: "Failed to resolve client_secret: UniqueViolationError",
+                            cause,
+                          }),
+                        ),
+                    }),
+                  )
+                : null;
+              if (s.clientSecretSecretId && csec === null) {
+                return yield* new ConnectionRefreshError({
+                  connectionId: input.connectionId,
+                  message: `client_secret secret "${s.clientSecretSecretId}" not found`,
+                  reauthRequired: true,
+                });
+              }
+              return { clientId: cid, clientSecret: csec };
+            }),
+          ),
+          Match.exhaustive,
+        );
 
         const tokenEndpoint = yield* (() => {
           if (state.tokenEndpoint) return Effect.succeed(state.tokenEndpoint);

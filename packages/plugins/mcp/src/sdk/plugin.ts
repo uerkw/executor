@@ -3,6 +3,7 @@ import {
   Effect,
   Exit,
   Layer,
+  Match,
   Option,
   Predicate,
   Result,
@@ -215,12 +216,19 @@ export const userFacingProbeMessage = (
   if (shape.kind === "unreachable") {
     return "Couldn't reach this URL. Check the address, your network, and that the server is running.";
   }
-  switch (shape.category) {
-    case "auth-required":
-      return "This server requires authentication. Add credentials (Authorization header, query parameter, or API key) below and retry.";
-    case "wrong-shape":
-      return "This URL doesn't appear to host an MCP server. Double-check the address, including the path.";
-  }
+  return Match.value(shape.category).pipe(
+    Match.when(
+      "auth-required",
+      () =>
+        "This server requires authentication. Add credentials (Authorization header, query parameter, or API key) below and retry.",
+    ),
+    Match.when(
+      "wrong-shape",
+      () =>
+        "This URL doesn't appear to host an MCP server. Double-check the address, including the path.",
+    ),
+    Match.exhaustive,
+  );
 };
 
 const scopeRanks = (ctx: PluginCtx<McpBindingStore>): ReadonlyMap<string, number> =>

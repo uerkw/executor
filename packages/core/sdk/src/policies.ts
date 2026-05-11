@@ -4,7 +4,7 @@
 // `executor.policies` CRUD surface. Plugins consume the same surface.
 // ---------------------------------------------------------------------------
 
-import { Schema } from "effect";
+import { Match, Schema } from "effect";
 
 import type { ToolPolicyAction, ToolPolicyRow } from "./core-schema";
 import { PolicyId, ScopeId } from "./ids";
@@ -152,16 +152,13 @@ export const comparePolicyRow = (
   return ia < ib ? -1 : ia > ib ? 1 : 0;
 };
 
-const actionRestrictionRank = (action: ToolPolicyAction): number => {
-  switch (action) {
-    case "block":
-      return 3;
-    case "require_approval":
-      return 2;
-    case "approve":
-      return 1;
-  }
-};
+const actionRestrictionRank = (action: ToolPolicyAction): number =>
+  Match.value(action).pipe(
+    Match.when("block", () => 3),
+    Match.when("require_approval", () => 2),
+    Match.when("approve", () => 1),
+    Match.exhaustive,
+  );
 
 const moreRestrictive = <T extends { readonly action: ToolPolicyAction }>(
   current: T | undefined,
