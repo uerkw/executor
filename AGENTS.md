@@ -32,7 +32,8 @@ not a blocker.
 
 Repos in `.reference`, such as Effect and effect-atom, are available for
 patterns. If given a Git URL for reference, clone it into `.reference` and
-inspect it there.
+inspect it there. Make sure to pull the latest changes from the reference repo
+before using it.
 
 ## Engineering Priorities
 
