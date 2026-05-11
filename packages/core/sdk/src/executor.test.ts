@@ -1427,7 +1427,7 @@ describe("tenant isolation (SDK)", () => {
     }),
   );
 
-  it.effect("secrets.list and status only expose routed secret rows", () =>
+  it.effect("secrets.list surfaces provider-enumerated entries; status still gates on routed rows", () =>
     Effect.gen(function* () {
       const executor = yield* createExecutor(
         makeTestConfig({ plugins: [providerOnlySecretPlugin()] as const }),
@@ -1437,7 +1437,9 @@ describe("tenant isolation (SDK)", () => {
       const status = yield* executor.secrets.status("provider-token");
       const value = yield* executor.secrets.get("provider-token");
 
-      expect(refs.map((ref) => ref.id)).not.toContain("provider-token");
+      const entry = refs.find((ref) => ref.id === "provider-token");
+      expect(entry?.provider).toBe("provider-only");
+      expect(entry?.name).toBe("Provider token");
       expect(status).toBe("missing");
       expect(value).toBe("provider-value");
     }),
