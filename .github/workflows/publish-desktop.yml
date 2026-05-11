@@ -117,6 +117,10 @@ jobs:
         run: bunx tsc -p tsconfig.json
         working-directory: apps/desktop
 
+      - name: Prepare Linux package output directory
+        if: matrix.platform == 'linux'
+        run: mkdir -p apps/desktop/dist/@executor-js
+
       - name: Build desktop distributables
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }}
         working-directory: apps/desktop
