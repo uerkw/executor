@@ -54,7 +54,6 @@
     "typecheck:slow": "bunx tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@executor-js/api": "workspace:*",
     "@executor-js/sdk": "workspace:*",
     "effect": "catalog:"
   },
@@ -62,6 +61,7 @@
     "@effect/atom-react": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@executor-js/api": "workspace:*",
     "@executor-js/react": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
@@ -72,6 +72,7 @@
   },
   "peerDependencies": {
     "@effect/atom-react": "catalog:",
+    "@executor-js/api": "workspace:*",
     "@executor-js/react": "workspace:*",
     "@tanstack/react-router": "catalog:",
     "react": "catalog:"
@@ -84,6 +85,9 @@
       "optional": true
     },
     "@tanstack/react-router": {
+      "optional": true
+    },
+    "@executor-js/api": {
       "optional": true
     },
     "@executor-js/react": {

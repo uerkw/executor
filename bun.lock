@@ -579,7 +579,6 @@
       "name": "@executor-js/plugin-google-discovery",
       "version": "0.1.0",
       "dependencies": {
-        "@executor-js/api": "workspace:*",
         "@executor-js/sdk": "workspace:*",
         "effect": "catalog:",
       },
@@ -587,6 +586,7 @@
         "@effect/atom-react": "catalog:",
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
+        "@executor-js/api": "workspace:*",
         "@executor-js/react": "workspace:*",
         "@types/node": "catalog:",
         "@types/react": "catalog:",
@@ -597,12 +597,14 @@
       },
       "peerDependencies": {
         "@effect/atom-react": "catalog:",
+        "@executor-js/api": "workspace:*",
         "@executor-js/react": "workspace:*",
         "@tanstack/react-router": "catalog:",
         "react": "catalog:",
       },
       "optionalPeers": [
         "@effect/atom-react",
+        "@executor-js/api",
         "@executor-js/react",
         "@tanstack/react-router",
         "react",
@@ -709,12 +711,12 @@
         "@1password/op-js": "^0.1.13",
         "@1password/sdk": "^0.4.1-beta.1",
         "@effect/atom-react": "catalog:",
-        "@executor-js/api": "workspace:*",
         "@executor-js/sdk": "workspace:*",
         "effect": "catalog:",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:",
+        "@executor-js/api": "workspace:*",
         "@types/node": "catalog:",
         "@types/react": "catalog:",
         "bun-types": "catalog:",
@@ -724,11 +726,13 @@
       },
       "peerDependencies": {
         "@effect/atom-react": "catalog:",
+        "@executor-js/api": "workspace:*",
         "@executor-js/react": "workspace:*",
         "react": ">=18",
       },
       "optionalPeers": [
         "@effect/atom-react",
+        "@executor-js/api",
         "@executor-js/react",
         "react",
       ],
