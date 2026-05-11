@@ -62,6 +62,7 @@ jobs:
       - name: Checkout release tag
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+        shell: bash
         run: |
           auth_remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --force --tags "$auth_remote" "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
