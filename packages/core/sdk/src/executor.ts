@@ -1313,6 +1313,38 @@ export const createExecutor = <const TPlugins extends readonly AnyPlugin[] = []>
           if (hasBackingValue) pick(row);
         }
 
+        // Don't let provider-enumerated entries resurrect ids that
+        // belong to a connection-owned core row.
+        const connectionOwnedIds = new Set(
+          allRows.filter((r) => r.owned_by_connection_id).map((r) => r.id),
+        );
+        // Attribute provider-listed entries to the innermost scope as
+        // a display default — providers like 1password and env don't
+        // partition their inventory by executor scope.
+        const innermostScopeId = scopeIds[0];
+        if (innermostScopeId !== undefined) {
+          for (const [key, provider] of secretProviders) {
+            if (!provider.list) continue;
+            const entries = yield* provider
+              .list()
+              .pipe(Effect.catch(() => Effect.succeed([] as const)));
+            for (const entry of entries) {
+              if (byId.has(entry.id)) continue;
+              if (connectionOwnedIds.has(entry.id)) continue;
+              byId.set(
+                entry.id,
+                new SecretRef({
+                  id: SecretId.make(entry.id),
+                  scopeId: ScopeId.make(innermostScopeId),
+                  name: entry.name,
+                  provider: key,
+                  createdAt: new Date(0),
+                }),
+              );
+            }
+          }
+        }
+
         return Array.from(byId.values());
       });
 
