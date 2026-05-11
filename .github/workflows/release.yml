@@ -123,7 +123,7 @@ jobs:
       - name: Trigger CLI publish
         if: steps.changesets.outputs.hasChangesets == 'false' && steps.detect_release.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.validate_release.outputs.tag }}
         run: |
           gh workflow run publish-executor-package.yml --ref "$RELEASE_TAG" -f tag="$RELEASE_TAG"
