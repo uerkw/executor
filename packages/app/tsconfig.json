@@ -6,10 +6,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "out",
+    "outDir": "dist",
     "rootDir": ".",
     "jsx": "react-jsx",
-    "types": ["node", "bun-types"]
+    "types": ["vite/client"]
   },
-  "include": ["src", "scripts", "electron.vite.config.ts", "electron-builder.config.ts"]
+  "include": ["src", "vite.config.ts", "vite.ts"]
 }

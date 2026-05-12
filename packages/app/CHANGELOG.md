@@ -1,4 +1,4 @@
-# @executor-js/desktop changelog
+# @executor-js/app changelog
 
 This file exists for `changesets/action@v1` compatibility (it reads every
 workspace package's `CHANGELOG.md` to build the Version Packages PR).
