@@ -10,3 +10,7 @@ The CLI's web UI now ships as a native desktop app. Same gateway, same UI, same 
 - Linux: AppImage / deb / rpm for x64 and arm64. Windows: `.exe` (currently unsigned — code-signing pipeline in flight).
 
 Downloads land on each [GitHub release](https://github.com/RhysSullivan/executor/releases/latest) under the `executor-desktop-*` assets.
+
+## UI
+
+- Sidebar now shows a "Beta" pill next to the executor wordmark.
