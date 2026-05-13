@@ -302,6 +302,11 @@ const promptInstallUpdate = async (version: string) => {
   }
 };
 
+// Re-check periodically so a long-running session picks up releases
+// without requiring a quit + relaunch. The boot-time check still runs;
+// this interval is purely a self-heal for idle apps.
+const UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 const setupAutoUpdater = () => {
   if (!app.isPackaged) return;
   autoUpdater.logger = log;
@@ -315,6 +320,11 @@ const setupAutoUpdater = () => {
   autoUpdater.on("error", (err: Error) => {
     log.warn("[updater] error", err);
   });
+
+  setInterval(() => {
+    if (downloadedUpdateVersion) return; // already staged; waiting on the user
+    void runUpdateCheck({ alertOnFail: false });
+  }, UPDATE_POLL_INTERVAL_MS);
 };
 
 interface UpdateCheckOptions {
