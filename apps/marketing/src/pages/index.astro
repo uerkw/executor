@@ -377,7 +377,16 @@ import { SelfHostContactModal } from "../components/self-host-contact-modal";
   // visitors still see the recommended path.
   const heroToggle = document.querySelector<HTMLElement>(".hero-toggle");
   const tabToggle = heroToggle?.querySelector<HTMLElement>(".tab-toggle");
-  const setActiveTab = (tab: "cloud" | "local") => {
+  const TAB_PARAM = "try";
+  const isHeroTab = (v: unknown): v is "cloud" | "local" =>
+    v === "cloud" || v === "local";
+  const syncTabToUrl = (tab: "cloud" | "local") => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(TAB_PARAM) === tab) return;
+    url.searchParams.set(TAB_PARAM, tab);
+    window.history.replaceState(window.history.state, "", url);
+  };
+  const setActiveTab = (tab: "cloud" | "local", updateUrl = true) => {
     if (!heroToggle || !tabToggle) return;
     heroToggle.dataset.active = tab;
     tabToggle.dataset.active = tab;
@@ -389,8 +398,11 @@ import { SelfHostContactModal } from "../components/self-host-contact-modal";
         );
       },
     );
+    if (updateUrl) syncTabToUrl(tab);
   };
   if (heroToggle && tabToggle) {
+    const initial = new URLSearchParams(window.location.search).get(TAB_PARAM);
+    if (isHeroTab(initial)) setActiveTab(initial, false);
     tabToggle.querySelectorAll<HTMLButtonElement>("button[data-tab]").forEach(
       (btn) => {
         btn.addEventListener("click", () => {
@@ -399,6 +411,10 @@ import { SelfHostContactModal } from "../components/self-host-contact-modal";
         });
       },
     );
+    window.addEventListener("popstate", () => {
+      const next = new URLSearchParams(window.location.search).get(TAB_PARAM);
+      setActiveTab(isHeroTab(next) ? next : "cloud", false);
+    });
   }
 
   // Desktop card "Download →" CTA jumps to the hero, switches to Local,
