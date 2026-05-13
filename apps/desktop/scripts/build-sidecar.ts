@@ -17,7 +17,8 @@
  */
 import { mkdir, rm, cp, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { $ } from "bun";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -41,6 +42,23 @@ const BUN_TARGET = process.env.BUN_TARGET ?? "bun";
 const targetIsWindows = BUN_TARGET.includes("windows") || process.platform === "win32";
 const binaryName = targetIsWindows ? "executor-sidecar.exe" : "executor-sidecar";
 const sidecarBinary = resolve(SIDECAR_OUT_DIR, binaryName);
+
+// QuickJS ships its WASM as a side asset; `bun build --compile` can't pull
+// it into bunfs, so we stage it next to the binary and the sidecar entry
+// preloads it via `setQuickJSModule` before any server import.
+const resolveQuickJsWasmPath = (): string => {
+  const req = createRequire(join(REPO_ROOT, "packages/kernel/runtime-quickjs/package.json"));
+  const quickJsPkg = req.resolve("quickjs-emscripten/package.json");
+  const wasmPath = resolve(
+    dirname(quickJsPkg),
+    "../@jitl/quickjs-wasmfile-release-sync/dist/emscripten-module.wasm",
+  );
+  if (!existsSync(wasmPath)) {
+    // oxlint-disable-next-line executor/no-try-catch-or-throw, executor/no-error-constructor -- boundary: build-time fatal
+    throw new Error(`QuickJS WASM not found at ${wasmPath}`);
+  }
+  return wasmPath;
+};
 
 const createEmbeddedMigrationsSource = async (): Promise<string> => {
   const migrationsDir = resolve(APPS_LOCAL, "drizzle");
@@ -91,6 +109,9 @@ try {
 } finally {
   await writeFile(EMBEDDED_MIGRATIONS_PATH, EMBEDDED_MIGRATIONS_STUB);
 }
+
+console.log(`[build-sidecar] staging QuickJS WASM → ${SIDECAR_OUT_DIR}`);
+await cp(resolveQuickJsWasmPath(), join(SIDECAR_OUT_DIR, "emscripten-module.wasm"));
 
 console.log(`[build-sidecar] staging web UI → ${WEB_UI_OUT_DIR}`);
 await cp(APPS_LOCAL_DIST, WEB_UI_OUT_DIR, { recursive: true });

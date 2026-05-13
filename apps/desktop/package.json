@@ -28,6 +28,9 @@
   "devDependencies": {
     "@executor-js/app": "workspace:*",
     "@executor-js/local": "workspace:*",
+    "@executor-js/runtime-quickjs": "workspace:*",
+    "@jitl/quickjs-wasmfile-release-sync": "catalog:",
+    "quickjs-emscripten": "catalog:",
     "@executor-js/plugin-desktop-settings": "workspace:*",
     "@executor-js/plugin-file-secrets": "workspace:*",
     "@executor-js/plugin-google-discovery": "workspace:*",
