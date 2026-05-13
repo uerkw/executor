@@ -127,8 +127,10 @@ const startOpenApiServer = () => {
 };
 
 const waitForReadyPort = (proc: Subprocess<"ignore", "pipe", "pipe">): Promise<number> =>
+  // oxlint-disable-next-line executor/no-promise-reject -- boundary: standalone build-time smoke harness, no Effect runtime
   new Promise((resolveReady, rejectReady) => {
     const deadline = setTimeout(() => {
+      // oxlint-disable-next-line executor/no-promise-reject, executor/no-error-constructor -- boundary: standalone smoke harness reporting a build-time timeout
       rejectReady(new Error(`sidecar did not announce ready within ${READY_TIMEOUT_MS}ms`));
     }, READY_TIMEOUT_MS);
 
@@ -150,6 +152,7 @@ const waitForReadyPort = (proc: Subprocess<"ignore", "pipe", "pipe">): Promise<n
         const { value, done } = await reader.read();
         if (done) {
           clearTimeout(deadline);
+          // oxlint-disable-next-line executor/no-promise-reject, executor/no-error-constructor -- boundary: standalone smoke harness, stdout-closed surfaced as rejection
           rejectReady(new Error("sidecar stdout closed before ready"));
           return;
         }
@@ -217,9 +220,11 @@ const main = async () => {
       if (exitCode === null) proc.kill("SIGKILL");
     }
     openapi.server.stop(true);
+    // oxlint-disable-next-line executor/no-promise-catch -- boundary: best-effort tempdir cleanup in a standalone smoke harness
     await rm(scopeDir, { recursive: true, force: true }).catch(() => {});
   };
 
+  // oxlint-disable-next-line executor/no-try-catch-or-throw -- boundary: standalone smoke harness needs a finally to tear down the spawned binary + http server
   try {
     const port = await waitForReadyPort(proc);
     const mcpUrl = new URL(`http://127.0.0.1:${port}/mcp`);
